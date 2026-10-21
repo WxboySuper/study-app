@@ -1,0 +1,27 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Expo
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+/apps/mobile/ios/
+/apps/mobile/android/
+
+# Cloudflare Workers
+.wrangler/
+
+# misc
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
