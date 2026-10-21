@@ -72,7 +72,7 @@ Blooket-style themed **packs** bought with tokens. Opening a pack gives one rand
 **Next seasonal packs:** Thanksgiving (Nov 2026: e.g. "Gobble Scholars") and Winter (Dec–Jan). Packs are data, not code: adding a season is a seed/migration plus art, with no deploy logic changes.
 
 ### End-of-session payout
-`tokens = 10·correct + 25·newCardsGraduated + 5·dueCleared + modeBonus(score)`, with a soft cap per day (diminishing returns after ~N tokens) so grinding doesn't beat spacing. You get one free pack each day you clear your due queue. **The payout is computed on the server** from the review logs, so the client can't pay itself.
+`tokens = floor(1.5·correct + 1·newCardsGraduated + 0.25·dueCleared) + modeBonus(score)` (see Economy tuning: ~50 tokens per 10 min session), with a soft cap per day (~500, diminishing returns after ~N tokens) so grinding doesn't beat spacing. You get one free pack each day you clear your due queue. **The payout is computed on the server** from the review logs, so the client can't pay itself.
 
 ## 4. Stack (Cloudflare free tier)
 - **Client:** native app built with **Expo** (React Native, TypeScript), **Android primary** (Alex is an Android user), iOS later. **expo-router** for navigation, Zustand for state. Dev via Expo Go / dev client.
