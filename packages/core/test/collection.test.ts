@@ -8,26 +8,35 @@ import {
   sellAllDuplicates,
   sellDuplicate,
 } from '../src/collection';
-import { findPackDef } from '../src/packs';
+import { PACKS, findPackDef } from '../src/packs';
 
 describe('the sell values', () => {
   it('scales with the rarity', () => {
     expect(CRITTER_SELL_VALUES).toEqual({
-      common: 2,
-      uncommon: 5,
-      rare: 10,
-      epic: 20,
-      legendary: 50,
+      common: 1,
+      uncommon: 2,
+      rare: 4,
+      epic: 8,
+      legendary: 15,
     });
   });
 
   it('knows the value of a critter', () => {
-    expect(critterSellValue('nibbles_the_notecard')).toBe(2);
-    expect(critterSellValue('gummy_eraser')).toBe(5);
-    expect(critterSellValue('synapse_sprite')).toBe(10);
-    expect(critterSellValue('mnemo_the_memory_jelly')).toBe(20);
-    expect(critterSellValue('gigabrain_golem')).toBe(50);
+    expect(critterSellValue('nibbles_the_notecard')).toBe(1);
+    expect(critterSellValue('gummy_eraser')).toBe(2);
+    expect(critterSellValue('synapse_sprite')).toBe(4);
+    expect(critterSellValue('mnemo_the_memory_jelly')).toBe(8);
+    expect(critterSellValue('gigabrain_golem')).toBe(15);
     expect(critterSellValue('nobody')).toBe(0);
+  });
+
+  it('is always below the cheapest pack', () => {
+    const cheapestPack = Math.min(...PACKS.map((pack) => pack.priceTokens));
+    expect(cheapestPack).toBe(20);
+
+    for (const [rarity, value] of Object.entries(CRITTER_SELL_VALUES)) {
+      expect(value, `${rarity} sells for ${value}`).toBeLessThan(cheapestPack);
+    }
   });
 });
 
@@ -36,7 +45,7 @@ describe('the collection', () => {
     const entry = collectionEntry(new Map([['nibbles_the_notecard', 3]]), 'nibbles_the_notecard');
     expect(entry?.count).toBe(3);
     expect(entry?.duplicates).toBe(2);
-    expect(entry?.sellValue).toBe(2);
+    expect(entry?.sellValue).toBe(1);
     expect(collectionEntry(new Map(), 'nope')).toBeUndefined();
   });
 
@@ -59,7 +68,7 @@ describe('sellDuplicate', () => {
   it('sells the duplicates and pays for them', () => {
     const result = sellDuplicate(new Map([['nibbles_the_notecard', 3]]), 'nibbles_the_notecard', 2);
     expect(result.sold).toBe(2);
-    expect(result.tokens).toBe(4);
+    expect(result.tokens).toBe(2);
     expect(result.collection.get('nibbles_the_notecard')).toBe(1);
   });
 
@@ -73,7 +82,7 @@ describe('sellDuplicate', () => {
   it('clamps the quantity to the duplicates the player owns', () => {
     const result = sellDuplicate(new Map([['gigabrain_golem', 2]]), 'gigabrain_golem', 10);
     expect(result.sold).toBe(1);
-    expect(result.tokens).toBe(50);
+    expect(result.tokens).toBe(15);
     expect(result.collection.get('gigabrain_golem')).toBe(1);
   });
 
@@ -110,7 +119,7 @@ describe('sellAllDuplicates', () => {
     expect(result.sold.get('gummy_eraser')).toBe(1);
     expect(result.sold.has('gigabrain_golem')).toBe(false);
     // 2 common duplicates + 1 uncommon duplicate.
-    expect(result.tokens).toBe(2 * 2 + 5);
+    expect(result.tokens).toBe(2 * 1 + 2);
     expect(result.collection.get('nibbles_the_notecard')).toBe(1);
     expect(result.collection.get('gummy_eraser')).toBe(1);
     expect(result.collection.get('gigabrain_golem')).toBe(1);

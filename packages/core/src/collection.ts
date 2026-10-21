@@ -16,14 +16,16 @@ import type { PackDef } from './packs';
 /**
  * What one duplicate of a critter is worth (SPEC "Economy tuning").
  *
- * The values scale with the rarity of the critter.
+ * The values scale with the rarity of the critter, but they always stay
+ * below the cheapest pack (20 tokens), so selling a duplicate is never a
+ * better deal than opening a pack.
  */
 export const CRITTER_SELL_VALUES: Readonly<Record<CritterRarity, number>> = {
-  common: 2,
-  uncommon: 5,
-  rare: 10,
-  epic: 20,
-  legendary: 50,
+  common: 1,
+  uncommon: 2,
+  rare: 4,
+  epic: 8,
+  legendary: 15,
 };
 
 /** How many of every critter the player owns. */
