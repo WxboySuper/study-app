@@ -207,15 +207,27 @@ bring the fish back:
 
 ## The rules that must hold
 
-- A **sell value is always below the cheapest pack** (20 tokens): Common 1,
-  Uncommon 2, Rare 4, Epic 8, Legendary 15. There is a test for it
-  (`packages/core/test/collection.test.ts`).
+- The **sell values follow the Blooket scale**: Common 5, Uncommon 10, Rare
+  20, Epic 75, Legendary 200 tokens. Every sell value, every pack price
+  (20 for a core pack, 25 for a seasonal one) and every prize of the daily
+  wheel is a **multiple of 5** (there is a test for it in
+  `packages/core/test/collection.test.ts`).
+- **Selling is never a way to farm.** The expected value of one pack — the
+  sum of the odds of its rarities times the sell value of the rarity — has
+  to stay below the price of that pack. For the current catalogue it is
+  12.5 tokens against a pack that costs 20 or 25.
+- A **legendary is worth several packs**: one legendary duplicate sells for
+  200 tokens, ten packs of Brain Buddies.
 - The **ids and the art keys are unique** (there is a test for it in
   `packages/core/test/content.test.ts`).
 - A critter always belongs to a **pack of the catalogue** and has a rarity of
   the catalogue.
 - The **odds** of the packs are the ones of the SPEC: Common 60 % · Uncommon
   25 % · Rare 10 % · Epic 4 % · Legendary 1 %.
+
+Sources: [Blooket — Blooks](https://blooket.fandom.com/wiki/Blooks) (sell
+values) and [Blooket — Packs](https://blooket.fandom.com/wiki/Packs) (pack
+prices).
 
 ## Checklist
 

@@ -96,9 +96,11 @@ export {
 
 export {
   CRITTER_SELL_VALUES,
+  TOKEN_STEP,
   collectionEntry,
   collectionProgress,
   critterSellValue,
+  isTokenMultiple,
   sellAllDuplicates,
   sellDuplicate,
   type Collection,

@@ -41,7 +41,7 @@ A solo, **untimed** Blooket-style game that uses spaced repetition to pick your 
 ### Collectibles: packs & critters
 Blooket-style themed **packs** bought with tokens. Opening a pack gives one random critter from that pack, weighted by rarity: **Common 60% · Uncommon 25% · Rare 10% · Epic 4% · Legendary 1%**. Duplicates convert to bonus tokens. All names and characters are original.
 
-**Starter Pack: "Brain Buddies"** (always available, 50 tokens)
+**Starter Pack: "Brain Buddies"** (always available, 20 tokens)
 | Critter | Rarity | Vibe |
 |---|---|---|
 | Nibbles the Notecard | Common | A folded index card that snacks on loose facts. |
@@ -57,7 +57,7 @@ Blooket-style themed **packs** bought with tokens. Opening a pack gives one rand
 | The Spaced Ranger | Epic | Shows up exactly when you're about to forget. |
 | Gigabrain Golem | Legendary | Built from every card you've ever mastered. |
 
-**Seasonal: "Halloween 2026 — Midterm Monsters"** (available Oct 1–Nov 2, 2026 CT, 75 tokens; critters stay in your collection forever)
+**Seasonal: "Halloween 2026 — Midterm Monsters"** (available Oct 1–Nov 2, 2026 CT, 25 tokens; critters stay in your collection forever)
 | Critter | Rarity | Vibe |
 |---|---|---|
 | Candy Corn Kid | Common | Divisive, sugary, and fully committed. |
@@ -205,11 +205,29 @@ Build Phase 0 + the FSRS core of a personal study app: a solo, untimed, Blooket-
 Finish by listing what was built, how to run it, and anything left TODO.
 ```
 
-## Economy tuning (Alex, Oct 21 2026)
+## Economy tuning (Alex, Oct 21 2026; revised Oct 21 2026 — Blooket scale)
 - Benchmark: a ~10 min session at ~70% accuracy (~30 correct) should earn ~50 tokens (~1.5 tokens/correct, before mode bonuses).
 - Pack prices: standard packs 20–25 tokens (Brain Buddies 20, seasonal packs like Midterm Monsters 25), so ~2 packs per solid session.
 - Selling: duplicates only. Provide a "Sell all duplicates" button; the last copy of any critter can never be sold. Sell value scales with rarity.
 - Soft daily cap should sit well above a normal day's play so it never feels punishing.
+
+### The token economy (Blooket scale)
+
+| Rarity | Sell value (tokens) |
+|---|---|
+| Common | 5 |
+| Uncommon | 10 |
+| Rare | 20 |
+| Epic | 75 |
+| Legendary | 200 |
+
+- **Pack prices stay 20 and 25.** Brain Buddies is 20 tokens, the seasonal packs (Midterm Monsters) are 25.
+- **Every price and every reward is a multiple of 5**: the sell values, the pack prices and every prize of the daily wheel (10, 20, 30, 50, 100, 250, 500, 1000).
+- **No farming by opening and selling.** The expected value of one pack — the sum of the odds of its rarities times the sell value of the rarity — is 12.5 tokens, below the 20 (or 25) tokens the pack costs. Selling a duplicate is never a better deal than opening a pack.
+- **A legendary is worth several packs.** One legendary duplicate sells for 200 tokens: ten packs of Brain Buddies. That is the payoff of a lucky pull.
+- The rules are tested in `packages/core/test/collection.test.ts`.
+
+Sources: [Blooket — Blooks](https://blooket.fandom.com/wiki/Blooks) and [Blooket — Packs](https://blooket.fandom.com/wiki/Packs) (sell values and pack prices).
 
 ## Daily spin + XP (Alex, Oct 21 2026; reference: Blooket wiki "Tokens and XP")
 - Blooket reference: 2 tokens per correct answer in most solo modes, 500 token daily earning cap, Daily Wheel once per day (10–1,000 tokens, weighted low, does not count toward the cap), XP 300/day feeding a 100-level Class Pass of cosmetics.
@@ -227,7 +245,7 @@ Tokens exist to keep Alex studying: rewarding but not too easy.
 
 ## Game mode lineup (Alex, Oct 21 2026)
 Build order: 1) Fishing Frenzy-style Cast (MVP), 2) Café, 3) Factory, 4) Gold Quest (major solo rework needed: no stealing from players; design solo chest events like doubles, swaps with a "rival" NPC or your own vault, bank-or-push-your-luck). Crazy Kingdom / Tower of Doom: parked.
-Pack prices: Brain Buddies 20, seasonal 25 (supersedes 50/75). Add chroma + mystical rarities later; buy price > sell value rule.
+Pack prices: Brain Buddies 20, seasonal 25 (supersedes 50/75). Add chroma + mystical rarities later; the "expected value of a pack is below its price" rule replaces the old "buy price > sell value" rule (a legendary duplicate now sells for 200 tokens, ten packs).
 Visual reference: AI Studio "Blookless" prototype (dark navy + neon, 6-tab bottom nav, due badge, album grid); screenshots in /workspace/study-app/aistudio/.
 
 ## UX direction (Alex, Oct 21 2026)
