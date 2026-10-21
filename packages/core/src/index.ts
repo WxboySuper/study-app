@@ -59,6 +59,45 @@ export {
 } from './critters';
 
 export {
+  PACKS,
+  buyPack,
+  findPackDef,
+  openPack,
+  packRarityOdds,
+  type BuyPackOptions,
+  type PackDef,
+  type PackPurchaseError,
+  type PackPurchaseFailure,
+  type PackPurchaseResult,
+  type PackPurchaseSuccess,
+} from './packs';
+
+export {
+  CRITTER_SELL_VALUES,
+  collectionEntry,
+  collectionProgress,
+  critterSellValue,
+  sellAllDuplicates,
+  sellDuplicate,
+  type Collection,
+  type CollectionEntry,
+  type CollectionProgress,
+  type SellAllResult,
+  type SellResult,
+} from './collection';
+
+export {
+  SPIN_JACKPOT,
+  SPIN_SEGMENTS,
+  SPIN_TOTAL_WEIGHT,
+  canSpin,
+  findSpinSegment,
+  spinDailyWheel,
+  spinSegmentIndex,
+  type SpinSegment,
+} from './spin';
+
+export {
   CATCHES,
   CATCH_TIER_ORDER,
   CATCH_TIERS,
