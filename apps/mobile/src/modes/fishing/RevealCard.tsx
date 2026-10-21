@@ -1,5 +1,5 @@
 import type { CatchTier, RolledCatch } from '@study-app/core';
-import { CATCH_TIERS, POWERUPS } from '@study-app/core';
+import { CATCH_TIERS, POWERUPS, findCritter, isCatchOutcome } from '@study-app/core';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, {
@@ -44,11 +44,11 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
   const weight = useSharedValue(0);
   const flash = useSharedValue(0);
 
-  const isFish = landed.kind === 'fish' || landed.kind === 'critter';
-  const tier: CatchTier | null = isFish ? landed.tier : null;
+  const isCatch = isCatchOutcome(landed);
+  const tier: CatchTier | null = isCatch ? landed.tier : null;
   const tierName = tier === null ? null : (CATCH_TIERS.find((entry) => entry.id === tier)?.name ?? tier);
   const color = tier === null ? '#208aef' : tierColor(tier);
-  const lbs = isFish ? landed.lbs : 0;
+  const lbs = isCatch ? landed.lbs : 0;
 
   useEffect(() => {
     if (!visible) {
@@ -118,7 +118,7 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
 
           <Text style={styles.name}>{nameOf(landed)}</Text>
 
-          {isFish ? (
+          {isCatch ? (
             <AnimatedTextInput
               editable={false}
               animatedProps={weightProps}
@@ -128,8 +128,8 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
             />
           ) : null}
 
-          {jokeOf(landed) === undefined ? null : (
-            <Text style={styles.joke}>“{jokeOf(landed)}”</Text>
+          {captionOf(landed) === undefined ? null : (
+            <Text style={styles.joke}>“{captionOf(landed)}”</Text>
           )}
 
           <Pressable
@@ -150,6 +150,7 @@ function assetIdOf(landed: RolledCatch): string {
   switch (landed.kind) {
     case 'fish':
     case 'critter':
+    case 'junk':
       return landed.catch.assetId;
     case 'new_lure':
       return 'special_new_lure';
@@ -167,6 +168,7 @@ function nameOf(landed: RolledCatch): string {
   switch (landed.kind) {
     case 'fish':
     case 'critter':
+    case 'junk':
       return landed.catch.name;
     case 'new_lure':
       return 'New Lure!';
@@ -179,9 +181,16 @@ function nameOf(landed: RolledCatch): string {
   }
 }
 
-/** The joke of a silly catch. */
-function jokeOf(landed: RolledCatch): string | undefined {
-  if (landed.kind === 'fish' || landed.kind === 'critter') {
+/**
+ * The caption of a catch: the joke of the silly catches and the vibe of the
+ * critters.
+ */
+function captionOf(landed: RolledCatch): string | undefined {
+  if (landed.kind === 'critter') {
+    const critter = findCritter(landed.critter.id);
+    return critter?.vibe;
+  }
+  if (landed.kind === 'fish' || landed.kind === 'junk') {
     return landed.catch.joke;
   }
   if (landed.kind === 'pack_ticket') {

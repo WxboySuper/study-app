@@ -2,6 +2,7 @@ import {
   buildQueue,
   computePayout,
   countStudyProgress,
+  isCatchOutcome,
   localDayKey,
   createFishingState,
   createRandomRng,
@@ -130,6 +131,9 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
                 critterChum: bait === 'critter_chum',
               },
         startRank: 1,
+        // The time of the session decides which packs are on sale, so the
+        // critters of a seasonal pack only swim up while it is available.
+        now: Date.now(),
         refillQueue: () => buildQueueNow(),
       }),
   );
@@ -222,7 +226,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
       }
       case 'reveal': {
         const landed = machine.reveal;
-        const tier = landed !== null && (landed.kind === 'fish' || landed.kind === 'critter') ? landed.tier : null;
+        const tier = landed !== null && isCatchOutcome(landed) ? landed.tier : null;
         if (tier === 'cotd' || tier === 'legend') {
           playSfx('legend');
           hapticLegend();
@@ -433,10 +437,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   const biggestTier = machine.session.biggest?.tier ?? null;
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
   const onTheLine = machine.onTheLine;
-  const hintTier =
-    onTheLine !== null && (onTheLine.kind === 'fish' || onTheLine.kind === 'critter')
-      ? onTheLine.tier
-      : null;
+  const hintTier = onTheLine !== null && isCatchOutcome(onTheLine) ? onTheLine.tier : null;
   const nothingToStudy = !loading && machine.session.queue.length === 0;
 
   return (

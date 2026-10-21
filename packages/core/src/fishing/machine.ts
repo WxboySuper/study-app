@@ -22,7 +22,15 @@ import type { CardState, ReviewLogRecord } from '../types';
 import type { CritterRarity } from '../critters';
 import { CATCH_TIER_ORDER, type CatchTier, type FishingSeason } from './catches';
 import { EMPTY_BAITS, type EquippedBaits } from './lures';
-import { createRollState, rollCatch, type Rng, type RollState, type RolledCatch } from './roll';
+import {
+  createRollState,
+  isCatchOutcome,
+  rollCatch,
+  type CatchOutcome,
+  type Rng,
+  type RollState,
+  type RolledCatch,
+} from './roll';
 
 /** The states of the fishing mode. */
 export type FishingPhase =
@@ -57,7 +65,7 @@ export interface CaughtCatch {
   name: string;
   tier: CatchTier;
   lbs: number;
-  kind: 'fish' | 'critter';
+  kind: 'fish' | 'critter' | 'junk';
   emoji: string;
   assetId: string;
   joke?: string;
@@ -128,6 +136,13 @@ export interface FishingSession {
   season: FishingSeason | null;
   /** The pack the critter catch is drawn from. */
   critterPackId: string;
+  /**
+   * The time the session started (epoch milliseconds).
+   *
+   * It decides which packs are on sale during the session, so a critter of
+   * a seasonal pack only swims up while its pack is available.
+   */
+  now: number;
 }
 
 /** The feedback of the last answer. */
@@ -211,6 +226,13 @@ export interface FishingMachineOptions {
   season?: FishingSeason | null;
   /** The pack the critter catch is drawn from. */
   critterPackId?: string;
+  /**
+   * The time the session starts (epoch milliseconds).
+   *
+   * It decides which packs are on sale during the session. Defaults to
+   * `Date.now()`.
+   */
+  now?: number;
   /** The scheduling states of the cards. */
   cardStates?: Iterable<[string, CardState]>;
 }
@@ -244,6 +266,7 @@ export function createFishingState(options: FishingMachineOptions): FishingState
     reviews: [],
     season: options.season ?? null,
     critterPackId: options.critterPackId ?? 'brain_buddies',
+    now: options.now ?? Date.now(),
   };
 
   return {
@@ -340,6 +363,7 @@ function handleBite(state: FishingState): FishingState {
     bonus: item?.bonus ?? false,
     season: session.season,
     critterPackId: session.critterPackId,
+    now: session.now,
   });
 
   const nextSession: FishingSession = { ...session, roll: roll.state };
@@ -446,9 +470,10 @@ function handleAnswer(
       bonus: item.bonus,
       season: session.season,
       critterPackId: session.critterPackId,
+      now: session.now,
     });
     nextSession = { ...session, roll: extra.state };
-    if (extra.outcome.kind === 'fish' || extra.outcome.kind === 'critter') {
+    if (isCatchOutcome(extra.outcome)) {
       landing.push(extra.outcome);
     }
     nextSession = { ...nextSession, roll: { ...nextSession.roll, powerup: null } };
@@ -475,7 +500,7 @@ function handleReelFinished(state: FishingState): FishingState {
   let biggest = session.biggest;
 
   for (const landing of state.landing) {
-    if (landing.kind === 'fish' || landing.kind === 'critter') {
+    if (isCatchOutcome(landing)) {
       const caught = toCaughtCatch(landing);
       haulLbs += caught.lbs;
       catches += 1;
@@ -519,7 +544,7 @@ function handleReelFinished(state: FishingState): FishingState {
 }
 
 /**
- * The catch the reveal card shows: the biggest fish of the landing (the
+ * The catch the reveal card shows: the biggest catch of the landing (the
  * Double Hook can land two) or the special that was caught.
  */
 function pickReveal(landing: readonly RolledCatch[]): RolledCatch | null {
@@ -530,11 +555,7 @@ function pickReveal(landing: readonly RolledCatch[]): RolledCatch | null {
       reveal = entry;
       continue;
     }
-    if (
-      (entry.kind === 'fish' || entry.kind === 'critter') &&
-      (reveal.kind === 'fish' || reveal.kind === 'critter') &&
-      entry.lbs > reveal.lbs
-    ) {
+    if (isCatchOutcome(entry) && isCatchOutcome(reveal) && entry.lbs > reveal.lbs) {
       reveal = entry;
     }
   }
@@ -572,7 +593,7 @@ function toQuestion(item: QueueItem): FishingQuestion {
 }
 
 /** Turns a rolled catch into the shape the UI and the session log use. */
-function toCaughtCatch(landing: Extract<RolledCatch, { kind: 'fish' | 'critter' }>): CaughtCatch {
+function toCaughtCatch(landing: CatchOutcome): CaughtCatch {
   return {
     id: landing.catch.id,
     name: landing.catch.name,

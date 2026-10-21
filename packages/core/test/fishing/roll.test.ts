@@ -13,6 +13,7 @@ import {
   createSeededRng,
   findPowerup,
   guaranteedLureCount,
+  isCatchOutcome,
   rollCatch,
   rollCritter,
   rollTier,
@@ -22,6 +23,11 @@ import {
   weightMultiplier,
 } from '../../src/fishing/roll';
 import { findsCatch, fixedRng, sequenceRng } from './helpers';
+
+/** Oct 21 2026: inside the window of the seasonal pack. */
+const INSIDE_THE_WINDOW = Date.UTC(2026, 9, 21, 12, 0, 0);
+/** Dec 24 2026: after the window of the seasonal pack. */
+const OUTSIDE_THE_WINDOW = Date.UTC(2026, 11, 24, 12, 0, 0);
 
 describe('the seeded RNG', () => {
   it('is deterministic', () => {
@@ -181,7 +187,7 @@ describe('the lure guarantee', () => {
     const state = createRollState({ correctCount: 4, luresReeledUp: 0, lureRank: 1 });
     const result = rollCatch(sequenceRng([0.1, 0.1, 0.1]), state);
 
-    expect(result.outcome.kind).toBe('fish');
+    expect(result.outcome.kind).toBe('junk');
   });
 
   it('never goes above the fifth rank', () => {
@@ -192,13 +198,33 @@ describe('the lure guarantee', () => {
 });
 
 describe('rolling a catch', () => {
-  it('rolls a fish of the tier', () => {
+  it('rolls the junk of the bottom tier', () => {
     const result = rollCatch(sequenceRng([0.1, 0.0, 0.5]), createRollState());
-    expect(result.outcome.kind).toBe('fish');
-    if (result.outcome.kind === 'fish') {
+    expect(result.outcome.kind).toBe('junk');
+    if (result.outcome.kind === 'junk') {
       expect(result.outcome.tier).toBe('trash');
       expect(result.outcome.catch.id).toBe('old_sneaker');
       expect(result.outcome.lbs).toBe(6);
+    }
+  });
+
+  it('rolls a critter of the tier', () => {
+    // The tier roll lands on "Easy One" and the pool holds the common
+    // critters of the packs that are on sale.
+    const result = rollCatch(sequenceRng([0.5, 0.0, 0.5]), createRollState(), { now: INSIDE_THE_WINDOW });
+    expect(result.outcome.kind).toBe('critter');
+    if (result.outcome.kind === 'critter') {
+      expect(result.outcome.tier).toBe('easy');
+      expect(result.outcome.critter.rarity).toBe('common');
+      expect(result.outcome.catch.critterId).toBe(result.outcome.critter.id);
+    }
+  });
+
+  it('only rolls the critters of the packs that are on sale', () => {
+    const result = rollCatch(sequenceRng([0.5, 0.0, 0.5]), createRollState(), { now: OUTSIDE_THE_WINDOW });
+    expect(result.outcome.kind).toBe('critter');
+    if (result.outcome.kind === 'critter') {
+      expect(result.outcome.critter.packId).toBe('brain_buddies');
     }
   });
 
@@ -253,24 +279,29 @@ describe('rolling a catch', () => {
     const result = rollCatch(sequenceRng([0.1, 0.0, 0.5]), state, { bonus: true });
 
     expect(result.rank).toBe(1);
-    if (result.outcome.kind === 'fish') {
+    if (isCatchOutcome(result.outcome)) {
       // At rank 5 the same roll would be an "Easy One".
       expect(result.outcome.tier).toBe('trash');
     }
   });
 
-  it('never rolls a critter or a ticket for a bonus card', () => {
+  it('never rolls a ticket for a bonus card', () => {
     for (let seed = 0; seed < 200; seed += 1) {
       const result = rollCatch(createSeededRng(seed), createRollState(), { bonus: true });
-      expect(result.outcome.kind).not.toBe('critter');
       expect(result.outcome.kind).not.toBe('pack_ticket');
     }
   });
 
-  it('falls back to a fish when the critter pack is empty', () => {
+  it('never rolls the critter special for a bonus card', () => {
+    // The critter share of the special table is zero on a bonus card.
+    const odds = specialOddsFor(createRollState(), { bonus: true });
+    expect(odds.critter).toBe(0);
+  });
+
+  it('falls back to the junk when the critter pack is empty', () => {
     const result = rollCatch(sequenceRng([0.97, 0.9, 0.9]), createRollState(), { critterPackId: 'nope' });
-    expect(result.outcome.kind).toBe('fish');
-    if (result.outcome.kind === 'fish') {
+    expect(result.outcome.kind).toBe('junk');
+    if (result.outcome.kind === 'junk') {
       expect(result.outcome.tier).toBe('trash');
     }
   });
@@ -278,7 +309,7 @@ describe('rolling a catch', () => {
   it('rolls a weight inside the range of the catch', () => {
     const rng = createSeededRng(3);
     const result = rollCatch(rng, createRollState());
-    if (result.outcome.kind === 'fish') {
+    if (isCatchOutcome(result.outcome)) {
       expect(result.outcome.lbs).toBeGreaterThanOrEqual(result.outcome.catch.minLbs);
       expect(result.outcome.lbs).toBeLessThanOrEqual(result.outcome.catch.maxLbs);
     }
@@ -318,7 +349,7 @@ describe('the powerups', () => {
 
     expect(result.luckyCharmUsed).toBe(true);
     expect(result.state.powerup).toBeNull();
-    if (result.outcome.kind === 'fish') {
+    if (isCatchOutcome(result.outcome)) {
       expect(result.outcome.tier).toBe('great');
     }
   });
@@ -335,7 +366,7 @@ describe('the powerups', () => {
     const state = createRollState({ powerup: 'heavy_sinker' });
     const result = rollCatch(sequenceRng([0.1, 0.0, 0.5]), state);
 
-    if (result.outcome.kind === 'fish') {
+    if (isCatchOutcome(result.outcome)) {
       expect(result.outcome.lbs).toBe(18);
     }
     expect(result.state.powerup).toBeNull();
@@ -345,7 +376,7 @@ describe('the powerups', () => {
     const state = createRollState({ baits: { shinySpinner: true, glowJig: false, critterChum: false } });
     const result = rollCatch(sequenceRng([0.1, 0.0, 0.5]), state);
 
-    if (result.outcome.kind === 'fish') {
+    if (isCatchOutcome(result.outcome)) {
       expect(result.outcome.lbs).toBe(7);
     }
   });
@@ -366,7 +397,7 @@ describe('the weight helpers', () => {
   });
 
   it('rolls a weight inside the range', () => {
-    const catchDef = findsCatch('synapse_narwhal');
+    const catchDef = findsCatch('critter_synapse_sprite');
     const lbs = rollWeight(createSeededRng(11), catchDef);
     expect(lbs).toBeGreaterThanOrEqual(catchDef.minLbs);
     expect(lbs).toBeLessThanOrEqual(catchDef.maxLbs);
@@ -392,5 +423,10 @@ describe('rolling a critter', () => {
 
   it('returns nothing for an empty pack', () => {
     expect(rollCritter(createSeededRng(5), 'nope')).toBeUndefined();
+  });
+
+  it('returns nothing for a pack that is not on sale', () => {
+    expect(rollCritter(createSeededRng(5), 'midterm_monsters', OUTSIDE_THE_WINDOW)).toBeUndefined();
+    expect(rollCritter(createSeededRng(5), 'midterm_monsters', INSIDE_THE_WINDOW)).toBeDefined();
   });
 });
