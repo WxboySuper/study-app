@@ -15,8 +15,19 @@ import { scopeTitle, useSettings } from '@/settings';
  */
 export default function HomeScreen() {
   const router = useRouter();
-  const { scope, setScope, sound, setSound, haptics, setHaptics, autoReel, setAutoReel, reduceMotion, setReduceMotion } =
-    useSettings();
+  const {
+    scope,
+    setScope,
+    sound,
+    setSound,
+    haptics,
+    setHaptics,
+    autoReel,
+    setAutoReel,
+    reduceMotion,
+    setReduceMotion,
+    systemReduceMotion,
+  } = useSettings();
 
   const [sets, setSets] = useState<LocalSet[]>([]);
   const [topics, setTopics] = useState<LocalTopic[]>([]);
@@ -159,7 +170,7 @@ export default function HomeScreen() {
           <Toggle label="Auto reel" value={autoReel} onChange={setAutoReel} />
           <Toggle
             label="Reduce motion"
-            value={reduceMotion ?? false}
+            value={reduceMotion ?? systemReduceMotion}
             onChange={(value) => {
               setReduceMotion(value);
             }}
