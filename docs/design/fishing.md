@@ -124,31 +124,106 @@ You equip one bait at a time on the pre-session screen. Prices stay below pack p
 ## 10. End and payout
 End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:id/end` → the payout screen: the fisher holds the biggest catch, the haul total, the fish caught by rarity, tokens earned (count-up, coin sfx) and a "Open pack" CTA. The client works offline. The outbox syncs and the server stays the source of truth for tokens.
 
-## 11. Rendering approach (React Native)
-Recommendation: **@shopify/react-native-skia** for the scene canvas, driven by **react-native-reanimated 4** shared values (already a dependency, with react-native-worklets). Regular RN views sit on top for the HUD, question note and answer tags, for accessibility and text layout.
-- Why Skia: water needs shader effects. A RuntimeEffect handles the wave displacement and caustics, Paths draw the bezier fishing line, and particles (splash, sparkles, rarity rays) and sprite atlases all run on the UI thread at 60fps. Pure Reanimated plus Views can't do convincing water or a line cheaply.
-- Not a game engine (no Phaser/WebView or react-native-game-engine). The scene is a few layers plus a state machine, and a WebView would hurt startup, haptics and offline use.
-- Layers, back to front: sky gradient → far shore parallax → water (shader + wave bands) → fish shadows (sprites under a water mask) → bobber/line/ripples → dock + fisher (sprite sheet) → particles → RN overlay.
-- A pure TS reducer (`fishingMachine.ts`) drives the state machine, which keeps it testable. Animations listen to the state and call `runOnJS` back on completion.
-- Performance budget: one Skia Canvas, fewer than 200 draw ops, textures in a single atlas of 2048² or smaller, and Reduce Motion support (shaders off, crossfades instead).
+## 11. Rendering approach (lean MVP)
+**Build it with plain React Native Views/Images and react-native-reanimated 4** (already installed). No Skia for v1.
+- Layers are absolutely positioned `<Image>`s: background PNG (sky, lake, dock) → fish-shadow sprite → bobber + line → critter-with-rod sprite → RN overlay (HUD, question note, tags, reveal card).
+- Water motion is two semi-transparent wave strips translating on loops, plus a bobbing bobber. The line is a rotated thin View, or a 2-point SVG via `react-native-svg` if it's already available. Splashes and ripples are scale/opacity tweens on a ring sprite.
+- HOOKED!, the reveal spring, shakes and the counter roll-up are all Reanimated `withSpring`/`withSequence`.
+- Frenzy is a rainbow-tinted background PNG crossfaded in, plus a `playbackRate` bump on the music.
+- The state machine is a pure TS reducer (`machine.ts`), so it's testable.
+- **Later polish (not MVP):** a Skia water shader, a bezier line, particles and caustics.
+- Target 1–2 coding-agent runs: run 1 builds the core logic, the scene and the loop; run 2 adds the shop baits, powerups, critter catches, sound and payout polish.
 
 ## 12. Sound and haptics
 - **Audio:** `expo-audio`. Short SFX are preloaded: cast whoosh, plop, nibble blip, bite splash, reel ratchet (loop), line snap twang, correct ding, wrong thunk, reveal fanfare (3 tiers), coin roll, and an ambient lake loop (water lap and birds, low volume). Mute toggle, ducked when other audio is playing.
 - **Haptics:** `expo-haptics`. Cast is Light, bite is Heavy, correct is Success notification, wrong is Error notification, reel is rhythmic Light every 120ms, and Legendary is Heavy×3. All can be turned off in settings.
 
 ## 13. Art plan
-Phase 1 uses placeholder art (junk items and fish can mostly come from Kenney packs), all **CC0**, credited in `assets/CREDITS.md` even though CC0 doesn't require it:
-- **Kenney.nl** (CC0): "Fish Pack" (fish sprites), "Pixel Platformer"/"Nature Kit" (dock, trees), and UI packs for the tags, ribbons and buttons.
-- **OpenGameArt.org**, filtered to CC0 only, for water tiles, splash and particle sprites.
-- **Freesound.org**, filtered to CC0 only, plus **Kenney audio packs** (CC0) for the SFX.
-- The fisher is a simple Kenney character recoloured. Rarity tints use a shader colour matrix, so one sprite can make a Chroma variant.
-Phase 2 is custom art: commissioned or generated critter-style fish in one consistent chunky, outlined style matching the Brain Buddies critters, delivered as 512² PNGs in an atlas. Seasonal skins come later.
+Simple 2D sprites, **AI-generated in one batch** from the prompts in §13a. Transparent PNGs go in `apps/mobile/assets/fishing/`, named by asset id. Until the art exists, the build uses coloured placeholder shapes (a tinted circle for each catch, with its emoji as a fallback) so it never blocks.
+Sizes: catches and lures 512×512, background 1080×1920 (portrait), UI pieces as noted. Shared style suffix for every prompt:
+> *"…, cute chunky cartoon game sprite, thick dark outline, flat bright colours, soft cel shading, centered, single object, transparent background, no text, mobile game asset, Blooket-like style"*
+
+### 13a. Art list (one prompt each; append the style suffix)
+**Scene**
+- `bg_lake_day`: "portrait mobile game background, calm cartoon lake under a bright blue sky with puffy clouds, distant green hills and pine trees, a wooden dock jutting in from the bottom-left, empty water in the middle" (1080×1920, opaque, no transparency)
+- `bg_lake_frenzy`: same scene as bg_lake_day but with a rainbow gradient sky and shimmering rainbow water, sparkles (1080×1920, opaque)
+- `wave_strip`: "seamless horizontal strip of light cartoon water wave crests, white and pale blue" (2048×128)
+- `fisher_rod`: "round blue blob critter mascot sitting and holding a fishing rod, cheerful" (512)
+- `bobber`: "red and white fishing bobber" (128)
+- `ripple_ring`: "white cartoon water ripple ring, top-down ellipse" (256)
+- `splash`: "cartoon water splash burst" (256)
+- `fish_shadow`: "dark blue-black fish silhouette seen from above underwater, soft edges" (512)
+**Junk (Trash)**
+- `junk_old_sneaker`: "soggy old sneaker dripping water"
+- `junk_soggy_waffle`: "soggy waffle dripping water"
+- `junk_lost_homework`: "crumpled wet homework paper with a red F"
+- `junk_two_of_clubs`: "single wet playing card, two of clubs"
+- `junk_rubber_duck`: "yellow rubber duck"
+- `junk_tangled_earbuds`: "tangled white earbuds"
+- `junk_half_pencil`: "broken half of a yellow pencil"
+- `junk_tin_can`: "rusty dented tin can with no label"
+- `junk_hall_pass`: "faded laminated school hall pass on a lanyard"
+**Easy One**
+- `fish_minnow_memo`: "tiny silver minnow holding a small sticky memo note"
+- `fish_flashcard_flounder`: "flat flounder fish shaped like an index flashcard"
+- `fish_bluegill_bookmark`: "bluegill fish with a ribbon bookmark tail"
+- `fish_goldfish_cracker`: "orange goldfish that looks like a smiling cracker snack"
+- `fish_lilypad_frog`: "green frog sitting on a lilypad"
+**Great Catch**
+- `fish_highlighter_trout`: "trout with neon yellow highlighter stripes"
+- `fish_wet_cat`: "very grumpy soaking wet cat"
+- `fish_sticky_note_sunfish`: "round sunfish covered in colourful sticky notes"
+- `fish_cram_carp`: "chubby carp with stuffed cheeks and tired eyes, carrying a stack of books"
+**Rare Find**
+- `fish_quizzical_catfish`: "catfish with a question mark on its forehead and long whiskers"
+- `fish_seal_of_approval`: "happy grey seal with a gold ribbon medal stamp"
+- `fish_margin_note_crab`: "red crab holding a pencil, notes doodled on its shell"
+- `fish_pop_quiz_puffer`: "inflated pufferfish with surprised face and a tiny quiz paper"
+- `fish_blobfish_burnout`: "droopy pink blobfish looking exhausted, with a tiny coffee cup"
+**Epic Grab**
+- `fish_lantern_of_lore`: "anglerfish whose glowing lure is a tiny open book"
+- `fish_octo_tutor`: "purple octopus wearing glasses, holding chalk and a tiny chalkboard"
+- `fish_thesis_tuna`: "large tuna wearing a graduation cap"
+- `fish_donut_blobfish`: "pink blobfish shaped like a frosted sprinkle donut"
+**Catch of the Day**
+- `fish_synapse_narwhal`: "narwhal whose horn crackles with blue neural lightning"
+- `fish_scholar_sturgeon`: "huge wise sturgeon with a monocle and bow tie"
+- `fish_megalodon_midterms`: "giant cartoon megalodon shark with a backpack, toothy grin"
+**Angler's Legend**
+- `fish_spaced_leviathan`: "majestic sea serpent made of starry space, glowing calendar runes"
+- `fish_golden_grade_koi`: "shining gold koi fish with an A+ pattern on its scales, glowing"
+- `fish_teachers_ufo`: "cartoon flying saucer with an apple on top and a tractor beam"
+- `fish_pumpkin_kraken`: "orange jack-o-lantern kraken with tentacles (Halloween)"
+- `fish_frost_whale`: "icy blue whale with snowflakes and a scarf (winter)"
+**Lures and baits**
+- `lure_r1_worm`: "pink wriggly worm on a hook"
+- `lure_r2_spinner`: "shiny silver spinner fishing lure"
+- `lure_r3_jig`: "glowing green jig fishing lure"
+- `lure_r4_golden_fly`: "golden fly-fishing lure with feathers, sparkles"
+- `lure_r5_legend`: "rainbow crystal legendary fishing lure, radiant glow"
+- `bait_critter_chum`: "small bucket of colourful fish food with a critter face sticker"
+**Specials and powerups**
+- `special_new_lure`: "treasure box bursting open with a glowing fishing lure"
+- `special_frenzy`: "rainbow swirl of water with sparkles and a lightning bolt"
+- `pu_double_hook`: "double fishing hook glowing blue"
+- `pu_lucky_charm`: "four-leaf clover charm"
+- `pu_second_chance`: "fishing line knotted with a glowing heart"
+- `pu_heavy_sinker`: "heavy iron fishing weight with a ×3 shine"
+- `special_pack_ticket`: "golden ticket with a card pack symbol"
+**UI**
+- `ui_hooked_banner`: "bold tilted comic burst banner shape, yellow with red outline, empty middle for text" (1024×512)
+- `ui_parchment_note`: "unrolled parchment paper note, empty" (1024×640)
+- `ui_tag_wood`: "rectangular wooden hanging tag with a rope hole, empty" (512×192)
+- `ui_reveal_rays`: "radial light rays burst, white, for tinting" (1024)
+- `ui_tier_ribbon`: "blank ribbon banner, white, for tinting" (512×128)
+- `ui_coin`: "gold token coin with a brain symbol" (256)
+Critter catches reuse the existing critter art from the pack system.
 
 ## 14. Out of scope (MVP)
 Multiplayer, real distractions against other players, timers, fish selling, an aquarium display, and quests.
 
 ## 15. Acceptance checklist
-- [ ] The scene is always visible and animates at 60fps on a mid-range Android phone (Pixel 6a class).
+- [ ] The scene is always visible and runs smoothly on a mid-range Android phone. It works with the placeholder fallback art.
 - [ ] The question shows as an in-scene note. There is never a full-screen quiz card.
 - [ ] The full loop works: cast → wait → HOOKED! → answer → reel + reveal, or got away → cast again.
 - [ ] The haul counter rolls up, and the End confirmation leads to the server payout screen.
@@ -165,9 +240,9 @@ Multiplayer, real distractions against other players, timers, fish selling, an a
 >
 > Build:
 > 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and catch list from §7, including junk, jokes, seasonal flags and critter links to the existing critter data), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critters/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End.
-> 2. Add `@shopify/react-native-skia`, `expo-haptics` and `expo-audio` to `apps/mobile` using `npx expo install`.
-> 3. `apps/mobile/src/modes/fishing/`: `FishingScreen.tsx` (wires the machine to the existing card queue/scheduler from `@study-app/core`), `LakeScene.tsx` (a single Skia Canvas: sky gradient, parallax shore, water RuntimeEffect shader with waves, fish shadow sprites, bezier line + bobber + ripples, dock + fisher, particles), `QuestionNote.tsx` (an in-scene parchment note plus 4 lure-tag answer buttons, as RN Views over the canvas, accessible, at least 56dp touch targets), `HookedBanner.tsx`, `RevealCard.tsx`, `FrenzyFx` (rainbow shader palette and music rate),  `Hud.tsx` (haul lbs roll-up, streak, due count, End button with a confirm sheet), `PayoutScreen.tsx` (summary with Play again = same mode+set in one tap, and Home), `sfx.ts` and `haptics.ts` (§10, with settings toggles), and Reduce Motion support. Add an expo-router route `app/fishing.tsx` and a "Fish" entry on the home screen.
-> 4. Assets: use only CC0 placeholders (Kenney.nl Fish Pack / Nature Kit / UI and audio packs, OpenGameArt or Freesound items explicitly marked CC0). If you can't download them, generate simple vector placeholders in Skia (coloured fish shapes tinted by rarity) and leave TODOs. Record every asset's source and licence in `apps/mobile/assets/CREDITS.md`.
+> 2. Add `expo-haptics` and `expo-audio` with `npx expo install`. **Do not add Skia.** Animate with react-native-reanimated (§11).
+> 3. `apps/mobile/src/modes/fishing/`: `FishingScreen.tsx` (wires the machine to the existing FSRS queue from `@study-app/core`), `LakeScene.tsx` (layered Images: background, wave strips, shadow, bobber, line, fisher; Reanimated loops), `HookedBanner.tsx`, `QuestionNote.tsx` (an in-scene parchment note with 4 wooden-tag answers, at least 56dp each), `RevealCard.tsx`, `Hud.tsx` (haul lbs roll-up, streak, due count, lure pips, End with confirm), `PayoutScreen.tsx` (tokens, haul, catches by tier, critters, tickets; **Play again** with the same mode and set in one tap, and Home), `sfx.ts`, `haptics.ts`, and Reduce Motion support. Add a `app/fishing.tsx` route and a one-tap start from Home: mode → set/topic/All → Go.
+> 4. Assets: load sprites from `apps/mobile/assets/fishing/<asset_id>.png` using the ids in §13a, through one `assets.ts` map. Any missing file falls back to a tier-coloured circle with an emoji, so the game runs with no art. Sound: CC0 SFX only (Kenney audio packs or Freesound CC0), credited in `assets/CREDITS.md`. Stay lean: if you're short on time, ship the core loop first (§3–6, 10) and leave the specials from §8–9 for run 2.
 > 5. No timers anywhere in the mode. HOOKED! shows a big banner and a tap to Reel (with an auto-advance setting). A wrong answer means GOT_AWAY: the line snaps, the catch is lost, and the correct answer shows for 1.5s. The SRS grade is derived exactly as SPEC describes. Bite wait is 0.8–2.5s.
 >
-> Constraints: TypeScript strict, no `any`. `pnpm -r typecheck`, `pnpm -r lint` and `pnpm -r test` must pass. Don't touch `.github/workflows/android-release.yml`. Keep each animation on the UI thread (Reanimated shared values and Skia), with no setState per frame. Commit in small logical commits with conventional-commit messages. When finished, summarise what was built, what's placeholder, and any acceptance-checklist items (§14) not met.
+> Constraints: TypeScript strict, no `any`. `pnpm -r typecheck`, `pnpm -r lint` and `pnpm -r test` must pass. Don't touch `.github/workflows/android-release.yml`. Keep each animation on the UI thread (Reanimated shared values), with no setState per frame. Commit in small logical commits with conventional-commit messages. When finished, summarise what was built, what's placeholder, and any acceptance-checklist items (§15) not met.
