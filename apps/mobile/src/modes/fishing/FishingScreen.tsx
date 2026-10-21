@@ -432,6 +432,26 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         </Pressable>
       ) : null}
 
+      {machine.phase === 'question' && machine.question === null ? (
+        <View style={styles.sheetBackdrop}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>No cards left</Text>
+            <Text style={styles.sheetBody}>
+              There is nothing left to study in this scope. End the session to see the haul.
+            </Text>
+            <View style={styles.sheetActions}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={onRequestEnd}
+                style={({ pressed }) => [styles.sheetButton, styles.sheetConfirm, pressed && styles.pressed]}
+              >
+                <Text style={styles.sheetButtonText}>End</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
       {machine.phase === 'end_confirm' ? (
         <View style={styles.sheetBackdrop}>
           <View style={styles.sheet}>
