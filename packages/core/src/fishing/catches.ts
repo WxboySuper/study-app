@@ -9,8 +9,8 @@
  * pack ticket).
  *
  * The data lives in the content registries (`src/content/critters.ts`,
- * `src/content/junk.ts`), this module only turns it into the catches of the
- * mode. See `docs/ADDING-CONTENT.md`.
+ * `src/content/junk.ts`, `src/content/fish.ts`), this module only turns it
+ * into the catches of the mode. See `docs/ADDING-CONTENT.md`.
  */
 
 import { CRITTERS, type CritterDef, type CritterRarity } from '../content/critters';
