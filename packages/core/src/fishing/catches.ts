@@ -14,26 +14,25 @@
  */
 
 import { CRITTERS, type CritterDef, type CritterRarity } from '../content/critters';
+import { FISHES, type FishDef } from '../content/fish';
 import { JUNK, type JunkDef } from '../content/junk';
-import { isAvailable, type ContentSeason, type ContentType } from '../content/types';
+import {
+  isAvailable,
+  CATCH_TIER_ORDER,
+  type CatchTier,
+  type ContentSeason,
+  type ContentType,
+} from '../content/types';
 import { findPack, isPackAvailable } from '../critters';
 
 /** The seven rarity tiers of a catch, from the most common to the rarest. */
-export type CatchTier = 'trash' | 'easy' | 'great' | 'rare' | 'epic' | 'cotd' | 'legend';
+export type { CatchTier } from '../content/types';
+
+/** The tiers in ladder order. */
+export { CATCH_TIER_ORDER };
 
 /** The seasons that unlock extra catches. */
 export type FishingSeason = ContentSeason;
-
-/** The tiers in ladder order. */
-export const CATCH_TIER_ORDER: readonly CatchTier[] = [
-  'trash',
-  'easy',
-  'great',
-  'rare',
-  'epic',
-  'cotd',
-  'legend',
-];
 
 /** The colour of a tier. */
 export interface CatchTierDef {
@@ -149,14 +148,38 @@ function critterCatch(critter: CritterDef): CatchDef {
 }
 
 /**
+ * Turns a fish into a catch: it swims up on its tier and weighs as much as
+ * the tier says.
+ */
+/* v8 ignore next -- the fish registry is empty until the first fish is added */
+function fishCatch(fish: FishDef): CatchDef {
+  return {
+    id: fish.id,
+    name: fish.name,
+    tier: fish.tier,
+    minLbs: fish.minLbs,
+    maxLbs: fish.maxLbs,
+    assetId: fish.assetId,
+    emoji: fish.emoji,
+    contentType: 'fish',
+    ...(fish.joke === undefined ? {} : { joke: fish.joke }),
+    ...(fish.seasonal === undefined ? {} : { seasonal: fish.seasonal }),
+    ...(fish.availableFrom === undefined ? {} : { availableFrom: fish.availableFrom }),
+    ...(fish.availableUntil === undefined ? {} : { availableUntil: fish.availableUntil }),
+  };
+}
+
+/**
  * Every catch of the game.
  *
- * The catalogue holds the junk of the bottom tier and every critter of the
- * catalogue. The critters of a pack that is not on sale are in the catalogue
- * too, but they never show up in a pool (see {@link isCatchAvailable}).
+ * The catalogue holds the junk of the bottom tier, the fish of the future
+ * registry and every critter of the catalogue. The critters of a pack that
+ * is not on sale are in the catalogue too, but they never show up in a pool
+ * (see {@link isCatchAvailable}).
  */
 export const CATCHES: readonly CatchDef[] = [
   ...JUNK.map(junkCatch),
+  ...FISHES.map(fishCatch),
   ...CRITTERS.map(critterCatch),
 ];
 

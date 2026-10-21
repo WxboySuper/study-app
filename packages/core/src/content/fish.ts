@@ -13,14 +13,14 @@
  * See `docs/ADDING-CONTENT.md`.
  */
 
-import type { ContentSeason } from './types';
+import type { CatchTier, ContentSeason } from './types';
 
 /** A fish (a catch of the tier ladder). */
 export interface FishDef {
   id: string;
   name: string;
   /** The tier of the catch (see `src/fishing/catches.ts`). */
-  tier: string;
+  tier: CatchTier;
   /** The lightest possible weight, in lbs. */
   minLbs: number;
   /** The heaviest possible weight, in lbs. */

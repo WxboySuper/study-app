@@ -202,9 +202,8 @@ bring the fish back:
 ```
 
 3. The pool of a tier is built from the registries, so the fish shows up as
-   soon as it is listed. The catch table (`src/fishing/catches.ts`) may need
-   one line to add the fish to the catalogue, the way the critters and the
-   junk are added.
+   soon as it is listed: it swims up on its tier, with the weight range of
+   the entry.
 
 ## The rules that must hold
 

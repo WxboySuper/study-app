@@ -124,6 +124,12 @@ describe('the catch list (§7)', () => {
     }
   });
 
+  it('builds the catalogue from the registries', () => {
+    // A fish of the (empty) fish registry would be a catch of its own, so
+    // adding one is a data change.
+    expect(CATCHES).toHaveLength(JUNK.length + FISHES.length + CRITTERS.length);
+  });
+
   it('fills every rarity tier with the critters of that rarity', () => {
     const easy = catchesOfTier('easy', { now: INSIDE_THE_WINDOW });
     expect(easy.map((entry) => entry.name)).toEqual([
