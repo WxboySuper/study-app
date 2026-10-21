@@ -136,6 +136,8 @@ export interface FishingFeedback {
   correct: boolean;
   /** The index of the correct answer, so the scene can highlight it. */
   answerIndex: number;
+  /** The index the player picked. */
+  choiceIndex: number;
   /** `true` when the player may retry the same card (Second Chance). */
   retry: boolean;
 }
@@ -398,7 +400,12 @@ function handleAnswer(
     roll: { ...state.session.roll, correctCount: state.session.correct + (correct ? 1 : 0) },
   };
 
-  const feedback: FishingFeedback = { correct, answerIndex, retry: false };
+  const feedback: FishingFeedback = {
+    correct,
+    answerIndex,
+    choiceIndex: event.choiceIndex,
+    retry: false,
+  };
 
   if (!correct) {
     // The Second Chance keeps the fish on the line so the card can be
