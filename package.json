@@ -1,0 +1,26 @@
+{
+  "name": "study-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Endless, untimed study game: Blooket-style game modes and collectibles plus Anki-style spaced repetition (FSRS).",
+  "packageManager": "pnpm@10.34.7",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present run build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "lint:packages": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "test:coverage": "pnpm --filter @study-app/core test:coverage"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.13.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.0",
+    "vitest": "^5.0.5"
+  }
+}
