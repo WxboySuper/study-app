@@ -18,9 +18,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { openLocalDatabase } from '@/db/local';
-import { readLastSpin, spinDailyWheelLocal } from '@/db/packs';
-import { readWallet } from '@/db/wallet';
+import { openLocalStore } from '@/db/local';
 import { playSfx, prepareSfx } from '@/modes/fishing/sfx';
 import { colors, fonts, radius, spinSegmentColors } from '@/theme';
 import { GameBackground, GameButton, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
@@ -51,12 +49,12 @@ export function SpinScreen() {
 
   const refresh = useCallback(async () => {
     try {
-      const db = await openLocalDatabase();
+      const store = await openLocalStore();
       const today = localDayKey(new Date());
-      setWallet(await readWallet(db, today));
+      setWallet(await store.readWallet(today));
 
       // The wheel can be spun once per local day.
-      const last = await readLastSpin(db);
+      const last = await store.readLastSpin();
       setAlreadySpun(!canSpin(last?.localDate ?? null, today));
       setWonToday(last !== null && last.localDate === today ? last.reward : null);
     } catch {
@@ -88,8 +86,8 @@ export function SpinScreen() {
     setMessage(null);
 
     try {
-      const db = await openLocalDatabase();
-      const result = await spinDailyWheelLocal(db, localDayKey(new Date()));
+      const store = await openLocalStore();
+      const result = await store.spinDailyWheel(localDayKey(new Date()));
 
       if (!result.ok) {
         setMessage(result.message);

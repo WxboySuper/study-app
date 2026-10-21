@@ -12,9 +12,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { openLocalDatabase } from '@/db/local';
-import { buyAndOpenPack } from '@/db/packs';
-import { readCollection, readWallet } from '@/db/wallet';
+import { openLocalStore } from '@/db/local';
 import { colors, fonts, radius } from '@/theme';
 import { GameBackground, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
 
@@ -44,11 +42,11 @@ export function PacksScreen() {
 
   const refresh = useCallback(async () => {
     try {
-      const db = await openLocalDatabase();
+      const store = await openLocalStore();
       const today = localDayKey(new Date());
-      const nextWallet = await readWallet(db, today);
+      const nextWallet = await store.readWallet(today);
       setWallet(nextWallet);
-      setOwned(await readCollection(db));
+      setOwned(await store.readCollection());
     } catch {
       // The shop stays empty when the local store cannot be read.
     }
@@ -71,8 +69,8 @@ export function PacksScreen() {
       setMessage(null);
 
       try {
-        const db = await openLocalDatabase();
-        const result = await buyAndOpenPack(db, pack.id, {
+        const store = await openLocalStore();
+        const result = await store.buyAndOpenPack(pack.id, {
           useTicket: useTicket && (wallet?.packTickets ?? 0) > 0,
         });
 

@@ -11,9 +11,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { openLocalDatabase } from '@/db/local';
-import { sellAllDuplicatesLocal, sellDuplicates } from '@/db/packs';
-import { readCollection, readWallet } from '@/db/wallet';
+import { openLocalStore } from '@/db/local';
 import { colors, fonts, radius, rarityColors, rarityLabels } from '@/theme';
 import { GameBackground, GameButton, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
 
@@ -37,9 +35,9 @@ export function CollectionScreen() {
 
   const refresh = useCallback(async () => {
     try {
-      const db = await openLocalDatabase();
-      setCollection(await readCollection(db));
-      setWallet(await readWallet(db, localDayKey(new Date())));
+      const store = await openLocalStore();
+      setCollection(await store.readCollection());
+      setWallet(await store.readWallet(localDayKey(new Date())));
     } catch {
       // The book stays empty when the local store cannot be read.
     }
@@ -72,8 +70,8 @@ export function CollectionScreen() {
   const onSell = useCallback(
     async (critterId: string, qty: number) => {
       try {
-        const db = await openLocalDatabase();
-        const result = await sellDuplicates(db, critterId, qty);
+        const store = await openLocalStore();
+        const result = await store.sellDuplicates(critterId, qty);
         if (result.ok) {
           setMessage(`+${result.tokens} tokens!`);
           setWallet(result.wallet);
@@ -90,8 +88,8 @@ export function CollectionScreen() {
 
   const onSellAll = useCallback(async () => {
     try {
-      const db = await openLocalDatabase();
-      const result = await sellAllDuplicatesLocal(db);
+      const store = await openLocalStore();
+      const result = await store.sellAllDuplicates();
       if (result.ok) {
         setMessage(`+${result.tokens} tokens!`);
         setWallet(result.wallet);

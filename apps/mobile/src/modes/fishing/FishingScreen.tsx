@@ -19,8 +19,7 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { settleLocalSession, readCollection, readWallet } from '@/db/wallet';
-import { enqueueReview, listLocalCardStates, listLocalCards, openLocalDatabase, upsertLocalCardState } from '@/db/local';
+import { openLocalStore } from '@/db/local';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
 
 import { HookedBanner } from './HookedBanner';
@@ -148,9 +147,9 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
     void (async () => {
       try {
-        const db = await openLocalDatabase();
-        const cards = await listLocalCards(db);
-        const states = await listLocalCardStates(db);
+        const store = await openLocalStore();
+        const cards = await store.listCards();
+        const states = await store.listCardStates();
         if (cancelled) {
           return;
         }
@@ -160,7 +159,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
         // The collection knows which critters are already owned: a critter
         // that is new gets the "NEW!" stamp on the reveal card.
-        const collection = await readCollection(db);
+        const collection = await store.readCollection();
         if (cancelled) {
           return;
         }
@@ -168,7 +167,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
         // The wallet knows how many pack tickets were already earned today:
         // the mode must not roll a second one.
-        const wallet = await readWallet(db, localDayKey(new Date()));
+        const wallet = await store.readWallet(localDayKey(new Date()));
         if (cancelled) {
           return;
         }
@@ -316,11 +315,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
     void (async () => {
       try {
-        const db = await openLocalDatabase();
+        const store = await openLocalStore();
         for (const review of fresh) {
           statesRef.current.set(review.cardId, review.state);
-          await upsertLocalCardState(db, review.state);
-          await enqueueReview(db, {
+          await store.upsertCardState(review.state);
+          await store.enqueueReview({
             ...review.log,
             clientId: `${review.cardId}-${review.reviewedAt}-${persistedRef.current}`,
             cardId: review.cardId,
@@ -406,9 +405,8 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
     const final = resultRef.current;
     void (async () => {
       try {
-        const db = await openLocalDatabase();
-        const settlement = await settleLocalSession(
-          db,
+        const store = await openLocalStore();
+        const settlement = await store.settleSession(
           sessionIdRef.current,
           'fishing',
           {
