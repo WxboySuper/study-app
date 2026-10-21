@@ -4,7 +4,9 @@ packages:
 
 # pnpm 10 blocks dependency lifecycle scripts by default. These are the only
 # ones we allow (esbuild ships the binary used by vite/vitest, @parcel/watcher
-# is used by Metro for file watching).
+# is used by Metro for file watching, workerd is the local Cloudflare
+# Workers runtime used by `wrangler dev`).
 onlyBuiltDependencies:
   - esbuild
   - "@parcel/watcher"
+  - workerd
