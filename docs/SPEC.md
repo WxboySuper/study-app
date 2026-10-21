@@ -22,7 +22,7 @@ A solo, **untimed** Blooket-style game that uses spaced repetition to pick your 
 - **No timers, no fail states.** A wrong answer slows progress but never ends the run.
 - **The scheduler picks the cards, the game picks the vibe.** FSRS chooses what you see, and the mode only decides how it looks.
 - **The payout comes at End**, so there's an exit ramp you choose and a dopamine hit when you stop, not while you keep going (healthy stopping cue).
-- **Phone first.** One-thumb play, native iOS/Android app (Expo), works offline.
+- **Phone first.** One-thumb play, native Android-first app (Expo; iOS later), works offline.
 - **Agent friendly.** AI agents can create and import sets over MCP.
 
 ## 3. Features
@@ -75,7 +75,9 @@ Blooket-style themed **packs** bought with tokens. Opening a pack gives one rand
 `tokens = 10·correct + 25·newCardsGraduated + 5·dueCleared + modeBonus(score)`, with a soft cap per day (diminishing returns after ~N tokens) so grinding doesn't beat spacing. You get one free pack each day you clear your due queue. **The payout is computed on the server** from the review logs, so the client can't pay itself.
 
 ## 4. Stack (Cloudflare free tier)
-- **Client:** native iOS + Android app built with **Expo** (React Native, TypeScript), **expo-router** for navigation, Zustand for state. Builds via **EAS** (free tier); dev via Expo Go / dev client. A web build via Expo (`expo export --platform web`) is optional, not a goal.
+- **Client:** native app built with **Expo** (React Native, TypeScript), **Android primary** (Alex is an Android user), iOS later. **expo-router** for navigation, Zustand for state. Dev via Expo Go / dev client.
+- **Android builds (no EAS cloud):** GitHub Actions on ubuntu runs `expo prebuild -p android` then `./gradlew assembleRelease`, signed with a release keystore from repo secrets (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`). The keystore itself is never committed; the master copy lives on the VPS at `~devrun/keys/` (mode 600). Local builds via `npx expo run:android` or gradle also work.
+- **Distribution:** `.github/workflows/android-release.yml` runs on tags `v*` and on manual dispatch, then uploads the signed APK to **GitHub Releases**. Alex installs it from the repo's Releases page on his phone. The repo is private, so he must be logged in to GitHub in the phone's browser; Android also needs "install unknown apps" allowed for that browser. A web build via Expo (`expo export --platform web`) is optional, not a goal.
 - **API:** a single Cloudflare **Worker** built on **Hono**.
 - **DB:** **D1** (SQLite) for everything. Durable Objects aren't needed for the MVP because it's single user. Add them later only if there's realtime or multiplayer.
 - **Offline:** **expo-sqlite** local store holding cards/state and an outbox review queue. Reviews are queued locally and synced in batches via `POST /sync`. Review logs are append-only, so merging is trivial.
@@ -83,7 +85,7 @@ Blooket-style themed **packs** bought with tokens. Opening a pack gives one rand
 - **Auth:** single user to start. The app calls the API with a bearer token stored in expo-secure-store (Cloudflare Access doesn't suit a native client); proper login later. The MCP server uses a bearer token in a Worker secret, with OAuth (`workers-oauth-provider`) later.
 - **MCP:** in the same Worker on `/mcp`, using `createMcpHandler` from `agents/mcp/server` plus `@modelcontextprotocol/server` (SDK v2). It's **stateless Streamable HTTP**. **Don't use `McpAgent`**, because it's deprecated and feature-frozen per the Cloudflare docs (Oct 2026).
 - **Push:** **expo-notifications**; the app registers an Expo push token with the API, and a Worker **Cron Trigger** sends via the Expo Push Service (handles APNs/FCM).
-- **CI:** GitHub Actions on Node 22/24/26, Vitest, typecheck/lint of the Expo app, `wrangler deploy` of the API on main; EAS builds triggered manually.
+- **CI:** GitHub Actions on Node 22/24/26, Vitest, typecheck/lint of the Expo app, `wrangler deploy` of the API on main; the signed Android APK is built by the tag-triggered release workflow.
 
 ## 5. Data model (D1)
 ```sql
@@ -167,7 +169,7 @@ Pack shop shows packs where `now` is inside `[available_from, available_until)` 
 | 29 | Custom domain `study.weatherboysuper.com` (see §8 DNS note) | 1 | infra |
 
 ## 8. Decisions (resolved Oct 21, 2026)
-- **Client platform (changed Oct 21):** real native mobile app with Expo for iOS + Android, not a PWA. Backend unchanged (Worker + Hono + D1 on workers.dev, plus MCP).
+- **Client platform (changed Oct 21):** real native mobile app with Expo, not a PWA. Android first; builds in GitHub Actions (no EAS), distributed as a signed APK on GitHub Releases. Backend unchanged (Worker + Hono + D1 on workers.dev, plus MCP).
 - **Critters:** Blooket-style themed packs bought with tokens; original Starter + Halloween 2026 packs above; Thanksgiving and Winter next; seasonal windows in the data model (Phase 1). Art style still open (leaning cute blob/pixel; placeholder art in MVP).
 - **Question types:** multiple choice only for MVP; schema has `type`/`render`/`answer_json` so short answer and math (KaTeX) land in Phase 3 without a migration rewrite.
 - **Domain:** Alex's personal domain, proposed **`study.weatherboysuper.com`**. DNS check (Oct 21): `weatherboysuper.com` is on **Hostinger DNS** (ns1/ns2.dns-parking.com), not Cloudflare, and `study.` doesn't exist yet. A Workers custom domain needs the zone on Cloudflare, so either (a) move the zone's nameservers to Cloudflare (free; must re-create existing records like `beta-gfc` first), or (b) ship on `*.workers.dev` first and add the subdomain later. Needs Alex's pick; not blocking Phase 0/1.
@@ -180,14 +182,14 @@ FIRST: read docs/SPEC.md in this repo; it is the source of truth. Keep docs/SPEC
 Hard rules:
 - MVP is MULTIPLE CHOICE ONLY. The schema may leave room for future question types (a `type` column defaulting to 'mc'), but implement no short-answer/math logic or UI.
 - The client is a NATIVE mobile app built with Expo (React Native, TypeScript), NOT a PWA. No Vite, no service worker, no vite-plugin-pwa.
-- The API deploy target is Cloudflare Workers on workers.dev (`workers_dev: true` in wrangler.jsonc, no custom domain). DO NOT deploy: do not run `wrangler deploy`, `wrangler login`, `eas build`, `eas login`, or create any remote resources or accounts.
+- The API deploy target is Cloudflare Workers on workers.dev (`workers_dev: true` in wrangler.jsonc, no custom domain). DO NOT deploy: do not run `wrangler deploy`, `wrangler login`, `eas build`, `eas login`, `gradlew`, or create any remote resources or accounts.
 - You are on branch `feat/scaffold-core`. Don't switch branches, push, or touch main. Commit locally in logical steps, because the harness pushes and opens the PR.
 - Before you finish, `pnpm install`, `pnpm -r typecheck`, `pnpm -r lint` and `pnpm -r test` must all pass. Commit pnpm-lock.yaml. No network calls in tests, no secrets in code, keep deps minimal.
 
 Build Phase 0 + the FSRS core of a personal study app: a solo, untimed, Blooket-style study game. Spaced repetition (FSRS) picks the cards, game modes are cosmetic, and rewards (tokens + collectible "critters") are paid out server-side when the player taps End. Single user for now.
 
 1. A pnpm workspace monorepo (Node >=22, TypeScript strict, pnpm-workspace.yaml):
-   - apps/mobile: an Expo app (current stable Expo SDK, created to match `create-expo-app` default-template conventions; use `node-linker=hoisted` in .npmrc so Expo/Metro works with pnpm). It uses expo-router with a single placeholder Home screen (app/index.tsx) holding a "Study All" button. Add expo-sqlite, with a small `src/db/local.ts` that opens a local DB and creates `local_cards`, `local_card_state` and `outbox` (pending review logs) tables. Add expo-notifications as a dependency and config plugin only, with a stub `src/notifications.ts` (requestPermission + getExpoPushToken) that is not called on startup. Add expo-secure-store for a future API token. Set app.json/app.config.ts name "study-app" with ios.bundleIdentifier/android.package `com.wxboysuper.studyapp`, plus an eas.json with development/preview/production profiles. Add the scripts `start`, `typecheck` (tsc --noEmit) and `lint`. The app imports from packages/core via the workspace.
+   - apps/mobile: an Expo app (current stable Expo SDK, created to match `create-expo-app` default-template conventions; use `node-linker=hoisted` in .npmrc so Expo/Metro works with pnpm). It uses expo-router with a single placeholder Home screen (app/index.tsx) holding a "Study All" button. Add expo-sqlite, with a small `src/db/local.ts` that opens a local DB and creates `local_cards`, `local_card_state` and `outbox` (pending review logs) tables. Add expo-notifications as a dependency and config plugin only, with a stub `src/notifications.ts` (requestPermission + getExpoPushToken) that is not called on startup. Add expo-secure-store for a future API token. Set app.json/app.config.ts name "study-app" with ios.bundleIdentifier/android.package `com.wxboysuper.studyapp` (no eas.json; builds use expo prebuild + gradle in CI). Add the scripts `start`, `typecheck` (tsc --noEmit) and `lint`. The app imports from packages/core via the workspace.
    - apps/api: a Cloudflare Worker using Hono, with wrangler.jsonc holding a D1 binding named DB (database_id placeholder "TODO"), `workers_dev: true`, `GET /api/health` returning {ok:true}, and a commented placeholder route for `/mcp`. Include a Vitest test for /api/health (call app.fetch directly, no network).
    - packages/core: pure TypeScript with no React/RN/Worker dependencies.
 2. A D1 migration `apps/api/migrations/0001_init.sql` with tables users, topics, sets, cards (with `type TEXT NOT NULL DEFAULT 'mc'`, `choices_json`), card_state (mirroring the ts-fsrs Card fields due, stability, difficulty, elapsed_days, scheduled_days, reps, lapses, state, last_review), review_logs (with UNIQUE client_id for idempotent sync), sessions, wallet, ledger, critters, user_critters, push_tokens (Expo push tokens), and api_tokens. Index card_state(due), cards(set_id) and review_logs(card_id, review).
@@ -197,8 +199,8 @@ Build Phase 0 + the FSRS core of a personal study app: a solo, untimed, Blooket-
    - `grade(card, state, rating, now)`, which wraps ts-fsrs `fsrs().next(...)` and returns the new state + log.
    - `computePayout({correct, graduated, dueCleared, modeScore, tokensToday})` with a soft daily cap.
    - Vitest tests for all of the above, with >=90% coverage on core.
-4. GitHub Actions (.github/workflows/ci.yml): pnpm install --frozen-lockfile, then typecheck, lint (an ESLint flat config at the root), and test on Node 22, 24 and 26. No EAS or deploy steps.
-5. A README with local dev commands (`pnpm --filter mobile start`, `pnpm --filter api dev`, `wrangler d1 migrations apply DB --local`, and a note that EAS builds are manual).
+4. GitHub Actions (.github/workflows/ci.yml): pnpm install --frozen-lockfile, then typecheck, lint (an ESLint flat config at the root), and test on Node 22, 24 and 26. No deploy or Android build steps (a separate android-release.yml is added by a maintainer).
+5. A README with local dev commands (`pnpm --filter mobile start`, `pnpm --filter api dev`, `wrangler d1 migrations apply DB --local`, and a note that Android release APKs are built by GitHub Actions on `v*` tags; locally use `npx expo run:android`).
 
 Finish by listing what was built, how to run it, and anything left TODO.
 ```
