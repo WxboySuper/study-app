@@ -158,6 +158,8 @@ export interface FishingState {
   onTheLine: RolledCatch | null;
   /** The catches that land with the reveal. */
   landing: RolledCatch[];
+  /** The catch the reveal card shows (the biggest one of the landing). */
+  reveal: RolledCatch | null;
   /** The feedback of the last answer. */
   feedback: FishingFeedback | null;
   /** `true` once the player confirmed the end of the session. */
@@ -252,6 +254,7 @@ export function createFishingState(options: FishingMachineOptions): FishingState
     question: null,
     onTheLine: null,
     landing: [],
+    reveal: null,
     feedback: null,
     ended: false,
     refillQueue: options.refillQueue ?? null,
@@ -296,6 +299,7 @@ export function fishingReducer(state: FishingState, event: FishingEvent): Fishin
           question: null,
           onTheLine: null,
           landing: [],
+          reveal: null,
           feedback: null,
         };
       }
@@ -348,6 +352,7 @@ function handleBite(state: FishingState): FishingState {
     question: item === null ? null : toQuestion(item),
     onTheLine: roll.outcome,
     landing: [],
+    reveal: null,
     feedback: null,
   };
 }
@@ -499,6 +504,7 @@ function handleReelFinished(state: FishingState): FishingState {
   return {
     ...state,
     phase: 'reveal',
+    reveal: pickReveal(state.landing),
     session: {
       ...session,
       haulLbs,
@@ -510,6 +516,30 @@ function handleReelFinished(state: FishingState): FishingState {
       biggest,
     },
   };
+}
+
+/**
+ * The catch the reveal card shows: the biggest fish of the landing (the
+ * Double Hook can land two) or the special that was caught.
+ */
+function pickReveal(landing: readonly RolledCatch[]): RolledCatch | null {
+  let reveal: RolledCatch | null = null;
+
+  for (const entry of landing) {
+    if (reveal === null) {
+      reveal = entry;
+      continue;
+    }
+    if (
+      (entry.kind === 'fish' || entry.kind === 'critter') &&
+      (reveal.kind === 'fish' || reveal.kind === 'critter') &&
+      entry.lbs > reveal.lbs
+    ) {
+      reveal = entry;
+    }
+  }
+
+  return reveal;
 }
 
 /** Takes the next card of the queue (and refills it when it runs dry). */

@@ -1,5 +1,5 @@
-import type { CatchTier } from '@study-app/core';
-import { CATCH_TIERS } from '@study-app/core';
+import type { CatchTier, RolledCatch } from '@study-app/core';
+import { CATCH_TIERS, POWERUPS } from '@study-app/core';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, {
@@ -19,7 +19,9 @@ import { Sprite } from './Sprite';
  * The reveal card of the fishing mode (docs/design/fishing.md §5).
  *
  * The catch springs out of the water onto a card with its rarity ribbon, its
- * weight (counting up) and, for the silly catches, a joke.
+ * weight (counting up) and, for the silly catches, a joke. The special
+ * catches (a new lure, the frenzy, a powerup and the pack ticket) get their
+ * own card.
  */
 
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
@@ -27,16 +29,8 @@ const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 export interface RevealCardProps {
   /** `true` while the card is on the screen. */
   visible: boolean;
-  /** The name of the catch. */
-  name: string;
-  /** The tier of the catch. */
-  tier: CatchTier;
-  /** The weight of the catch, in lbs. */
-  lbs: number;
-  /** The asset id of the sprite. */
-  assetId: string;
-  /** The joke of a silly catch. */
-  joke?: string | undefined;
+  /** The catch that was landed. */
+  catch: RolledCatch;
   /** `true` when the catch was caught for the first time. */
   isNew: boolean;
   /** Called when the player dismisses the card. */
@@ -45,23 +39,16 @@ export interface RevealCardProps {
   reduceMotion: boolean;
 }
 
-export function RevealCard({
-  visible,
-  name,
-  tier,
-  lbs,
-  assetId,
-  joke,
-  isNew,
-  onContinue,
-  reduceMotion,
-}: RevealCardProps) {
+export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMotion }: RevealCardProps) {
   const scale = useSharedValue(0.6);
   const weight = useSharedValue(0);
   const flash = useSharedValue(0);
 
-  const tierName = CATCH_TIERS.find((entry) => entry.id === tier)?.name ?? tier;
-  const color = tierColor(tier);
+  const isFish = landed.kind === 'fish' || landed.kind === 'critter';
+  const tier: CatchTier | null = isFish ? landed.tier : null;
+  const tierName = tier === null ? null : (CATCH_TIERS.find((entry) => entry.id === tier)?.name ?? tier);
+  const color = tier === null ? '#208aef' : tierColor(tier);
+  const lbs = isFish ? landed.lbs : 0;
 
   useEffect(() => {
     if (!visible) {
@@ -114,12 +101,14 @@ export function RevealCard({
 
       <View style={styles.center} pointerEvents="box-none">
         <Animated.View style={[styles.card, cardStyle]}>
-          <View style={[styles.ribbon, { backgroundColor: color }]}>
-            <Text style={styles.ribbonText}>{tierName}</Text>
-          </View>
+          {tierName === null ? null : (
+            <View style={[styles.ribbon, { backgroundColor: color }]}>
+              <Text style={styles.ribbonText}>{tierName}</Text>
+            </View>
+          )}
 
           <View style={styles.art}>
-            <Sprite assetId={assetId} size={140} />
+            <Sprite assetId={assetIdOf(landed)} size={140} />
             {isNew ? (
               <View style={styles.newStamp}>
                 <Text style={styles.newStampText}>NEW!</Text>
@@ -127,17 +116,22 @@ export function RevealCard({
             ) : null}
           </View>
 
-          <Text style={styles.name}>{name}</Text>
+          <Text style={styles.name}>{nameOf(landed)}</Text>
 
-          <AnimatedTextInput
-            editable={false}
-            animatedProps={weightProps}
-            underlineColorAndroid="transparent"
-            style={[styles.weight, { color }]}
-            accessibilityLabel={`${name} weighs ${Math.round(lbs).toLocaleString('en-US')} lbs`}
-          />
+          {isFish ? (
+            <AnimatedTextInput
+              editable={false}
+              animatedProps={weightProps}
+              underlineColorAndroid="transparent"
+              style={[styles.weight, { color }]}
+              accessibilityLabel={`${nameOf(landed)} weighs ${Math.round(lbs).toLocaleString('en-US')} lbs`}
+            />
+          ) : null}
 
-          {joke === undefined ? null : <Text style={styles.joke}>“{joke}”</Text>}
+          {jokeOf(landed) === undefined ? null : (
+            <Text style={styles.joke}>“{jokeOf(landed)}”</Text>
+          )}
+
           <Pressable
             accessibilityRole="button"
             onPress={onContinue}
@@ -149,6 +143,54 @@ export function RevealCard({
       </View>
     </View>
   );
+}
+
+/** The sprite of a catch. */
+function assetIdOf(landed: RolledCatch): string {
+  switch (landed.kind) {
+    case 'fish':
+    case 'critter':
+      return landed.catch.assetId;
+    case 'new_lure':
+      return 'special_new_lure';
+    case 'frenzy':
+      return 'special_frenzy';
+    case 'powerup':
+      return POWERUPS.find((entry) => entry.id === landed.powerup)?.assetId ?? 'pu_double_hook';
+    case 'pack_ticket':
+      return 'special_pack_ticket';
+  }
+}
+
+/** The name of a catch. */
+function nameOf(landed: RolledCatch): string {
+  switch (landed.kind) {
+    case 'fish':
+    case 'critter':
+      return landed.catch.name;
+    case 'new_lure':
+      return 'New Lure!';
+    case 'frenzy':
+      return 'FRENZY!';
+    case 'powerup':
+      return POWERUPS.find((entry) => entry.id === landed.powerup)?.name ?? 'Powerup';
+    case 'pack_ticket':
+      return 'Pack Ticket!';
+  }
+}
+
+/** The joke of a silly catch. */
+function jokeOf(landed: RolledCatch): string | undefined {
+  if (landed.kind === 'fish' || landed.kind === 'critter') {
+    return landed.catch.joke;
+  }
+  if (landed.kind === 'pack_ticket') {
+    return 'One free Brain Buddies pack.';
+  }
+  if (landed.kind === 'frenzy') {
+    return 'The next five catches come fast and heavy.';
+  }
+  return undefined;
 }
 
 const styles = StyleSheet.create({

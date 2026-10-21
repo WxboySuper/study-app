@@ -180,8 +180,9 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         };
       }
       case 'reveal': {
-        const landed = machine.session.log[machine.session.log.length - 1];
-        if (landed?.tier === 'cotd' || landed?.tier === 'legend') {
+        const landed = machine.reveal;
+        const tier = landed !== null && (landed.kind === 'fish' || landed.kind === 'critter') ? landed.tier : null;
+        if (tier === 'cotd' || tier === 'legend') {
           playSfx('legend');
           hapticLegend();
         } else {
@@ -200,7 +201,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
       default:
         return undefined;
     }
-  }, [machine.phase, machine.session.log]);
+  }, [machine.phase, machine.reveal]);
 
   // The sound of the catch that is on the line.
   useEffect(() => {
@@ -351,7 +352,6 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
     );
   }
 
-  const revealCatch = machine.session.log[machine.session.log.length - 1] ?? null;
   const biggestTier = machine.session.biggest?.tier ?? null;
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
   const onTheLine = machine.onTheLine;
@@ -392,14 +392,10 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         reduceMotion={reduceMotion}
       />
 
-      {machine.phase === 'reveal' && revealCatch !== null ? (
+      {machine.phase === 'reveal' && machine.reveal !== null ? (
         <RevealCard
           visible
-          name={revealCatch.name}
-          tier={revealCatch.tier}
-          lbs={revealCatch.lbs}
-          assetId={revealCatch.assetId}
-          joke={revealCatch.joke}
+          catch={machine.reveal}
           isNew={false}
           reduceMotion={reduceMotion}
           onContinue={() => {

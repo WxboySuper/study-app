@@ -210,6 +210,29 @@ describe('the fishing machine', () => {
 
     expect(state.session.packTickets).toBe(1);
     expect(toSessionResult(state).packTickets).toBe(1);
+    // The reveal card shows the ticket.
+    expect(state.reveal?.kind).toBe('pack_ticket');
+  });
+
+  it('reveals the biggest catch of the landing', () => {
+    let state = createState({ rng: sequenceRng([0.1, 0.0, 0.5]) });
+    state = {
+      ...state,
+      session: { ...state.session, roll: { ...state.session.roll, powerup: 'double_hook' } },
+    };
+
+    state = apply(state, { type: 'cast' }, { type: 'cast_landed' }, { type: 'bite' });
+    state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW });
+    state = apply(state, { type: 'reel_finished' });
+
+    expect(state.landing).toHaveLength(2);
+    expect(state.reveal).not.toBeNull();
+    if (state.reveal?.kind === 'fish') {
+      const weights = state.landing
+        .filter((entry): entry is Extract<typeof entry, { kind: 'fish' }> => entry.kind === 'fish')
+        .map((entry) => entry.lbs);
+      expect(state.reveal.lbs).toBe(Math.max(...weights));
+    }
   });
 
   it('loses a pack ticket when the answer is wrong', () => {

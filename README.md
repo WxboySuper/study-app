@@ -11,13 +11,13 @@ Anki-style spaced repetition (FSRS).
 - **SRS:** [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) `5.4.2`
   (pinned) in `packages/core`, shared by the app and the API.
 
-The full product plan lives in [docs/SPEC.md](docs/SPEC.md). This repository is
-currently at **Phase 0** (scaffold) plus the FSRS core.
+The full product plan lives in [docs/SPEC.md](docs/SPEC.md). The fishing mode
+is described in [docs/design/fishing.md](docs/design/fishing.md).
 
 ## Repository layout
 
 ```
-apps/mobile    Expo app (expo-router, expo-sqlite, expo-notifications, expo-secure-store)
+apps/mobile    Expo app (expo-router, expo-sqlite, expo-audio, expo-haptics, expo-notifications, expo-secure-store)
 apps/api       Cloudflare Worker (Hono) + D1 migrations
 packages/core  Pure TypeScript FSRS core (no React/RN/Worker dependencies)
 ```
@@ -42,10 +42,36 @@ pnpm install
 pnpm --filter mobile start      # Expo dev server (press "a" for Android)
 ```
 
-The app is a placeholder home screen with a **Study All** button that already
-reads the local SQLite store (`apps/mobile/src/db/local.ts`) and hands the cards
-to the FSRS queue builder of `packages/core`. The actual game screen lands in
-Phase 1.
+The app is the home screen of the app: pick a mode (**Fishing**), pick what to
+study (**All**, a topic or a set) and tap **Go**. The last choice is
+remembered, so the next session is one tap away.
+
+### The fishing mode
+
+`apps/mobile/src/modes/fishing/` holds the whole mode; the rules live in
+`packages/core/src/fishing/` and are shared with the API.
+
+```
+packages/core/src/fishing/
+  catches.ts   the seven tiers and the catch catalogue (junk, jokes, seasonal
+               catches and the critter catches)
+  roll.ts      the tier odds per lure rank, the weight roll, the special table
+               (new lure, frenzy, powerups, critters, pack tickets), the lure
+               guarantees and the bonus card rule
+  machine.ts   the pure reducer of the nine states of the mode
+  lures.ts     the shop of the mode (starting lures, baits, rods, dock skins)
+```
+
+The loop is `cast → wait → HOOKED! → answer → reel → reveal` (or
+`got away → cast again`). The catch is rolled when the fish is hooked, the
+next card of the FSRS queue is pulled at the same moment, and the question is
+shown as a parchment note inside the scene (never as a full screen card).
+There is no timer anywhere: the bite takes 0.8 to 2.5 seconds and the player
+decides when to reel in.
+
+The sprites do not exist yet, so every one of them falls back to a tier
+coloured circle with an emoji. The sounds are CC0 (Kenney) and are credited
+in `apps/mobile/assets/CREDITS.md`.
 
 ### API
 
@@ -105,9 +131,15 @@ It never builds an APK and never deploys.
 
 ## TODO
 
-- [ ] Phase 1: set import (paste/CSV/JSON), scope picker, Cast game mode,
-      session API (`start` / `end`), server side payout, offline outbox sync,
-      pack shop with the Starter and Halloween 2026 packs.
+- [ ] Phase 1: set import (paste/CSV/JSON), session API (`start` / `end`),
+      server side payout, offline outbox sync, pack shop with the Starter and
+      Halloween 2026 packs.
+- [x] Phase 1: the **Fishing** mode (scene, loop, HUD, payout screen).
+- [ ] The session API has to validate the critters and the pack tickets of a
+      fishing session and pay the tokens out (the mode shows the estimate of
+      `computePayout` until then).
+- [ ] The art of the mode (the PNGs of `docs/ART-HANDOFF.md`) and the shop of
+      the lures (the baits, the rods and the dock skins are data only).
 - [ ] Phase 2: MCP server on `/mcp`, push reminders, stats page, collection book.
 - [ ] Replace the `database_id` placeholder in `apps/api/wrangler.jsonc`.
 - [ ] Push the `expo-notifications` stub to the API (`push_tokens`) once the
