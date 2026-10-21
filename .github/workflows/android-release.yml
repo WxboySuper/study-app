@@ -31,6 +31,24 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      # Caches ~/.gradle (wrapper, deps, build cache)
+      - uses: gradle/actions/setup-gradle@v4
+
+      # node_modules cache on top of the pnpm store cache from setup-node
+      - uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: node-modules-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      # Native (C++) compile cache for RN / Hermes / CMake builds
+      - uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: android-ndk-arm64
+          max-size: 2G
+
       # ubuntu-latest ships the Android SDK; setup-android@v3 fails installing the removed 'tools' package
       - name: Android SDK env
         run: echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
@@ -46,7 +64,17 @@ jobs:
 
       - name: Gradle assembleRelease
         working-directory: apps/mobile/android
-        run: ./gradlew assembleRelease --no-daemon
+        # arm64-v8a only -> far less native compile and a much smaller APK
+        run: >-
+          ./gradlew assembleRelease
+          -PreactNativeArchitectures=arm64-v8a
+          --build-cache --parallel
+          "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+        env:
+          CMAKE_C_COMPILER_LAUNCHER: ccache
+          CMAKE_CXX_COMPILER_LAUNCHER: ccache
+          CCACHE_BASEDIR: ${{ github.workspace }}
+          CCACHE_NOHASHDIR: "true"
 
       - name: Sign APK with release keystore
         env:
