@@ -1,6 +1,8 @@
 import {
   buildQueue,
   computePayout,
+  countStudyProgress,
+  localDayKey,
   createFishingState,
   createRandomRng,
   fishingReducer,
@@ -14,6 +16,7 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import { settleLocalSession } from '@/db/wallet';
 import { enqueueReview, listLocalCardStates, listLocalCards, openLocalDatabase, upsertLocalCardState } from '@/db/local';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
 
@@ -63,6 +66,9 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   const statesRef = useRef<Map<string, CardState>>(new Map());
   const questionStartedAt = useRef(Date.now());
   const persistedRef = useRef(0);
+  const sessionIdRef = useRef(`fishing-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const [settledTokens, setSettledTokens] = useState<number | null>(null);
+  const [newCritterIds, setNewCritterIds] = useState<ReadonlySet<string>>(new Set());
 
   const queueScope = useMemo<QueueScope>(() => {
     switch (scope.kind) {
@@ -328,23 +334,60 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   }, [feedback]);
 
   const result = useMemo(() => toSessionResult(machine), [machine]);
-  const tokens = useMemo(
-    () =>
-      computePayout({
-        correct: result.correct,
-        graduated: 0,
-        dueCleared: 0,
-        modeScore: 0,
-        tokensToday: 0,
-      }).tokens,
-    [result.correct],
-  );
+  const estimate = useMemo(() => {
+    const progress = countStudyProgress(result.reviews);
+    return computePayout({
+      correct: result.correct,
+      graduated: progress.graduated,
+      dueCleared: progress.dueCleared,
+      modeScore: 0,
+      tokensToday: 0,
+    }).tokens;
+  }, [result.correct, result.reviews]);
+  const tokens = settledTokens ?? estimate;
+
+  // Credit the wallet and the collection once, when the session ends.
+  const ended = machine.ended;
+  const resultRef = useRef(result);
+  resultRef.current = result;
+  useEffect(() => {
+    if (!ended) {
+      return;
+    }
+    const final = resultRef.current;
+    void (async () => {
+      try {
+        const db = await openLocalDatabase();
+        const settlement = await settleLocalSession(
+          db,
+          sessionIdRef.current,
+          'fishing',
+          {
+            correct: final.correct,
+            reviews: final.reviews,
+            critterIds: final.critters.map((critter) => critter.critterId),
+            packTickets: final.packTickets,
+          },
+          localDayKey(new Date()),
+        );
+        if (settlement !== null) {
+          setSettledTokens(settlement.payout.tokens);
+          setNewCritterIds(
+            new Set(settlement.critters.filter((critter) => !critter.duplicate).map((critter) => critter.critterId)),
+          );
+        }
+      } catch {
+        // The estimate stays on screen; nothing was credited.
+      }
+    })();
+  }, [ended]);
 
   if (machine.ended) {
     return (
       <PayoutScreen
         result={result}
         tokens={tokens}
+        newCritterIds={newCritterIds}
         onPlayAgain={onPlayAgain}
         onHome={onHome}
         reduceMotion={reduceMotion}

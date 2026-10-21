@@ -148,3 +148,21 @@ export {
 } from './fishing/machine';
 
 export type { Card, Grade, ReviewLog, State } from 'ts-fsrs';
+
+export {
+  MAX_PACK_TICKETS_PER_DAY,
+  MAX_PACK_TICKETS_PER_SESSION,
+  NOOP_WALLET_SYNC,
+  countStudyProgress,
+  emptyWallet,
+  localDayKey,
+  rollWalletDay,
+  settleSession,
+  type SessionOutcome,
+  type SessionReviewLike,
+  type SettledCritter,
+  type Settlement,
+  type StudyProgress,
+  type WalletSnapshot,
+  type WalletSync,
+} from './wallet';
