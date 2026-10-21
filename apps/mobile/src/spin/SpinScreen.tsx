@@ -1,5 +1,6 @@
 import {
   SPIN_SEGMENTS,
+  canSpin,
   localDayKey,
   spinSegmentIndex,
   type WalletSnapshot,
@@ -18,7 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { openLocalDatabase } from '@/db/local';
-import { readDailySpin, spinDailyWheelLocal } from '@/db/packs';
+import { readLastSpin, spinDailyWheelLocal } from '@/db/packs';
 import { readWallet } from '@/db/wallet';
 import { playSfx, prepareSfx } from '@/modes/fishing/sfx';
 import { colors, font, radius, spinSegmentColors } from '@/theme';
@@ -52,11 +53,11 @@ export function SpinScreen() {
       const db = await openLocalDatabase();
       const today = localDayKey(new Date());
       setWallet(await readWallet(db, today));
-      const spun = await readDailySpin(db, today);
-      if (spun !== null) {
-        setWonToday(spun);
-        setAlreadySpun(true);
-      }
+
+      // The wheel can be spun once per local day.
+      const last = await readLastSpin(db);
+      setAlreadySpun(!canSpin(last?.localDate ?? null, today));
+      setWonToday(last !== null && last.localDate === today ? last.reward : null);
     } catch {
       // The wheel stays empty when the local store cannot be read.
     }

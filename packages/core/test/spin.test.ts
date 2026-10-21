@@ -5,11 +5,13 @@ import {
   SPIN_JACKPOT,
   SPIN_SEGMENTS,
   SPIN_TOTAL_WEIGHT,
+  applySpinReward,
   canSpin,
   findSpinSegment,
   spinDailyWheel,
   spinSegmentIndex,
 } from '../src/spin';
+import { emptyWallet } from '../src/wallet';
 
 describe('the daily wheel', () => {
   it('has the segments of the SPEC', () => {
@@ -66,5 +68,17 @@ describe('canSpin', () => {
     expect(canSpin(null, '2026-10-21')).toBe(true);
     expect(canSpin(undefined, '2026-10-21')).toBe(true);
     expect(canSpin('', '2026-10-21')).toBe(true);
+  });
+});
+
+describe('applySpinReward', () => {
+  it('credits the balance without touching the daily cap', () => {
+    const wallet = { ...emptyWallet('2026-10-21'), balance: 40, tokensToday: 480 };
+    const next = applySpinReward(wallet, 250);
+
+    expect(next.balance).toBe(290);
+    // The wheel is a bonus: it does not count toward the daily earning cap.
+    expect(next.tokensToday).toBe(480);
+    expect(wallet.balance).toBe(40);
   });
 });

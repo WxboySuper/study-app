@@ -11,6 +11,7 @@
  */
 
 import type { Rng } from './fishing/roll';
+import type { WalletSnapshot } from './wallet';
 
 /** One segment of the daily wheel. */
 export interface SpinSegment {
@@ -85,4 +86,14 @@ export function canSpin(lastSpinDay: string | null | undefined, today: string): 
     return true;
   }
   return lastSpinDay !== today;
+}
+
+/**
+ * Credits the reward of the wheel to a wallet.
+ *
+ * The tokens of the wheel do not count toward the daily earning cap of the
+ * study sessions, so only the balance of the wallet grows.
+ */
+export function applySpinReward(wallet: WalletSnapshot, reward: number): WalletSnapshot {
+  return { ...wallet, balance: wallet.balance + reward };
 }

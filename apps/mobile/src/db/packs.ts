@@ -1,6 +1,7 @@
 import type * as SQLite from 'expo-sqlite';
 
 import {
+  applySpinReward,
   buyPack,
   createRandomRng,
   findPackDef,
@@ -49,17 +50,24 @@ export async function ensurePacksSchema(db: SQLite.SQLiteDatabase): Promise<void
   await db.execAsync(PACKS_SCHEMA);
 }
 
-/** The reward of the wheel of a day, or `null` when it was not spun yet. */
-export async function readDailySpin(
-  db: SQLite.SQLiteDatabase,
-  today: string,
-): Promise<number | null> {
+/** A spin of the daily wheel. */
+export interface DailySpin {
+  /** The local day of the spin (`YYYY-MM-DD`). */
+  localDate: string;
+  /** The tokens the wheel paid. */
+  reward: number;
+}
+
+/** The last spin of the wheel, or `null` when it was never spun. */
+export async function readLastSpin(db: SQLite.SQLiteDatabase): Promise<DailySpin | null> {
   await ensurePacksSchema(db);
-  const row = await db.getFirstAsync<{ reward: number }>(
-    'SELECT reward FROM daily_spins WHERE local_date = ?',
-    today,
+  const row = await db.getFirstAsync<{ local_date: string; reward: number }>(
+    'SELECT local_date, reward FROM daily_spins ORDER BY local_date DESC LIMIT 1',
   );
-  return row === null ? null : row.reward;
+  if (row === null) {
+    return null;
+  }
+  return { localDate: row.local_date, reward: row.reward };
 }
 
 /** Why a pack could not be opened. */
@@ -378,7 +386,7 @@ export async function spinDailyWheelLocal(
     );
 
     // The wheel is a bonus: its tokens do not count toward the daily cap.
-    const next: WalletSnapshot = { ...wallet, balance: wallet.balance + reward };
+    const next = applySpinReward(wallet, reward);
     await writeWallet(tx, next);
 
     result = { ok: true, reward, wallet: next };

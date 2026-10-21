@@ -90,6 +90,7 @@ export {
   SPIN_JACKPOT,
   SPIN_SEGMENTS,
   SPIN_TOTAL_WEIGHT,
+  applySpinReward,
   canSpin,
   findSpinSegment,
   spinDailyWheel,
