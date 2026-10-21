@@ -29,9 +29,11 @@ export interface PayoutScreenProps {
   onHome: () => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
+  /** The critters that were new to the collection. */
+  newCritterIds?: ReadonlySet<string>;
 }
 
-export function PayoutScreen({ result, tokens, onPlayAgain, onHome, reduceMotion }: PayoutScreenProps) {
+export function PayoutScreen({ result, tokens, onPlayAgain, onHome, reduceMotion, newCritterIds }: PayoutScreenProps) {
   const counter = useSharedValue(0);
   const cardScale = useSharedValue(0.9);
 
@@ -112,7 +114,10 @@ export function PayoutScreen({ result, tokens, onPlayAgain, onHome, reduceMotion
               <View key={`${critter.critterId}-${critter.lbs}`} style={styles.critterRow}>
                 <Text style={styles.critterEmoji}>{critter.emoji}</Text>
                 <Text style={styles.critterName}>{critter.name}</Text>
-                <Text style={styles.critterRarity}>{critter.rarity}</Text>
+                <Text style={styles.critterRarity}>
+                  {newCritterIds?.has(critter.critterId) === true ? 'NEW · ' : ''}
+                  {critter.rarity}
+                </Text>
               </View>
             ))}
           </View>

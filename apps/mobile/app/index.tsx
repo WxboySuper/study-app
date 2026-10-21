@@ -1,10 +1,11 @@
-import { buildQueue } from '@study-app/core';
-import { useRouter } from 'expo-router';
+import { buildQueue, localDayKey } from '@study-app/core';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { listLocalCardStates, listLocalCards, listLocalSets, listLocalTopics, openLocalDatabase, type LocalSet, type LocalTopic } from '@/db/local';
+import { readCollection, readWallet } from '@/db/wallet';
 import { scopeTitle, useSettings } from '@/settings';
 
 /**
@@ -32,6 +33,33 @@ export default function HomeScreen() {
   const [sets, setSets] = useState<LocalSet[]>([]);
   const [topics, setTopics] = useState<LocalTopic[]>([]);
   const [status, setStatus] = useState('Loading…');
+  const [balance, setBalance] = useState<number | null>(null);
+  const [packTickets, setPackTickets] = useState(0);
+  const [critterCount, setCritterCount] = useState(0);
+
+  // The wallet is re-read whenever Home comes back into focus.
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      void (async () => {
+        try {
+          const db = await openLocalDatabase();
+          const wallet = await readWallet(db, localDayKey(new Date()));
+          const collection = await readCollection(db);
+          if (!cancelled) {
+            setBalance(wallet.balance);
+            setPackTickets(wallet.packTickets);
+            setCritterCount(collection.size);
+          }
+        } catch {
+          // The wallet stays hidden.
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, []),
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -90,6 +118,13 @@ export default function HomeScreen() {
         <Text style={styles.subtitle}>
           Endless, untimed study. The scheduler picks the cards, the game picks the vibe.
         </Text>
+
+        <View style={styles.wallet} accessibilityLabel={`${balance ?? 0} tokens`}>
+          <Text style={styles.walletTokens}>🪙 {balance ?? '…'}</Text>
+          <Text style={styles.walletExtra}>
+            🎟️ {packTickets} · 🐾 {critterCount} critters
+          </Text>
+        </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Mode</Text>
@@ -226,6 +261,25 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontSize: 16,
     lineHeight: 22,
+  },
+  wallet: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#16213e',
+    borderRadius: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  walletTokens: {
+    color: '#fcd34d',
+    fontSize: 24,
+    fontWeight: '800',
+  },
+  walletExtra: {
+    color: '#cbd5f5',
+    fontSize: 14,
+    fontWeight: '600',
   },
   card: {
     backgroundColor: '#16213e',
