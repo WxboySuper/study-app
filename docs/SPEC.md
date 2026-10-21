@@ -224,3 +224,11 @@ Tokens exist to keep Alex studying: rewarding but not too easy.
 - Keep the next pack ~1 session away: prices and payout tuned so a normal 10-15 min session buys about 1-2 packs, never 5.
 - Daily spin weighted low; jackpots rare so the main source stays studying.
 - Streak bonus for showing up daily (small, scales slowly) to reward consistency over marathon sessions.
+
+## Game mode lineup (Alex, Oct 21 2026)
+Build order: 1) Fishing Frenzy-style Cast (MVP), 2) Café, 3) Factory, 4) Gold Quest (major solo rework needed: no stealing from players; design solo chest events like doubles, swaps with a "rival" NPC or your own vault, bank-or-push-your-luck). Crazy Kingdom / Tower of Doom: parked.
+Pack prices: Brain Buddies 20, seasonal 25 (supersedes 50/75). Add chroma + mystical rarities later; buy price > sell value rule.
+Visual reference: AI Studio "Blookless" prototype (dark navy + neon, 6-tab bottom nav, due badge, album grid); screenshots in /workspace/study-app/aistudio/.
+
+## UX direction (Alex, Oct 21 2026)
+The AI Studio "Blookless" prototype is NOT the UX reference; Alex disliked its UI/UX. Game modes must look and play like real game scenes, close to Blooket's Fishing Frenzy (animated lake, casting, fish reveal, weight/haul) and Café (counter, customers lining up, serving food, upgrades), not a quiz card with a themed skin. Do a dedicated game-feel/UX design pass (scene layout, animations, juice, sound) before building each mode.
