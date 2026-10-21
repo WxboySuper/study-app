@@ -16,6 +16,19 @@ export interface PendingReview extends ReviewLogRecord {
 }
 
 const SCHEMA = `
+CREATE TABLE IF NOT EXISTS local_topics (
+  id    TEXT PRIMARY KEY NOT NULL,
+  name  TEXT NOT NULL,
+  color TEXT
+);
+
+CREATE TABLE IF NOT EXISTS local_sets (
+  id         TEXT PRIMARY KEY NOT NULL,
+  topic_id   TEXT,
+  title      TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS local_cards (
   id           TEXT PRIMARY KEY NOT NULL,
   set_id       TEXT NOT NULL,
@@ -79,7 +92,7 @@ export async function openLocalDatabase(): Promise<SQLite.SQLiteDatabase> {
 /** Reads every locally known card. */
 export async function listLocalCards(db: SQLite.SQLiteDatabase): Promise<StudyCard[]> {
   const rows = await db.getAllAsync<LocalCardRow>(
-    'SELECT id, set_id, topic_id, type, front, back, choices_json, answer_index FROM local_cards',
+    'SELECT id, set_id, topic_id, type, front, back, choices_json, answer_index FROM local_cards ORDER BY id ASC',
   );
 
   return rows.map((row) => ({
@@ -92,6 +105,80 @@ export async function listLocalCards(db: SQLite.SQLiteDatabase): Promise<StudyCa
     choices: row.choices_json ? (JSON.parse(row.choices_json) as string[]) : undefined,
     answerIndex: row.answer_index ?? undefined,
   }));
+}
+
+/** A set of the local store. */
+export interface LocalSet {
+  id: string;
+  topicId: string | null;
+  title: string;
+}
+
+/** A topic of the local store. */
+export interface LocalTopic {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+/** Reads every locally known set, sorted by title. */
+export async function listLocalSets(db: SQLite.SQLiteDatabase): Promise<LocalSet[]> {
+  const rows = await db.getAllAsync<LocalSetRow>(
+    'SELECT id, topic_id, title FROM local_sets ORDER BY title ASC, id ASC',
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    topicId: row.topic_id,
+    title: row.title,
+  }));
+}
+
+/** Reads every locally known topic, sorted by name. */
+export async function listLocalTopics(db: SQLite.SQLiteDatabase): Promise<LocalTopic[]> {
+  const rows = await db.getAllAsync<LocalTopicRow>(
+    'SELECT id, name, color FROM local_topics ORDER BY name ASC, id ASC',
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+  }));
+}
+
+/** Inserts or updates a set. */
+export async function upsertLocalSet(
+  db: SQLite.SQLiteDatabase,
+  set: LocalSet,
+  now: number = Date.now(),
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO local_sets (id, topic_id, title, updated_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       topic_id = excluded.topic_id,
+       title = excluded.title,
+       updated_at = excluded.updated_at`,
+    set.id,
+    set.topicId,
+    set.title,
+    now,
+  );
+}
+
+/** Inserts or updates a topic. */
+export async function upsertLocalTopic(db: SQLite.SQLiteDatabase, topic: LocalTopic): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO local_topics (id, name, color)
+     VALUES (?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       color = excluded.color`,
+    topic.id,
+    topic.name,
+    topic.color,
+  );
 }
 
 /** Reads the scheduling state of every local card. */
@@ -253,6 +340,18 @@ interface LocalCardRow {
   back: string;
   choices_json: string | null;
   answer_index: number | null;
+}
+
+interface LocalSetRow {
+  id: string;
+  topic_id: string | null;
+  title: string;
+}
+
+interface LocalTopicRow {
+  id: string;
+  name: string;
+  color: string | null;
 }
 
 interface LocalCardStateRow {

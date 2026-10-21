@@ -1,70 +1,209 @@
 import { buildQueue } from '@study-app/core';
-import { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { listLocalCardStates, listLocalCards, openLocalDatabase } from '@/db/local';
+import { listLocalCardStates, listLocalCards, listLocalSets, listLocalTopics, openLocalDatabase, type LocalSet, type LocalTopic } from '@/db/local';
+import { scopeTitle, useSettings } from '@/settings';
 
 /**
- * Placeholder home screen (Phase 0).
+ * The home screen (SPEC "Session flow").
  *
- * The "Study All" button already goes through the real pipeline: it reads the
- * local SQLite store and hands the cards to the FSRS queue builder of
- * `@study-app/core`. The actual game screen lands in Phase 1.
+ * One tap: pick a mode, pick what to study (all, a topic or a set) and go.
+ * The last choice is remembered, so "Play again" from a mode is a single tap.
  */
 export default function HomeScreen() {
-  const [status, setStatus] = useState('Nothing studied yet today.');
-  const [busy, setBusy] = useState(false);
+  const router = useRouter();
+  const {
+    scope,
+    setScope,
+    sound,
+    setSound,
+    haptics,
+    setHaptics,
+    autoReel,
+    setAutoReel,
+    reduceMotion,
+    setReduceMotion,
+    systemReduceMotion,
+  } = useSettings();
 
-  const onStudyAll = useCallback(async () => {
-    setBusy(true);
-    try {
-      const db = await openLocalDatabase();
-      const cards = await listLocalCards(db);
-      const states = await listLocalCardStates(db);
-      const queue = buildQueue(cards, states, Date.now(), {
-        newCap: 20,
-        scope: { kind: 'all' },
-      });
+  const [sets, setSets] = useState<LocalSet[]>([]);
+  const [topics, setTopics] = useState<LocalTopic[]>([]);
+  const [status, setStatus] = useState('Loading…');
 
-      setStatus(
-        queue.length === 0
-          ? 'No cards yet. Import a set to start studying.'
-          : `${queue.length} card${queue.length === 1 ? '' : 's'} queued.`,
-      );
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : 'Could not read the local database.');
-    } finally {
-      setBusy(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const db = await openLocalDatabase();
+        const cards = await listLocalCards(db);
+        const states = await listLocalCardStates(db);
+        const localSets = await listLocalSets(db);
+        const localTopics = await listLocalTopics(db);
+        if (cancelled) {
+          return;
+        }
+
+        setSets(localSets);
+        setTopics(localTopics);
+
+        const queue = buildQueue(cards, states, Date.now(), {
+          newCap: 20,
+          scope: { kind: 'all' },
+        });
+
+        setStatus(
+          queue.length === 0
+            ? 'No cards yet. Import a set to start studying.'
+            : `${queue.length} card${queue.length === 1 ? '' : 's'} queued.`,
+        );
+      } catch (error) {
+        if (!cancelled) {
+          setStatus(error instanceof Error ? error.message : 'Could not read the local database.');
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const go = useCallback(() => {
+    setScope(scope);
+    router.push({
+      pathname: '/fishing',
+      params:
+        scope.kind === 'all'
+          ? { kind: 'all' }
+          : { kind: scope.kind, id: scope.id, title: scope.title },
+    });
+  }, [router, scope, setScope]);
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.content}>
-        <Text style={styles.title}>study-app</Text>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.title}>Blookless</Text>
         <Text style={styles.subtitle}>
           Endless, untimed study. The scheduler picks the cards, the game picks the vibe.
         </Text>
 
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Mode</Text>
+          <View style={styles.modes}>
+            <View style={[styles.mode, styles.modeActive]}>
+              <Text style={styles.modeEmoji}>🎣</Text>
+              <Text style={styles.modeLabel}>Fishing</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Study</Text>
+
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => {
+              setScope({ kind: 'all' });
+            }}
+            style={[styles.choice, scope.kind === 'all' ? styles.choiceActive : null]}
+          >
+            <Text style={styles.choiceLabel}>All</Text>
+          </Pressable>
+
+          {topics.map((topic) => (
+            <Pressable
+              key={topic.id}
+              accessibilityRole="button"
+              onPress={() => {
+                setScope({ kind: 'topic', id: topic.id, title: topic.name });
+              }}
+              style={[
+                styles.choice,
+                scope.kind === 'topic' && scope.id === topic.id ? styles.choiceActive : null,
+              ]}
+            >
+              <Text style={styles.choiceLabel}>Topic: {topic.name}</Text>
+            </Pressable>
+          ))}
+
+          {sets.map((set) => (
+            <Pressable
+              key={set.id}
+              accessibilityRole="button"
+              onPress={() => {
+                setScope({ kind: 'set', id: set.id, title: set.title });
+              }}
+              style={[
+                styles.choice,
+                scope.kind === 'set' && scope.id === set.id ? styles.choiceActive : null,
+              ]}
+            >
+              <Text style={styles.choiceLabel}>Set: {set.title}</Text>
+            </Pressable>
+          ))}
+
+          {sets.length === 0 && topics.length === 0 ? (
+            <Text style={styles.hint}>
+              Only “All” is available until a set is imported. The last choice is remembered.
+            </Text>
+          ) : null}
+        </View>
+
         <Pressable
           accessibilityRole="button"
-          disabled={busy}
-          onPress={() => {
-            void onStudyAll();
-          }}
-          style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+          onPress={go}
+          style={({ pressed }) => [styles.goButton, pressed && styles.goPressed]}
         >
-          {busy ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.buttonLabel}>Study All</Text>
-          )}
+          <Text style={styles.goLabel}>Go · {scopeTitle(scope)}</Text>
         </Pressable>
 
         <Text style={styles.status}>{status}</Text>
-      </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Settings</Text>
+          <Toggle label="Sound" value={sound} onChange={setSound} />
+          <Toggle label="Haptics" value={haptics} onChange={setHaptics} />
+          <Toggle label="Auto reel" value={autoReel} onChange={setAutoReel} />
+          <Toggle
+            label="Reduce motion"
+            value={reduceMotion ?? systemReduceMotion}
+            onChange={(value) => {
+              setReduceMotion(value);
+            }}
+          />
+        </View>
+      </ScrollView>
     </SafeAreaView>
+  );
+}
+
+function Toggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      onPress={() => {
+        onChange(!value);
+      }}
+      style={styles.toggleRow}
+    >
+      <Text style={styles.toggleLabel}>{label}</Text>
+      <View style={[styles.toggle, value ? styles.toggleOn : styles.toggleOff]}>
+        <Text style={styles.toggleText}>{value ? 'on' : 'off'}</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -74,10 +213,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#0b1020',
   },
   content: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    gap: 16,
+    padding: 20,
+    paddingBottom: 48,
+    gap: 14,
   },
   title: {
     color: '#f8fafc',
@@ -89,18 +227,79 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
-  button: {
+  card: {
+    backgroundColor: '#16213e',
+    borderRadius: 18,
+    padding: 16,
+    gap: 8,
+  },
+  sectionTitle: {
+    color: '#94a3b8',
+    fontSize: 12,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginBottom: 4,
+  },
+  modes: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  mode: {
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: '#1f2937',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    minHeight: 52,
+  },
+  modeActive: {
+    borderColor: '#208aef',
+    backgroundColor: '#1d3557',
+  },
+  modeEmoji: {
+    fontSize: 20,
+  },
+  modeLabel: {
+    color: '#f8fafc',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  choice: {
+    minHeight: 48,
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#1f2937',
+    paddingHorizontal: 14,
+  },
+  choiceActive: {
+    borderColor: '#208aef',
+    backgroundColor: '#1d3557',
+  },
+  choiceLabel: {
+    color: '#f8fafc',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  hint: {
+    color: '#64748b',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  goButton: {
     backgroundColor: '#208aef',
     borderRadius: 16,
-    justifyContent: 'center',
     minHeight: 56,
-    paddingHorizontal: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  buttonPressed: {
-    opacity: 0.8,
+  goPressed: {
+    opacity: 0.85,
   },
-  buttonLabel: {
+  goLabel: {
     color: '#ffffff',
     fontSize: 18,
     fontWeight: '700',
@@ -108,5 +307,34 @@ const styles = StyleSheet.create({
   status: {
     color: '#cbd5f5',
     fontSize: 14,
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
+  toggleLabel: {
+    color: '#f8fafc',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  toggle: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    minWidth: 56,
+    alignItems: 'center',
+  },
+  toggleOn: {
+    backgroundColor: '#2f9e44',
+  },
+  toggleOff: {
+    backgroundColor: '#1f2937',
+  },
+  toggleText: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });
