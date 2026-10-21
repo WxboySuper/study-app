@@ -49,4 +49,15 @@ export default tseslint.config(
     files: ['**/*.mjs'],
     languageOptions: { sourceType: 'module' },
   },
+  {
+    // The build scripts of the app run in node.
+    files: ['**/scripts/**/*.{js,mjs,cjs}'],
+    languageOptions: {
+      globals: {
+        console: 'readonly',
+        process: 'readonly',
+        __dirname: 'readonly',
+      },
+    },
+  },
 );
