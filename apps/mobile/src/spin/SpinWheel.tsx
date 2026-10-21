@@ -2,7 +2,7 @@ import { SPIN_SEGMENTS } from '@study-app/core';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { type SharedValue, useAnimatedStyle } from 'react-native-reanimated';
 
-import { colors, font, spinSegmentColors } from '@/theme';
+import { colors, fonts, spinSegmentColors } from '@/theme';
 
 /**
  * The wheel of the daily spin.
@@ -113,7 +113,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#ffffff',
     fontSize: 16,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
     textShadowColor: 'rgba(0, 0, 0, 0.65)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 3,
@@ -137,7 +137,7 @@ const styles = StyleSheet.create({
   hubText: {
     color: colors.gold,
     fontSize: 16,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
     letterSpacing: 1,
   },
   pointer: {

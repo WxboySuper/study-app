@@ -14,7 +14,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { openLocalDatabase } from '@/db/local';
 import { sellAllDuplicatesLocal, sellDuplicates } from '@/db/packs';
 import { readCollection, readWallet } from '@/db/wallet';
-import { colors, font, radius, rarityColors, rarityLabels } from '@/theme';
+import { colors, fonts, radius, rarityColors, rarityLabels } from '@/theme';
+import { GameBackground, GameButton, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
 
 import { critterArt } from '../packs/critterArt';
 
@@ -104,46 +105,55 @@ export function CollectionScreen() {
   }, [refresh]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>COLLECTION</Text>
+    <GameBackground variant="collection">
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScreenHeader
+            title="COLLECTION"
+            subtitle="Your critters, and the duplicates you can sell"
+            right={
+              <GlassCard borderRadius={radius.chip} elevated={false} style={styles.headerChip}>
+                <TokenCounter value={wallet?.balance ?? 0} size={18} />
+              </GlassCard>
+            }
+          />
 
-        <View style={styles.wallet}>
-          <Text style={styles.walletValue}>🪙 {wallet?.balance ?? 0}</Text>
-          <Text style={styles.walletLabel}>tokens</Text>
-        </View>
-
-        <View style={styles.tabs}>
-          {PACKS.map((entry) => (
-            <Pressable
-              key={entry.id}
-              accessibilityRole="button"
-              onPress={() => {
-                setPackId(entry.id);
-              }}
-              style={[styles.tab, entry.id === pack.id ? styles.tabOn : null]}
-            >
-              <Text style={[styles.tabText, entry.id === pack.id ? styles.tabTextOn : null]}>
-                {entry.name}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={styles.progressCard}>
-          <Text style={styles.progressTitle}>{pack.name}</Text>
-          <View style={styles.progressBar}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${progress.total === 0 ? 0 : (progress.owned / progress.total) * 100}%` },
-              ]}
-            />
+          <View style={styles.tabs}>
+            {PACKS.map((entry) => (
+              <Pressable
+                key={entry.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected: entry.id === pack.id }}
+                onPress={() => {
+                  setPackId(entry.id);
+                }}
+                style={({ pressed }) => [
+                  styles.tab,
+                  entry.id === pack.id ? styles.tabOn : null,
+                  pressed ? styles.pressed : null,
+                ]}
+              >
+                <Text style={[styles.tabText, entry.id === pack.id ? styles.tabTextOn : null]}>
+                  {entry.name}
+                </Text>
+              </Pressable>
+            ))}
           </View>
-          <Text style={styles.progressText}>
-            {progress.owned}/{progress.total} collected
-          </Text>
-        </View>
+
+          <GlassCard style={styles.progressCard} tint={colors.collection}>
+            <Text style={styles.progressTitle}>{pack.name}</Text>
+            <View style={styles.progressBar}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${progress.total === 0 ? 0 : (progress.owned / progress.total) * 100}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressText}>
+              {progress.owned}/{progress.total} collected
+            </Text>
+          </GlassCard>
 
         {message === null ? null : (
           <Pressable
@@ -170,40 +180,35 @@ export function CollectionScreen() {
           ))}
         </View>
 
-        <Pressable
-          accessibilityRole="button"
+        <GameButton
+          label={duplicates === 0 ? 'No duplicates to sell' : `Sell all dupes (${duplicates})`}
+          variant="collection"
+          size="lg"
           disabled={duplicates === 0}
           onPress={() => {
             setSheet({ kind: 'all' });
           }}
-          style={({ pressed }) => [
-            styles.sellAll,
-            duplicates === 0 ? styles.sellAllOff : null,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.sellAllText}>
-            {duplicates === 0 ? 'No duplicates to sell' : `Sell all dupes (${duplicates})`}
-          </Text>
-        </Pressable>
-      </ScrollView>
-
-      {sheet === null ? null : (
-        <SellSheet
-          sheet={sheet}
-          collection={collection}
-          onCancel={() => {
-            setSheet(null);
-          }}
-          onSell={(critterId, qty) => {
-            void onSell(critterId, qty);
-          }}
-          onSellAll={() => {
-            void onSellAll();
-          }}
+          accessibilityLabel="Sell all duplicates"
         />
-      )}
-    </SafeAreaView>
+        </ScrollView>
+
+        {sheet === null ? null : (
+          <SellSheet
+            sheet={sheet}
+            collection={collection}
+            onCancel={() => {
+              setSheet(null);
+            }}
+            onSell={(critterId, qty) => {
+              void onSell(critterId, qty);
+            }}
+            onSellAll={() => {
+              void onSellAll();
+            }}
+          />
+        )}
+      </SafeAreaView>
+    </GameBackground>
   );
 }
 
@@ -276,29 +281,22 @@ function SellSheet({
   if (sheet.kind === 'all') {
     return (
       <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+        <GlassCard style={styles.sheet} padded>
           <Text style={styles.sheetTitle}>Sell every duplicate?</Text>
           <Text style={styles.sheetBody}>
             Every copy above the first one is sold. You keep one of every critter you own.
           </Text>
-          <Pressable
-            accessibilityRole="button"
+          <GameButton
+            label="Sell them all"
+            variant="collection"
+            size="lg"
             onPress={() => {
               onSellAll();
               onCancel();
             }}
-            style={({ pressed }) => [styles.sheetButton, styles.sheetConfirm, pressed && styles.pressed]}
-          >
-            <Text style={styles.sheetButtonText}>Sell them all</Text>
-          </Pressable>
-          <Pressable
-            accessibilityRole="button"
-            onPress={onCancel}
-            style={({ pressed }) => [styles.sheetButton, styles.sheetCancel, pressed && styles.pressed]}
-          >
-            <Text style={styles.sheetButtonText}>Keep them</Text>
-          </Pressable>
-        </View>
+          />
+          <GameButton label="Keep them" variant="ghost" size="md" onPress={onCancel} />
+        </GlassCard>
       </View>
     );
   }
@@ -310,7 +308,7 @@ function SellSheet({
 
   return (
     <View style={styles.backdrop}>
-      <View style={styles.sheet}>
+      <GlassCard style={styles.sheet} padded>
         <View style={styles.sheetArt}>
           {critterArt(sheet.critter) === null ? (
             <Text style={styles.emoji}>{sheet.critter.emoji}</Text>
@@ -329,39 +327,29 @@ function SellSheet({
 
         {duplicates === 0 ? null : (
           <>
-            <Pressable
-              accessibilityRole="button"
+            <GameButton
+              label={`Sell 1 (+${value})`}
+              variant="primary"
+              size="lg"
               onPress={() => {
                 onSell(sheet.critter.id, 1);
                 onCancel();
               }}
-              style={({ pressed }) => [styles.sheetButton, styles.sheetConfirm, pressed && styles.pressed]}
-            >
-              <Text style={styles.sheetButtonText}>Sell 1 (+{value})</Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
+            />
+            <GameButton
+              label={`Sell all ${duplicates} (+${duplicates * value})`}
+              variant="collection"
+              size="lg"
               onPress={() => {
                 onSell(sheet.critter.id, duplicates);
                 onCancel();
               }}
-              style={({ pressed }) => [styles.sheetButton, styles.sheetSell, pressed && styles.pressed]}
-            >
-              <Text style={styles.sheetButtonText}>
-                Sell all {duplicates} (+{duplicates * value})
-              </Text>
-            </Pressable>
+            />
           </>
         )}
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={onCancel}
-          style={({ pressed }) => [styles.sheetButton, styles.sheetCancel, pressed && styles.pressed]}
-        >
-          <Text style={styles.sheetButtonText}>Cancel</Text>
-        </Pressable>
-      </View>
+        <GameButton label="Cancel" variant="ghost" size="md" onPress={onCancel} />
+      </GlassCard>
     </View>
   );
 }
@@ -369,42 +357,18 @@ function SellSheet({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
+    padding: 16,
     paddingBottom: 48,
     gap: 14,
   },
-  title: {
-    color: colors.text,
-    fontSize: 32,
-    fontWeight: font.heavy,
-    letterSpacing: 2,
-    textAlign: 'center',
-  },
-  wallet: {
-    alignSelf: 'center',
+  headerChip: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderRadius: radius.chip,
-    borderWidth: 2,
-    borderColor: colors.border,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-  },
-  walletValue: {
-    color: colors.gold,
-    fontSize: 22,
-    fontWeight: font.heavy,
-  },
-  walletLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: font.bold,
-    textTransform: 'uppercase',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   tabs: {
     flexDirection: 'row',
@@ -413,69 +377,60 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     borderRadius: radius.button,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
     borderColor: colors.border,
-    borderBottomWidth: 5,
-    borderBottomColor: colors.backgroundDeep,
-    paddingVertical: 10,
+    paddingVertical: 11,
     paddingHorizontal: 6,
     alignItems: 'center',
   },
   tabOn: {
-    backgroundColor: colors.collection,
-    borderBottomColor: colors.collectionDark,
+    backgroundColor: 'rgba(52,211,153,0.2)',
+    borderColor: colors.collection,
   },
   tabText: {
     color: colors.textMuted,
     fontSize: 13,
-    fontWeight: font.bold,
+    fontFamily: fonts.titleSemi,
     textAlign: 'center',
   },
   tabTextOn: {
     color: '#ffffff',
   },
   progressCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 2,
-    borderColor: colors.border,
-    padding: 14,
     gap: 8,
   },
   progressTitle: {
     color: colors.text,
     fontSize: 16,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
   },
   progressBar: {
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.backgroundDeep,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: 'rgba(0,0,0,0.45)',
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 7,
+    borderRadius: 6,
     backgroundColor: colors.collection,
   },
   progressText: {
     color: colors.textMuted,
     fontSize: 13,
-    fontWeight: font.bold,
+    fontFamily: fonts.titleSemi,
   },
   message: {
     borderRadius: radius.button,
     backgroundColor: colors.success,
-    borderBottomWidth: 5,
-    borderBottomColor: colors.collectionDark,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 14,
   },
   messageText: {
     color: '#ffffff',
     fontSize: 15,
-    fontWeight: font.bold,
+    fontFamily: fonts.titleSemi,
     textAlign: 'center',
   },
   grid: {
@@ -485,9 +440,9 @@ const styles = StyleSheet.create({
   },
   tile: {
     width: '31%',
-    backgroundColor: colors.surface,
+    backgroundColor: 'rgba(255,255,255,0.05)',
     borderRadius: radius.tile,
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: colors.border,
     padding: 6,
     alignItems: 'center',
@@ -526,7 +481,7 @@ const styles = StyleSheet.create({
   countBadgeText: {
     color: '#ffffff',
     fontSize: 12,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
   },
   rarityChip: {
     borderRadius: radius.chip,
@@ -536,47 +491,27 @@ const styles = StyleSheet.create({
   rarityChipText: {
     color: '#ffffff',
     fontSize: 10,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
     letterSpacing: 0.5,
   },
   tileName: {
     color: colors.text,
     fontSize: 11,
-    fontWeight: font.bold,
+    fontFamily: fonts.titleSemi,
     textAlign: 'center',
   },
   tileNameMissing: {
     color: colors.textDim,
   },
-  sellAll: {
-    borderRadius: radius.button,
-    backgroundColor: colors.collection,
-    borderBottomWidth: 6,
-    borderBottomColor: colors.collectionDark,
-    minHeight: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sellAllOff: {
-    backgroundColor: colors.surfaceLight,
-    borderBottomColor: colors.backgroundDeep,
-  },
-  sellAllText: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: font.heavy,
-    letterSpacing: 0.5,
-  },
   pressed: {
-    opacity: 0.85,
-    transform: [{ translateY: 2 }],
+    opacity: 0.75,
   },
   pressedTile: {
     opacity: 0.8,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 3, 16, 0.8)',
+    backgroundColor: 'rgba(6, 7, 11, 0.86)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -584,12 +519,8 @@ const styles = StyleSheet.create({
   sheet: {
     width: '100%',
     maxWidth: 380,
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 3,
-    borderColor: colors.border,
-    padding: 18,
     gap: 10,
+    alignItems: 'stretch',
   },
   sheetArt: {
     alignSelf: 'center',
@@ -603,39 +534,13 @@ const styles = StyleSheet.create({
   sheetTitle: {
     color: colors.text,
     fontSize: 22,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
     textAlign: 'center',
   },
   sheetBody: {
     color: colors.textMuted,
     fontSize: 14,
-    fontWeight: font.medium,
+    fontFamily: fonts.bodySemi,
     textAlign: 'center',
-  },
-  sheetButton: {
-    borderRadius: radius.button,
-    minHeight: 50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetConfirm: {
-    backgroundColor: colors.primary,
-    borderBottomWidth: 5,
-    borderBottomColor: colors.primaryDark,
-  },
-  sheetSell: {
-    backgroundColor: colors.collection,
-    borderBottomWidth: 5,
-    borderBottomColor: colors.collectionDark,
-  },
-  sheetCancel: {
-    backgroundColor: colors.surfaceLight,
-    borderBottomWidth: 5,
-    borderBottomColor: colors.backgroundDeep,
-  },
-  sheetButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: font.heavy,
   },
 });

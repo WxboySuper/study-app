@@ -16,17 +16,33 @@ import type { PackDef } from './packs';
 /**
  * What one duplicate of a critter is worth (SPEC "Economy tuning").
  *
- * The values scale with the rarity of the critter, but they always stay
- * below the cheapest pack (20 tokens), so selling a duplicate is never a
- * better deal than opening a pack.
+ * The values scale with the rarity of the critter and follow the Blooket
+ * scale (Common 5, Uncommon 10, Rare 20, Epic 75, Legendary 200): every
+ * value is a multiple of 5, like every pack price and every prize of the
+ * daily wheel.
+ *
+ * Selling is never a way to farm: the expected value of one pack (the sum
+ * of the odds of the rarities times their sell value) stays below the price
+ * of that pack, so opening a pack is always the better deal.
+ *
+ * Sources: https://blooket.fandom.com/wiki/Blooks and
+ * https://blooket.fandom.com/wiki/Packs
  */
 export const CRITTER_SELL_VALUES: Readonly<Record<CritterRarity, number>> = {
-  common: 1,
-  uncommon: 2,
-  rare: 4,
-  epic: 8,
-  legendary: 15,
+  common: 5,
+  uncommon: 10,
+  rare: 20,
+  epic: 75,
+  legendary: 200,
 };
+
+/** The smallest amount of tokens a price or a reward is allowed to be. */
+export const TOKEN_STEP = 5;
+
+/** Whether a price or a reward is a whole number of "token steps". */
+export function isTokenMultiple(value: number): boolean {
+  return Number.isFinite(value) && value % TOKEN_STEP === 0;
+}
 
 /** How many of every critter the player owns. */
 export type Collection = ReadonlyMap<string, number>;

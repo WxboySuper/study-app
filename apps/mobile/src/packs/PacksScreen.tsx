@@ -9,23 +9,25 @@ import {
 } from '@study-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { openLocalDatabase } from '@/db/local';
 import { buyAndOpenPack } from '@/db/packs';
 import { readCollection, readWallet } from '@/db/wallet';
-import { colors, font, radius } from '@/theme';
+import { colors, fonts, radius } from '@/theme';
+import { GameBackground, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
 
-import { critterArt } from './critterArt';
+import { PackCard } from './PackCard';
 import { PackOpening } from './PackOpening';
 
 /**
  * The pack shop.
  *
- * Every pack is a card with its art, its price and (for a seasonal pack) the
- * countdown of its window. A tap buys the pack (with tokens or with a pack
- * ticket) and opens it: the pack shakes, bursts and shows the critter.
+ * Every pack is a big pouch in the gradient of its theme, with the critters
+ * that peek out of it, the price as a pill of tokens and (for a seasonal
+ * pack) a ribbon with the countdown. A tap buys the pack (with tokens or
+ * with a pack ticket) and opens it right there.
  */
 
 export function PacksScreen() {
@@ -60,8 +62,8 @@ export function PacksScreen() {
   );
 
   const onOpen = useCallback(
-    async (pack: PackDef) => {
-      if (busy) {
+    async (pack: PackDef, force = false) => {
+      if (busy && !force) {
         return;
       }
 
@@ -81,7 +83,11 @@ export function PacksScreen() {
         }
 
         setWallet(result.wallet);
-        setOpening({ pack, critter: findCritter(result.critterId) ?? null, duplicate: result.duplicate });
+        setOpening({
+          pack,
+          critter: findCritter(result.critterId) ?? null,
+          duplicate: result.duplicate,
+        });
       } catch {
         setMessage('The pack could not be opened.');
         setBusy(false);
@@ -96,134 +102,104 @@ export function PacksScreen() {
     void refresh();
   }, [refresh]);
 
+  const onOpenAnother = useCallback(() => {
+    const pack = opening?.pack;
+    if (pack === undefined) {
+      return;
+    }
+    setOpening(null);
+    setBusy(false);
+    void onOpen(pack, true);
+  }, [onOpen, opening?.pack]);
+
   const tickets = wallet?.packTickets ?? 0;
   const balance = wallet?.balance ?? 0;
   const ownedCount = useMemo(() => owned.size, [owned]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>PACK SHOP</Text>
+    <GameBackground variant="packs">
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScreenHeader
+            title="PACK SHOP"
+            subtitle="Open a pack, find a critter"
+            right={
+              <GlassCard borderRadius={radius.chip} elevated={false} style={styles.headerChip}>
+                <TokenCounter value={balance} size={18} />
+              </GlassCard>
+            }
+          />
 
-        <View style={styles.wallet}>
-          <View style={styles.walletCell}>
-            <Text style={styles.walletValue}>🪙 {balance}</Text>
-            <Text style={styles.walletLabel}>tokens</Text>
-          </View>
-          <View style={styles.walletDivider} />
-          <View style={styles.walletCell}>
-            <Text style={styles.walletValue}>🎟️ {tickets}</Text>
-            <Text style={styles.walletLabel}>tickets</Text>
-          </View>
-          <View style={styles.walletDivider} />
-          <View style={styles.walletCell}>
-            <Text style={styles.walletValue}>🐾 {ownedCount}</Text>
-            <Text style={styles.walletLabel}>critters</Text>
-          </View>
-        </View>
-
-        {tickets > 0 ? (
-          <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: useTicket }}
-            onPress={() => {
-              setUseTicket((current) => !current);
-            }}
-            style={[styles.ticketToggle, useTicket ? styles.ticketToggleOn : null]}
-          >
-            <Text style={styles.ticketToggleText}>
-              {useTicket ? '🎟️ Using a ticket (free)' : '🎟️ Use a ticket instead of tokens'}
-            </Text>
-          </Pressable>
-        ) : null}
-
-        {message === null ? null : (
-          <View style={styles.message}>
-            <Text style={styles.messageText}>{message}</Text>
-          </View>
-        )}
-
-        {PACKS.map((pack) => {
-          const available = isPackAvailable(pack, Date.now());
-          const affordable = balance >= pack.priceTokens || tickets > 0;
-
-          return (
-            <View key={pack.id} style={styles.packCard}>
-              <View style={styles.packHeader}>
-                <View style={styles.packHeaderText}>
-                  <Text style={styles.packName}>{pack.name}</Text>
-                  <Text style={styles.packMeta}>
-                    {pack.critters.length} critters · {pack.kind === 'seasonal' ? 'seasonal' : 'always on sale'}
-                  </Text>
-                </View>
-                {pack.kind === 'seasonal' ? (
-                  <View style={styles.seasonBadge}>
-                    <Text style={styles.seasonBadgeText}>SEASONAL</Text>
-                  </View>
-                ) : null}
-              </View>
-
-              <View style={styles.packArt}>
-                {pack.critters.slice(0, 6).map((critter) => {
-                  const art = critterArt(critter);
-                  const count = owned.get(critter.id) ?? 0;
-                  return art === null ? null : (
-                    <View key={critter.id} style={styles.packArtCell}>
-                      <Image source={art} style={styles.packSprite} />
-                      {count > 0 ? (
-                        <View style={styles.packArtBadge}>
-                          <Text style={styles.packArtBadgeText}>{count}</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  );
-                })}
-              </View>
-
-              <View style={styles.packFooter}>
-                <Text style={styles.price}>🪙 {pack.priceTokens}</Text>
-                {available ? (
-                  <PackCountdown until={pack.availableUntil} />
-                ) : (
-                  <Text style={styles.closed}>Closed</Text>
-                )}
-              </View>
-
-              <Pressable
-                accessibilityRole="button"
-                disabled={busy || !available || !affordable}
-                onPress={() => {
-                  void onOpen(pack);
-                }}
-                style={({ pressed }) => [
-                  styles.openButton,
-                  !available || !affordable ? styles.openButtonOff : null,
-                  pressed && styles.pressed,
-                ]}
-              >
-                <Text style={styles.openButtonText}>
-                  {!available
-                    ? 'Not on sale'
-                    : !affordable
-                      ? 'Not enough tokens'
-                      : useTicket && tickets > 0
-                        ? 'OPEN WITH TICKET'
-                        : 'OPEN PACK'}
-                </Text>
-              </Pressable>
+          <GlassCard style={styles.wallet} tint={colors.ticket}>
+            <View style={styles.walletCell}>
+              <TokenCounter value={balance} size={20} />
+              <Text style={styles.walletLabel}>tokens</Text>
             </View>
-          );
-        })}
-      </ScrollView>
+            <View style={styles.walletDivider} />
+            <View style={styles.walletCell}>
+              <Text style={styles.walletValue}>🎟️ {tickets}</Text>
+              <Text style={styles.walletLabel}>tickets</Text>
+            </View>
+            <View style={styles.walletDivider} />
+            <View style={styles.walletCell}>
+              <Text style={styles.walletValue}>🐾 {ownedCount}</Text>
+              <Text style={styles.walletLabel}>critters</Text>
+            </View>
+          </GlassCard>
 
-      <PackOpening
-        visible={opening !== null}
-        pack={opening?.pack ?? PACKS[0]!}
-        critter={opening?.critter ?? null}
-        duplicate={opening?.duplicate ?? false}
-        onContinue={onClose}
-      />
-    </SafeAreaView>
+          {tickets > 0 ? (
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityState={{ checked: useTicket }}
+              onPress={() => {
+                setUseTicket((current) => !current);
+              }}
+              style={({ pressed }) => [
+                styles.ticketToggle,
+                useTicket ? styles.ticketToggleOn : null,
+                pressed ? styles.pressed : null,
+              ]}
+            >
+              <Text style={styles.ticketToggleText}>
+                {useTicket ? '🎟️ Using a ticket (free)' : '🎟️ Use a ticket instead of tokens'}
+              </Text>
+            </Pressable>
+          ) : null}
+
+          {message === null ? null : (
+            <View style={styles.message}>
+              <Text style={styles.messageText}>{message}</Text>
+            </View>
+          )}
+
+          {PACKS.map((pack) => (
+            <PackCard
+              key={pack.id}
+              pack={pack}
+              owned={owned}
+              available={isPackAvailable(pack, Date.now())}
+              affordable={balance >= pack.priceTokens || tickets > 0}
+              busy={busy}
+              useTicket={useTicket}
+              tickets={tickets}
+              countdown={<PackCountdown until={pack.availableUntil} />}
+              onOpen={() => {
+                void onOpen(pack);
+              }}
+            />
+          ))}
+        </ScrollView>
+
+        <PackOpening
+          visible={opening !== null}
+          pack={opening?.pack ?? PACKS[0]!}
+          critter={opening?.critter ?? null}
+          duplicate={opening?.duplicate ?? false}
+          onContinue={onClose}
+          onOpenAnother={onOpenAnother}
+        />
+      </SafeAreaView>
+    </GameBackground>
   );
 }
 
@@ -268,27 +244,26 @@ function PackCountdown({ until }: { until: number | null }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
+    padding: 16,
     paddingBottom: 48,
     gap: 14,
   },
-  title: {
-    color: colors.text,
-    fontSize: 32,
-    fontWeight: font.heavy,
-    letterSpacing: 2,
-    textAlign: 'center',
+  headerChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  headerChipText: {
+    fontSize: 14,
   },
   wallet: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 2,
-    borderColor: colors.border,
-    paddingVertical: 12,
+    alignItems: 'center',
+    paddingVertical: 14,
   },
   walletCell: {
     flex: 1,
@@ -296,170 +271,66 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   walletDivider: {
-    width: 2,
+    width: 1,
+    height: 28,
     backgroundColor: colors.border,
-    marginVertical: 4,
   },
   walletValue: {
     color: colors.gold,
+    fontFamily: fonts.title,
     fontSize: 20,
-    fontWeight: font.heavy,
   },
   walletLabel: {
     color: colors.textDim,
-    fontSize: 11,
-    fontWeight: font.bold,
+    fontFamily: fonts.bodyBold,
+    fontSize: 10,
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
   ticketToggle: {
     borderRadius: radius.button,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
     borderColor: colors.border,
-    borderBottomWidth: 5,
-    borderBottomColor: colors.backgroundDeep,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 14,
     alignItems: 'center',
   },
   ticketToggleOn: {
-    backgroundColor: colors.ticket,
-    borderBottomColor: colors.secondaryDark,
+    backgroundColor: 'rgba(56,189,248,0.18)',
+    borderColor: colors.ticket,
+  },
+  pressed: {
+    opacity: 0.75,
   },
   ticketToggleText: {
     color: colors.text,
+    fontFamily: fonts.bodySemi,
     fontSize: 14,
-    fontWeight: font.bold,
   },
   message: {
     borderRadius: radius.button,
     backgroundColor: colors.danger,
-    borderBottomWidth: 5,
-    borderBottomColor: '#9f1239',
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 14,
   },
   messageText: {
     color: '#ffffff',
-    fontSize: 15,
-    fontWeight: font.bold,
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
     textAlign: 'center',
   },
-  packCard: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 2,
-    borderColor: colors.border,
-    padding: 14,
-    gap: 12,
-  },
-  packHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  packHeaderText: {
-    flex: 1,
-  },
-  packName: {
-    color: colors.text,
-    fontSize: 21,
-    fontWeight: font.heavy,
-  },
-  packMeta: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: font.medium,
-    marginTop: 2,
-  },
-  seasonBadge: {
-    backgroundColor: colors.shop,
-    borderRadius: radius.chip,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  seasonBadgeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: font.heavy,
-    letterSpacing: 1,
-  },
-  packArt: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 4,
-    backgroundColor: colors.backgroundDeep,
-    borderRadius: radius.tile,
-    padding: 10,
-  },
-  packArtCell: {
-    width: '30%',
-    aspectRatio: 1,
-  },
-  packSprite: {
-    width: '100%',
-    height: '100%',
-  },
-  packArtBadge: {
-    position: 'absolute',
-    right: 2,
-    top: 2,
-    minWidth: 20,
-    paddingHorizontal: 5,
-    borderRadius: radius.chip,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-  },
-  packArtBadgeText: {
-    color: '#ffffff',
-    fontSize: 11,
-    fontWeight: font.heavy,
-  },
-  packFooter: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  price: {
-    color: colors.gold,
-    fontSize: 22,
-    fontWeight: font.heavy,
-  },
   countdown: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontWeight: font.bold,
+    color: '#ffffff',
+    fontFamily: fonts.title,
+    fontSize: 12,
+    letterSpacing: 0.6,
   },
   closed: {
-    color: colors.danger,
-    fontSize: 13,
-    fontWeight: font.heavy,
-    textTransform: 'uppercase',
-  },
-  openButton: {
-    borderRadius: radius.button,
-    backgroundColor: colors.shop,
-    borderBottomWidth: 6,
-    borderBottomColor: colors.shopDark,
-    minHeight: 54,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  openButtonOff: {
-    backgroundColor: colors.surfaceLight,
-    borderBottomColor: colors.backgroundDeep,
-  },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ translateY: 2 }],
-  },
-  openButtonText: {
     color: '#ffffff',
-    fontSize: 18,
-    fontWeight: font.heavy,
-    letterSpacing: 1,
+    fontFamily: fonts.title,
+    fontSize: 12,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
 });

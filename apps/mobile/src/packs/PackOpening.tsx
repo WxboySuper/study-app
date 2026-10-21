@@ -1,8 +1,9 @@
 import type { CritterDef, PackDef } from '@study-app/core';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
+  FadeIn,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -10,21 +11,27 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { hapticImpact, hapticSuccess } from '@/haptics';
 import { useReduceMotion } from '@/settings';
-import { colors, font, radius, rarityColors, rarityLabels } from '@/theme';
+import { colors, fonts, rarityColors } from '@/theme';
+import { GameButton, GlassCard, Glow, LightRays, Particles, RarityBadge } from '@/ui';
 
 import { critterArt } from './critterArt';
+import { PackPouch } from './PackPouch';
+import { packTheme } from './packThemes';
 
 /**
  * The opening of a pack.
  *
- * The pack shakes, bursts open and shows the critter that came out: the card
- * glows in the color of the rarity and tells the player whether the critter
- * is NEW or a DUPLICATE.
+ * The pack flies to the middle of the screen, shakes harder and harder,
+ * the screen flashes, the rays of the rarity come out and the critter pops
+ * in with its label. A legendary is a show of its own: golden rays, more
+ * confetti and heavy haptics.
  */
 
-const SHAKE_MS = 720;
-const BURST_MS = 380;
+const FLY_MS = 420;
+const SHAKE_MS = 900;
+const FLASH_MS = 340;
 
 export interface PackOpeningProps {
   /** `true` while the opening is on the screen. */
@@ -37,319 +44,412 @@ export interface PackOpeningProps {
   duplicate: boolean;
   /** Called when the player closes the reveal. */
   onContinue: () => void;
+  /** Called when the player opens the same pack again. */
+  onOpenAnother?: () => void;
 }
 
-type OpeningPhase = 'shaking' | 'burst' | 'revealed';
+type OpeningPhase = 'idle' | 'fly' | 'shake' | 'flash' | 'reveal';
 
-export function PackOpening({ visible, pack, critter, duplicate, onContinue }: PackOpeningProps) {
+export function PackOpening({
+  visible,
+  pack,
+  critter,
+  duplicate,
+  onContinue,
+  onOpenAnother,
+}: PackOpeningProps) {
   const reduceMotion = useReduceMotion();
 
-  const [phase, setPhase] = useState<OpeningPhase>('shaking');
+  const [phase, setPhase] = useState<OpeningPhase>('idle');
+  const [burst, setBurst] = useState(0);
 
+  const backdrop = useSharedValue(0);
+  const fly = useSharedValue(0);
   const shake = useSharedValue(0);
-  const burst = useSharedValue(0);
-  const cardScale = useSharedValue(0);
-  const glow = useSharedValue(0);
+  const flash = useSharedValue(0);
+  const critterScale = useSharedValue(0);
+  const labelScale = useSharedValue(0);
+  const stampScale = useSharedValue(0);
 
+  const rarity = critter?.rarity ?? 'common';
+  const rarityColor = rarityColors[rarity];
+  const legendary = rarity === 'legendary';
+  const theme = packTheme(pack.id);
+  const art = critter === null ? null : critterArt(critter);
+
+  // The intensity of the show depends on the rarity.
+  const show = useMemo(
+    () => ({
+      rays: legendary ? 18 : 12,
+      rayOpacity: legendary ? 0.4 : rarity === 'epic' ? 0.3 : 0.2,
+      particles: legendary ? 64 : rarity === 'epic' ? 42 : rarity === 'rare' ? 32 : 24,
+      colors: legendary
+        ? [colors.gold, '#fff7d6', '#fbbf24', '#ffffff']
+        : [rarityColor, '#ffffff', colors.gold],
+      haptics: legendary ? 'heavy' : rarity === 'epic' ? 'medium' : 'light',
+    }),
+    [legendary, rarity, rarityColor],
+  );
+
+  // The whole show is one timeline.
   useEffect(() => {
     if (!visible) {
-      setPhase('shaking');
+      setPhase('idle');
+      backdrop.value = withTiming(0, { duration: 150 });
+      fly.value = 0;
       shake.value = 0;
-      burst.value = 0;
-      cardScale.value = 0;
-      glow.value = 0;
-      return;
+      flash.value = 0;
+      critterScale.value = 0;
+      labelScale.value = 0;
+      stampScale.value = 0;
+      return undefined;
     }
 
     if (reduceMotion) {
-      setPhase('revealed');
-      cardScale.value = 1;
-      glow.value = 1;
-      return;
+      setPhase('reveal');
+      backdrop.value = withTiming(1, { duration: 120 });
+      critterScale.value = withTiming(1, { duration: 160 });
+      labelScale.value = withTiming(1, { duration: 160 });
+      stampScale.value = withTiming(1, { duration: 160 });
+      setBurst((current) => current + 1);
+      return undefined;
     }
 
-    setPhase('shaking');
-    shake.value = withSequence(
-      withTiming(-1, { duration: 70, easing: Easing.linear }),
-      withTiming(1, { duration: 70, easing: Easing.linear }),
-      withTiming(-1, { duration: 70, easing: Easing.linear }),
-      withTiming(1, { duration: 70, easing: Easing.linear }),
-      withTiming(-1, { duration: 70, easing: Easing.linear }),
-      withTiming(1, { duration: 70, easing: Easing.linear }),
-      withTiming(0, { duration: 70, easing: Easing.linear }),
+    setPhase('fly');
+    backdrop.value = withTiming(1, { duration: 220 });
+    fly.value = withSequence(
+      withTiming(1, { duration: FLY_MS, easing: Easing.out(Easing.cubic) }),
     );
 
-    const burstTimer = setTimeout(() => {
-      setPhase('burst');
-      burst.value = withTiming(1, { duration: BURST_MS, easing: Easing.out(Easing.quad) });
-    }, SHAKE_MS);
+    const flyTimer = setTimeout(() => {
+      setPhase('shake');
+      shake.value = withTiming(1, { duration: SHAKE_MS, easing: Easing.linear });
+    }, FLY_MS);
+
+    const flashTimer = setTimeout(() => {
+      setPhase('flash');
+      flash.value = withSequence(
+        withTiming(1, { duration: 140, easing: Easing.in(Easing.quad) }),
+        withTiming(0, { duration: FLASH_MS - 140, easing: Easing.out(Easing.quad) }),
+      );
+      hapticImpact(legendary ? 'heavy' : 'medium');
+    }, FLY_MS + SHAKE_MS);
 
     const revealTimer = setTimeout(() => {
-      setPhase('revealed');
-    }, SHAKE_MS + BURST_MS);
+      setPhase('reveal');
+      setBurst((current) => current + 1);
+      hapticSuccess();
+    }, FLY_MS + SHAKE_MS + FLASH_MS);
 
     return () => {
-      clearTimeout(burstTimer);
+      clearTimeout(flyTimer);
+      clearTimeout(flashTimer);
       clearTimeout(revealTimer);
     };
-  }, [visible, reduceMotion, shake, burst, cardScale, glow]);
+  }, [
+    backdrop,
+    critterScale,
+    flash,
+    fly,
+    labelScale,
+    legendary,
+    reduceMotion,
+    shake,
+    stampScale,
+    visible,
+  ]);
 
+  // The pack shakes harder and harder, with a buzz on every beat.
   useEffect(() => {
-    if (phase !== 'revealed' || reduceMotion) {
-      return;
+    if (phase !== 'shake') {
+      return undefined;
     }
-    cardScale.value = withSequence(
-      withTiming(1.12, { duration: 140, easing: Easing.out(Easing.quad) }),
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let elapsed = 0;
+    let step = 0;
+    const gaps = [180, 150, 120, 100, 80, 70, 60, 50, 45, 40];
+
+    const tick = () => {
+      const gap = gaps[Math.min(step, gaps.length - 1)] ?? 40;
+      elapsed += gap;
+      step += 1;
+      const timer = setTimeout(() => {
+        hapticImpact(step % 4 === 0 ? 'medium' : 'light');
+        if (elapsed < SHAKE_MS) {
+          tick();
+        }
+      }, gap);
+      timers.push(timer);
+    };
+
+    tick();
+
+    return () => {
+      for (const timer of timers) {
+        clearTimeout(timer);
+      }
+    };
+  }, [phase]);
+
+  // The critter pops in, the label slams down and the stamp lands.
+  useEffect(() => {
+    if (phase !== 'reveal') {
+      return undefined;
+    }
+
+    critterScale.value = withSequence(
+      withTiming(1.16, { duration: 170, easing: Easing.out(Easing.quad) }),
       withSpring(1, { damping: 11, stiffness: 170 }),
     );
-    glow.value = withSequence(
-      withTiming(1, { duration: 200 }),
-      withTiming(0.55, { duration: 700 }),
+    labelScale.value = withSequence(
+      withTiming(2.4, { duration: 70, easing: Easing.out(Easing.quad) }),
+      withSpring(1, { damping: 15, stiffness: 230 }),
     );
-  }, [phase, reduceMotion, cardScale, glow]);
+    stampScale.value = withSequence(
+      withTiming(1.35, { duration: 90, easing: Easing.out(Easing.quad) }),
+      withSpring(1, { damping: 12, stiffness: 200 }),
+    );
 
-  const shakeStyle = useAnimatedStyle(
-    () => ({
-      transform: [
-        { translateX: shake.value * 10 },
-        { rotate: `${shake.value * 4}deg` },
-      ],
-    }),
-    [shake],
-  );
+    return undefined;
+  }, [critterScale, labelScale, phase, stampScale]);
 
-  const burstStyle = useAnimatedStyle(
-    () => ({
-      opacity: 1 - burst.value,
-      transform: [{ scale: 1 + burst.value * 0.6 }],
-    }),
-    [burst],
-  );
+  const backdropStyle = useAnimatedStyle(() => ({ opacity: backdrop.value }));
 
-  const cardStyle = useAnimatedStyle(
-    () => ({
-      opacity: phase === 'revealed' ? 1 : 0,
-      transform: [{ scale: cardScale.value }],
-    }),
-    [phase, cardScale],
-  );
+  const packStyle = useAnimatedStyle(() => ({
+    opacity:
+      phase === 'flash' || phase === 'reveal'
+        ? Math.max(0, 1 - Math.min(1, flash.value * 1.6))
+        : 1,
+    transform: [
+      { translateY: -140 + fly.value * 140 },
+      { scale: 0.55 + fly.value * 0.45 },
+      { rotate: `${-14 + fly.value * 14 + Math.sin(shake.value * 60) * shake.value * 9}deg` },
+      { translateX: Math.sin(shake.value * 46) * shake.value * 12 },
+    ],
+  }));
 
-  const glowStyle = useAnimatedStyle(
-    () => ({
-      opacity: glow.value,
-      transform: [{ scale: 0.7 + glow.value * 0.5 }],
-    }),
-    [glow],
-  );
+  const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value }));
+
+  const critterStyle = useAnimatedStyle(() => ({
+    opacity: phase === 'reveal' ? 1 : 0,
+    transform: [{ scale: critterScale.value }],
+  }));
+
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: phase === 'reveal' ? 1 : 0,
+    transform: [{ scale: labelScale.value }],
+  }));
+
+  const stampStyle = useAnimatedStyle(() => ({
+    opacity: phase === 'reveal' ? 1 : 0,
+    transform: [{ rotate: '-9deg' }, { scale: stampScale.value }],
+  }));
 
   if (!visible) {
     return null;
   }
 
-  const rarity = critter?.rarity ?? 'common';
-  const rarityColor = rarityColors[rarity];
-  const art = critter === null ? null : critterArt(critter);
-
   return (
-    <View style={styles.backdrop}>
-      {phase !== 'revealed' ? (
-        <Animated.View style={[styles.pack, shakeStyle, burstStyle]}>
-          <View style={styles.packArt}>
-            {pack.critters.slice(0, 4).map((packCritter) => {
-              const packArt = critterArt(packCritter);
-              return packArt === null ? null : (
-                <Image key={packCritter.id} source={packArt} style={styles.packSprite} />
-              );
-            })}
-          </View>
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Continue"
+      onPress={phase === 'reveal' ? onContinue : undefined}
+      style={styles.backdrop}
+    >
+      <Animated.View style={[StyleSheet.absoluteFill, styles.tint, backdropStyle]} />
+
+      {phase === 'reveal' ? (
+        <>
+          <LightRays
+            color={legendary ? colors.gold : rarityColor}
+            count={show.rays}
+            size={760}
+            opacity={show.rayOpacity}
+            style={styles.rays}
+          />
+          <Particles
+            trigger={burst}
+            count={show.particles}
+            colors={show.colors}
+            size={legendary ? 16 : 12}
+            distance={legendary ? 300 : 220}
+            gravity={legendary ? 320 : 260}
+          />
+        </>
+      ) : null}
+
+      {phase !== 'reveal' ? (
+        <Animated.View style={[styles.pack, packStyle]}>
+          <Glow color={theme.glow} size={280} opacity={0.55} style={styles.packGlow} />
+          <PackPouch gradient={theme.gradient} crimp={theme.crimp} width={168} height={196} />
           <Text style={styles.packName} numberOfLines={1}>
             {pack.name}
           </Text>
-          <View style={styles.packStripe} />
         </Animated.View>
       ) : null}
 
-      {phase === 'revealed' && critter !== null ? (
-        <Animated.View style={[styles.reveal, cardStyle]}>
-          <Animated.View
-            style={[
-              styles.glow,
-              { backgroundColor: rarityColor },
-              glowStyle,
-            ]}
-            pointerEvents="none"
-          />
+      {phase === 'reveal' && critter !== null ? (
+        <Animated.View
+          entering={FadeIn.duration(220)}
+          style={styles.revealWrap}
+          pointerEvents="box-none"
+        >
+          <Glow color={rarityColor} size={240} opacity={0.45} style={styles.critterGlow} />
 
-          <View style={[styles.badge, duplicate ? styles.badgeDuplicate : styles.badgeNew]}>
-            <Text style={styles.badgeText}>{duplicate ? 'DUPLICATE' : 'NEW!'}</Text>
-          </View>
+          <Animated.View style={styles.badgeWrap} pointerEvents="none">
+            <Animated.View
+              style={[
+                styles.stamp,
+                { backgroundColor: duplicate ? colors.textDim : colors.success },
+                stampStyle,
+              ]}
+            >
+              <Text style={styles.stampText}>{duplicate ? 'DUPLICATE' : 'NEW!'}</Text>
+            </Animated.View>
+          </Animated.View>
 
-          <View style={styles.artBox}>
-            {art === null ? (
-              <Text style={styles.emoji}>{critter.emoji}</Text>
-            ) : (
-              <Image source={art} style={styles.art} resizeMode="contain" />
-            )}
-          </View>
+          <GlassCard style={styles.reveal} tint={rarityColor}>
+            <Animated.View style={[styles.artBox, critterStyle]}>
+              {art === null ? (
+                <Text style={styles.emoji}>{critter.emoji}</Text>
+              ) : (
+                <Image source={art} style={styles.art} resizeMode="contain" />
+              )}
+            </Animated.View>
 
-          <Text style={[styles.rarity, { color: rarityColor }]}>{rarityLabels[rarity]}</Text>
-          <Text style={styles.name}>{critter.name}</Text>
-          <Text style={styles.vibe}>{critter.vibe}</Text>
+            <Animated.View style={labelStyle}>
+              <RarityBadge rarity={rarity} size="md" />
+              <Text style={styles.name}>{critter.name}</Text>
+              <Text style={styles.vibe}>{critter.vibe}</Text>
+            </Animated.View>
 
-          <Pressable
-            accessibilityRole="button"
-            onPress={onContinue}
-            style={({ pressed }) => [styles.continue, pressed && styles.pressed]}
-          >
-            <Text style={styles.continueText}>Nice!</Text>
-          </Pressable>
+            <View style={styles.actions} pointerEvents="box-none">
+              <GameButton
+                label="CONTINUE"
+                variant="primary"
+                size="lg"
+                onPress={onContinue}
+                accessibilityLabel="Continue"
+              />
+              {onOpenAnother === undefined ? null : (
+                <GameButton
+                  label="OPEN ANOTHER"
+                  variant="secondary"
+                  size="md"
+                  onPress={onOpenAnother}
+                  accessibilityLabel="Open another pack"
+                />
+              )}
+            </View>
+          </GlassCard>
         </Animated.View>
       ) : null}
-    </View>
+
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.flash, flashStyle]} />
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 3, 16, 0.92)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
+    backgroundColor: 'rgba(4, 5, 8, 0.55)',
+  },
+  tint: {
+    backgroundColor: 'rgba(6, 7, 11, 0.96)',
+  },
+  rays: {
+    top: '50%',
+    left: '50%',
+    marginTop: -380,
+    marginLeft: -380,
   },
   pack: {
-    width: 210,
-    height: 250,
-    borderRadius: 26,
-    backgroundColor: colors.surface,
-    borderWidth: 4,
-    borderColor: colors.border,
-    borderBottomWidth: 10,
-    borderBottomColor: colors.primaryDark,
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 12,
-    gap: 8,
+    gap: 10,
   },
-  packArt: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  packSprite: {
-    width: 78,
-    height: 78,
+  packGlow: {
+    position: 'absolute',
+    top: -30,
   },
   packName: {
     color: colors.text,
-    fontSize: 16,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
+    fontSize: 15,
+    letterSpacing: 1,
     textAlign: 'center',
   },
-  packStripe: {
-    position: 'absolute',
-    bottom: 10,
-    left: 18,
-    right: 18,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.primary,
+  revealWrap: {
+    width: '100%',
+    maxWidth: 380,
   },
   reveal: {
-    width: '100%',
-    maxWidth: 360,
-    borderRadius: radius.card,
-    backgroundColor: colors.surface,
-    borderWidth: 4,
-    borderColor: colors.border,
-    paddingVertical: 22,
-    paddingHorizontal: 18,
+    paddingVertical: 26,
+    paddingHorizontal: 20,
     alignItems: 'center',
+    gap: 10,
   },
-  glow: {
+  badgeWrap: {
     position: 'absolute',
-    top: -30,
-    alignSelf: 'center',
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    opacity: 0,
-  },
-  badge: {
-    position: 'absolute',
-    top: -18,
+    top: -22,
     right: 14,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    zIndex: 3,
+  },
+  stamp: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderWidth: 3,
     borderColor: colors.backgroundDeep,
-    transform: [{ rotate: '10deg' }],
   },
-  badgeNew: {
-    backgroundColor: colors.success,
-  },
-  badgeDuplicate: {
-    backgroundColor: colors.textDim,
-  },
-  badgeText: {
+  stampText: {
     color: '#ffffff',
-    fontSize: 14,
-    fontWeight: font.heavy,
-    letterSpacing: 1,
+    fontFamily: fonts.title,
+    fontSize: 15,
+    letterSpacing: 1.5,
+  },
+  critterGlow: {
+    position: 'absolute',
+    top: 18,
+    alignSelf: 'center',
   },
   artBox: {
-    width: 160,
-    height: 160,
+    width: 180,
+    height: 180,
     alignItems: 'center',
     justifyContent: 'center',
   },
   art: {
-    width: 160,
-    height: 160,
+    width: 180,
+    height: 180,
   },
   emoji: {
-    fontSize: 84,
-  },
-  rarity: {
-    fontSize: 15,
-    fontWeight: font.heavy,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
+    fontSize: 96,
   },
   name: {
     color: colors.text,
-    fontSize: 24,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
+    fontSize: 26,
     textAlign: 'center',
-    marginTop: 2,
+    marginTop: 6,
   },
   vibe: {
     color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
     fontSize: 14,
-    fontWeight: font.medium,
     textAlign: 'center',
-    marginTop: 4,
+    marginTop: 2,
   },
-  continue: {
-    marginTop: 18,
+  actions: {
     width: '100%',
-    minHeight: 52,
-    borderRadius: radius.button,
-    backgroundColor: colors.primary,
-    borderBottomWidth: 6,
-    borderBottomColor: colors.primaryDark,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: 12,
+    gap: 10,
   },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ translateY: 2 }],
-  },
-  continueText: {
-    color: '#ffffff',
-    fontSize: 18,
-    fontWeight: font.heavy,
+  flash: {
+    backgroundColor: '#ffffff',
   },
 });

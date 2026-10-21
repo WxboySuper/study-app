@@ -1,20 +1,56 @@
-import { buildQueue, localDayKey } from '@study-app/core';
+import { buildQueue, canSpin, findCritter, isPackAvailable, localDayKey, PACKS } from '@study-app/core';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  Easing,
+  FadeInDown,
+  cancelAnimation,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { listLocalCardStates, listLocalCards, listLocalSets, listLocalTopics, openLocalDatabase, type LocalSet, type LocalTopic } from '@/db/local';
+import {
+  listLocalCardStates,
+  listLocalCards,
+  listLocalSets,
+  listLocalTopics,
+  openLocalDatabase,
+  type LocalSet,
+  type LocalTopic,
+} from '@/db/local';
+import { readLastSpin } from '@/db/packs';
 import { readCollection, readWallet } from '@/db/wallet';
+import { critterArt } from '@/packs/critterArt';
 import { scopeTitle, useSettings } from '@/settings';
-import { colors, font, radius } from '@/theme';
+import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
+import {
+  GameBackground,
+  GameButton,
+  GlassCard,
+  Glow,
+  ProgressRing,
+  TokenCounter,
+  WheelGlyph,
+  Wordmark,
+} from '@/ui';
 
 /**
  * The home screen (SPEC "Session flow").
  *
- * One tap: pick a mode, pick what to study (all, a topic or a set) and go.
- * The last choice is remembered, so "Play again" from a mode is a single tap.
+ * The game shows its face here: the logo, the wallet, the big play card of
+ * the fishing mode and the three places of the game (the packs, the book
+ * and the wheel). The last scope is remembered, so "Play again" is a single
+ * tap.
  */
+
+/** The critter that floats above the play card. */
+const HERO_CRITTER_ID = 'mnemo_the_memory_jelly';
+
 export default function HomeScreen() {
   const router = useRouter();
   const {
@@ -37,6 +73,16 @@ export default function HomeScreen() {
   const [balance, setBalance] = useState<number | null>(null);
   const [packTickets, setPackTickets] = useState(0);
   const [critterCount, setCritterCount] = useState(0);
+  const [spinReady, setSpinReady] = useState(false);
+
+  const totalCritters = PACKS.reduce((sum, pack) => sum + pack.critters.length, 0);
+  const cheapestPack = useMemo(() => {
+    const onSale = PACKS.filter((pack) => isPackAvailable(pack, Date.now()));
+    if (onSale.length === 0) {
+      return 0;
+    }
+    return Math.min(...onSale.map((pack) => pack.priceTokens));
+  }, []);
 
   // The wallet is re-read whenever Home comes back into focus.
   useFocusEffect(
@@ -45,12 +91,15 @@ export default function HomeScreen() {
       void (async () => {
         try {
           const db = await openLocalDatabase();
-          const wallet = await readWallet(db, localDayKey(new Date()));
+          const today = localDayKey(new Date());
+          const wallet = await readWallet(db, today);
           const collection = await readCollection(db);
+          const lastSpin = await readLastSpin(db);
           if (!cancelled) {
             setBalance(wallet.balance);
             setPackTickets(wallet.packTickets);
             setCritterCount(collection.size);
+            setSpinReady(canSpin(lastSpin?.localDate ?? null, today));
           }
         } catch {
           // The wallet stays hidden.
@@ -113,146 +162,332 @@ export default function HomeScreen() {
   }, [router, scope, setScope]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Blookless</Text>
-        <Text style={styles.subtitle}>
-          Endless, untimed study. The scheduler picks the cards, the game picks the vibe.
-        </Text>
-
-        <View style={styles.wallet} accessibilityLabel={`${balance ?? 0} tokens`}>
-          <View>
-            <Text style={styles.walletTokens}>🪙 {balance ?? '…'}</Text>
-            <Text style={styles.walletLabel}>tokens</Text>
-          </View>
-          <Text style={styles.walletExtra}>
-            🎟️ {packTickets} · 🐾 {critterCount} critters
-          </Text>
-        </View>
-
-        <View style={styles.hub}>
-          <HubButton
-            emoji="🎁"
-            label="PACKS"
-            hint="Buy a pack"
-            color={colors.shop}
-            dark={colors.shopDark}
-            onPress={() => {
-              router.push('/packs');
-            }}
-          />
-          <HubButton
-            emoji="📖"
-            label="COLLECTION"
-            hint="Sell dupes"
-            color={colors.collection}
-            dark={colors.collectionDark}
-            onPress={() => {
-              router.push('/collection');
-            }}
-          />
-          <HubButton
-            emoji="🎡"
-            label="DAILY SPIN"
-            hint="Free tokens"
-            color={colors.wheel}
-            dark={colors.wheelDark}
-            onPress={() => {
-              router.push('/spin');
-            }}
-          />
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Mode</Text>
-          <View style={styles.modes}>
-            <View style={[styles.mode, styles.modeActive]}>
-              <Text style={styles.modeEmoji}>🎣</Text>
-              <Text style={styles.modeLabel}>Fishing</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Study</Text>
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              setScope({ kind: 'all' });
-            }}
-            style={[styles.choice, scope.kind === 'all' ? styles.choiceActive : null]}
-          >
-            <Text style={styles.choiceLabel}>All</Text>
-          </Pressable>
-
-          {topics.map((topic) => (
-            <Pressable
-              key={topic.id}
-              accessibilityRole="button"
-              onPress={() => {
-                setScope({ kind: 'topic', id: topic.id, title: topic.name });
-              }}
-              style={[
-                styles.choice,
-                scope.kind === 'topic' && scope.id === topic.id ? styles.choiceActive : null,
-              ]}
-            >
-              <Text style={styles.choiceLabel}>Topic: {topic.name}</Text>
-            </Pressable>
-          ))}
-
-          {sets.map((set) => (
-            <Pressable
-              key={set.id}
-              accessibilityRole="button"
-              onPress={() => {
-                setScope({ kind: 'set', id: set.id, title: set.title });
-              }}
-              style={[
-                styles.choice,
-                scope.kind === 'set' && scope.id === set.id ? styles.choiceActive : null,
-              ]}
-            >
-              <Text style={styles.choiceLabel}>Set: {set.title}</Text>
-            </Pressable>
-          ))}
-
-          {sets.length === 0 && topics.length === 0 ? (
-            <Text style={styles.hint}>
-              Only “All” is available until a set is imported. The last choice is remembered.
+    <GameBackground variant="home">
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.header}>
+            <Wordmark size={44} />
+            <Text style={styles.tagline}>
+              Endless, untimed study. The scheduler picks the cards, the game picks the vibe.
             </Text>
-          ) : null}
-        </View>
+          </Animated.View>
 
-        <Pressable
-          accessibilityRole="button"
-          onPress={go}
-          style={({ pressed }) => [styles.goButton, pressed && styles.goPressed]}
-        >
-          <Text style={styles.goLabel}>Go · {scopeTitle(scope)}</Text>
-        </Pressable>
+          <Animated.View
+            entering={FadeInDown.springify().damping(16).delay(80)}
+            style={styles.walletRow}
+          >
+            <GlassCard style={styles.walletCard} tint={colors.gold}>
+              <TokenCounter value={balance ?? 0} size={26} accessibilityLabel={`${balance ?? 0} tokens`} />
+              <Text style={styles.walletLabel}>tokens</Text>
+            </GlassCard>
 
-        <Text style={styles.status}>{status}</Text>
+            <GlassCard
+              style={styles.walletCard}
+              tint={colors.ticket}
+              accessibilityLabel={`${packTickets} pack tickets`}
+            >
+              <Text style={styles.ticketEmoji}>🎟️</Text>
+              <Text style={styles.ticketCount}>{packTickets}</Text>
+              <Text style={styles.walletLabel}>tickets</Text>
+            </GlassCard>
+          </Animated.View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Settings</Text>
-          <Toggle label="Sound" value={sound} onChange={setSound} />
-          <Toggle label="Haptics" value={haptics} onChange={setHaptics} />
-          <Toggle label="Auto reel" value={autoReel} onChange={setAutoReel} />
-          <Toggle
-            label="Reduce motion"
-            value={reduceMotion ?? systemReduceMotion}
-            onChange={(value) => {
-              setReduceMotion(value);
-            }}
-          />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+          <Animated.View entering={FadeInDown.springify().damping(16).delay(160)}>
+            <PlayCard
+              onPress={go}
+              scopeTitle={scopeTitle(scope)}
+              status={status}
+            />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.springify().damping(16).delay(240)} style={styles.tiles}>
+            <ModeTile
+              title="PACKS"
+              hint="Open a pack"
+              gradient={gradients.shop}
+              glow={colors.shop}
+              onPress={() => {
+                router.push('/packs');
+              }}
+              badge={`FROM ${cheapestPack} 🪙`}
+              art={<PacksArt />}
+            />
+
+            <ModeTile
+              title="COLLECTION"
+              hint="Sell duplicates"
+              gradient={gradients.collection}
+              glow={colors.collection}
+              onPress={() => {
+                router.push('/collection');
+              }}
+              badge={`${critterCount}/${totalCritters}`}
+              art={
+                <ProgressRing progress={totalCritters === 0 ? 0 : critterCount / totalCritters} size={58} color={colors.collection}>
+                  <Text style={styles.ringText}>{critterCount}</Text>
+                </ProgressRing>
+              }
+            />
+
+            <ModeTile
+              title="DAILY SPIN"
+              hint="Free tokens"
+              gradient={gradients.wheel}
+              glow={colors.wheel}
+              onPress={() => {
+                router.push('/spin');
+              }}
+              badge={spinReady ? 'SPIN READY!' : 'COME BACK TOMORROW'}
+              badgePulse={spinReady}
+              art={<WheelGlyph size={54} />}
+            />
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.springify().damping(16).delay(320)} style={styles.section}>
+            <Text style={styles.sectionTitle}>Study</Text>
+
+            <View style={styles.choices}>
+              <Choice
+                label="All"
+                active={scope.kind === 'all'}
+                onPress={() => {
+                  setScope({ kind: 'all' });
+                }}
+              />
+
+              {topics.map((topic) => (
+                <Choice
+                  key={topic.id}
+                  label={`Topic: ${topic.name}`}
+                  active={scope.kind === 'topic' && scope.id === topic.id}
+                  onPress={() => {
+                    setScope({ kind: 'topic', id: topic.id, title: topic.name });
+                  }}
+                />
+              ))}
+
+              {sets.map((set) => (
+                <Choice
+                  key={set.id}
+                  label={`Set: ${set.title}`}
+                  active={scope.kind === 'set' && scope.id === set.id}
+                  onPress={() => {
+                    setScope({ kind: 'set', id: set.id, title: set.title });
+                  }}
+                />
+              ))}
+            </View>
+
+            {sets.length === 0 && topics.length === 0 ? (
+              <Text style={styles.hint}>
+                Only “All” is available until a set is imported. The last choice is remembered.
+              </Text>
+            ) : null}
+          </Animated.View>
+
+          <Animated.View entering={FadeInDown.springify().damping(16).delay(380)} style={styles.section}>
+            <Text style={styles.sectionTitle}>Settings</Text>
+            <Toggle label="Sound" value={sound} onChange={setSound} />
+            <Toggle label="Haptics" value={haptics} onChange={setHaptics} />
+            <Toggle label="Auto reel" value={autoReel} onChange={setAutoReel} />
+            <Toggle
+              label="Reduce motion"
+              value={reduceMotion ?? systemReduceMotion}
+              onChange={(value) => {
+                setReduceMotion(value);
+              }}
+            />
+          </Animated.View>
+        </ScrollView>
+      </SafeAreaView>
+    </GameBackground>
   );
 }
 
+/** The big play card of the fishing mode. */
+function PlayCard({
+  onPress,
+  scopeTitle: currentScope,
+  status,
+}: {
+  onPress: () => void;
+  scopeTitle: string;
+  status: string;
+}) {
+  const bob = useSharedValue(0);
+  const critter = findCritter(HERO_CRITTER_ID);
+  const art = critter === undefined ? null : critterArt(critter);
+
+  useEffect(() => {
+    bob.value = withRepeat(
+      withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true,
+    );
+    return () => {
+      cancelAnimation(bob);
+    };
+  }, [bob]);
+
+  const bobStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -10 + bob.value * 20 }, { rotate: `${(bob.value - 0.5) * 5}deg` }],
+  }));
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Play Fish Frenzy. ${currentScope}`}
+      accessibilityHint="Starts a study session"
+      onPress={onPress}
+      style={({ pressed }) => [styles.playPressable, pressed && styles.playPressed]}
+    >
+      <View style={styles.playWrap}>
+        <Glow color={colors.primary} size={300} opacity={0.55} style={styles.playGlow} />
+
+        <GlassCard style={styles.playCard} tint="#7b61ff">
+          <View style={styles.playTop}>
+            <View style={styles.playText}>
+              <Text style={styles.playKicker}>PLAY</Text>
+              <Text style={styles.playTitle}>Fish Frenzy</Text>
+              <Text style={styles.playScope}>{currentScope}</Text>
+            </View>
+
+            <Animated.View style={[styles.playArt, bobStyle]}>
+              {art === null ? (
+                <Text style={styles.playEmoji}>{critter?.emoji ?? '🐟'}</Text>
+              ) : (
+                <Image source={art} style={styles.playImage} resizeMode="contain" />
+              )}
+            </Animated.View>
+          </View>
+
+          <GameButton label="START" variant="primary" size="lg" onPress={onPress} pulse />
+
+          <Text style={styles.playStatus}>{status}</Text>
+        </GlassCard>
+      </View>
+    </Pressable>
+  );
+}
+
+/** The art of the packs tile: the critters of the starter pack. */
+function PacksArt() {
+  const critter = findCritter('gigabrain_golem');
+  const art = critter === undefined ? null : critterArt(critter);
+
+  if (art === null) {
+    return <Text style={styles.playEmoji}>🎁</Text>;
+  }
+
+  return <Image source={art} style={styles.tileImage} resizeMode="contain" />;
+}
+
+/** One of the three tiles of the game. */
+function ModeTile({
+  title,
+  hint,
+  gradient,
+  glow,
+  onPress,
+  badge,
+  badgePulse = false,
+  art,
+}: {
+  title: string;
+  hint: string;
+  gradient: Gradient;
+  glow: string;
+  onPress: () => void;
+  badge: string;
+  badgePulse?: boolean;
+  art: ReactNode;
+}) {
+  const pulse = useSharedValue(0);
+
+  useEffect(() => {
+    if (!badgePulse) {
+      cancelAnimation(pulse);
+      pulse.value = 0;
+      return undefined;
+    }
+    pulse.value = withRepeat(
+      withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true,
+    );
+    return () => {
+      cancelAnimation(pulse);
+    };
+  }, [badgePulse, pulse]);
+
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: 0.55 + pulse.value * 0.45,
+    transform: [{ scale: 1 + pulse.value * 0.06 }],
+  }));
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${title}. ${hint}`}
+      onPress={onPress}
+      style={({ pressed }) => [styles.tilePressable, pressed && styles.tilePressed]}
+    >
+      <View style={styles.tile}>
+        <LinearGradientFace colors={gradient} />
+        <Glow color={glow} size={150} opacity={0.45} style={styles.tileGlow} />
+
+        <View style={styles.tileArt}>{art}</View>
+
+        <Text style={styles.tileTitle}>{title}</Text>
+        <Text style={styles.tileHint}>{hint}</Text>
+
+        <Animated.View style={[styles.badge, pulseStyle]}>
+          <Text style={styles.badgeText}>{badge}</Text>
+        </Animated.View>
+      </View>
+    </Pressable>
+  );
+}
+
+/** The gradient face of a tile. */
+function LinearGradientFace({ colors }: { colors: Gradient }) {
+  return (
+    <LinearGradient
+      colors={colors}
+      start={gradientDirection.start}
+      end={gradientDirection.end}
+      style={StyleSheet.absoluteFill}
+    />
+  );
+}
+
+/** One of the choices of the scope (All, a topic or a set). */
+function Choice({
+  label,
+  active,
+  onPress,
+}: {
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.choice,
+        active ? styles.choiceActive : null,
+        pressed ? styles.choicePressed : null,
+      ]}
+    >
+      <Text style={[styles.choiceLabel, active ? styles.choiceLabelActive : null]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+/** One of the switches of the settings. */
 function Toggle({
   label,
   value,
@@ -279,228 +514,263 @@ function Toggle({
   );
 }
 
-/** One of the big buttons of the hub (the shop, the book, the wheel). */
-function HubButton({
-  emoji,
-  label,
-  hint,
-  color,
-  dark,
-  onPress,
-}: {
-  emoji: string;
-  label: string;
-  hint: string;
-  color: string;
-  dark: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`${label}. ${hint}`}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.hubButton,
-        { backgroundColor: color, borderBottomColor: dark },
-        pressed && styles.hubButtonPressed,
-      ]}
-    >
-      <Text style={styles.hubEmoji}>{emoji}</Text>
-      <Text style={styles.hubLabel}>{label}</Text>
-      <Text style={styles.hubHint}>{hint}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b1020',
   },
   content: {
-    padding: 20,
+    padding: spacing.lg,
     paddingBottom: 48,
-    gap: 14,
+    gap: spacing.lg,
   },
-  title: {
-    color: '#f8fafc',
-    fontSize: 32,
-    fontWeight: '700',
+  header: {
+    alignItems: 'center',
+    gap: 4,
+    paddingTop: spacing.sm,
   },
-  subtitle: {
-    color: '#94a3b8',
-    fontSize: 16,
-    lineHeight: 22,
+  tagline: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    textAlign: 'center',
+    paddingHorizontal: spacing.lg,
   },
-  wallet: {
+  walletRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  walletCard: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 2,
-    borderColor: colors.border,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  walletTokens: {
-    color: colors.gold,
-    fontSize: 28,
-    fontWeight: font.heavy,
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.md,
   },
   walletLabel: {
     color: colors.textDim,
-    fontSize: 11,
-    fontWeight: font.bold,
+    fontFamily: fonts.bodyBold,
+    fontSize: 10,
     letterSpacing: 1,
     textTransform: 'uppercase',
   },
-  walletExtra: {
-    color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: font.bold,
-  },
-  hub: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  hubButton: {
-    flex: 1,
-    borderRadius: radius.button,
-    borderBottomWidth: 7,
-    paddingVertical: 14,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    gap: 2,
-  },
-  hubButtonPressed: {
-    opacity: 0.85,
-    transform: [{ translateY: 3 }],
-  },
-  hubEmoji: {
-    fontSize: 28,
-  },
-  hubLabel: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: font.heavy,
-    letterSpacing: 0.5,
-    textAlign: 'center',
-  },
-  hubHint: {
-    color: 'rgba(255, 255, 255, 0.85)',
-    fontSize: 11,
-    fontWeight: font.bold,
-  },
-  card: {
-    backgroundColor: '#16213e',
-    borderRadius: 18,
-    padding: 16,
-    gap: 8,
-  },
-  sectionTitle: {
-    color: '#94a3b8',
-    fontSize: 12,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  modes: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  mode: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: '#1f2937',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 52,
-  },
-  modeActive: {
-    borderColor: '#208aef',
-    backgroundColor: '#1d3557',
-  },
-  modeEmoji: {
+  ticketEmoji: {
     fontSize: 20,
   },
-  modeLabel: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '700',
+  ticketCount: {
+    color: colors.ticket,
+    fontFamily: fonts.title,
+    fontSize: 24,
   },
-  choice: {
-    minHeight: 48,
-    justifyContent: 'center',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#1f2937',
-    paddingHorizontal: 14,
+  playPressable: {
+    borderRadius: radius.card,
   },
-  choiceActive: {
-    borderColor: '#208aef',
-    backgroundColor: '#1d3557',
+  playPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.99 }],
   },
-  choiceLabel: {
-    color: '#f8fafc',
-    fontSize: 15,
-    fontWeight: '600',
+  playWrap: {
+    position: 'relative',
   },
-  hint: {
-    color: '#64748b',
+  playCard: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  playGlow: {
+    position: 'absolute',
+    top: -80,
+    right: -60,
+  },
+  playTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  playText: {
+    flex: 1,
+    gap: 2,
+  },
+  playKicker: {
+    color: colors.primaryLight,
+    fontFamily: fonts.title,
     fontSize: 13,
-    lineHeight: 18,
+    letterSpacing: 3,
   },
-  goButton: {
-    backgroundColor: '#208aef',
-    borderRadius: 16,
-    minHeight: 56,
+  playTitle: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 30,
+    letterSpacing: 0.5,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 3 },
+    textShadowRadius: 8,
+  },
+  playScope: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+  },
+  playArt: {
+    width: 96,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  goPressed: {
-    opacity: 0.85,
+  playImage: {
+    width: 96,
+    height: 96,
   },
-  goLabel: {
+  playEmoji: {
+    fontSize: 56,
+  },
+  playStatus: {
+    color: colors.textDim,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  tiles: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  tilePressable: {
+    flex: 1,
+  },
+  tilePressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
+  },
+  tile: {
+    flex: 1,
+    minHeight: 168,
+    borderRadius: radius.tile,
+    padding: spacing.md,
+    alignItems: 'center',
+    gap: 2,
+    overflow: 'hidden',
+    ...shadow.soft,
+  },
+  tileGlow: {
+    position: 'absolute',
+    top: -40,
+    left: -30,
+  },
+  tileArt: {
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tileImage: {
+    width: 64,
+    height: 64,
+  },
+  tileTitle: {
     color: '#ffffff',
-    fontSize: 18,
-    fontWeight: '700',
+    fontFamily: fonts.title,
+    fontSize: 13,
+    letterSpacing: 0.8,
+    marginTop: spacing.xs,
   },
-  status: {
-    color: '#cbd5f5',
+  tileHint: {
+    color: 'rgba(255,255,255,0.8)',
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+  },
+  badge: {
+    marginTop: spacing.sm,
+    borderRadius: radius.chip,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: 'rgba(0,0,0,0.42)',
+  },
+  badgeText: {
+    color: '#ffffff',
+    fontFamily: fonts.title,
+    fontSize: 9,
+    letterSpacing: 0.8,
+  },
+  ringText: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 16,
+  },
+  section: {
+    borderRadius: radius.card,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    gap: spacing.sm,
+  },
+  sectionTitle: {
+    color: colors.textDim,
+    fontFamily: fonts.title,
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    marginBottom: spacing.xs,
+  },
+  choices: {
+    gap: spacing.sm,
+  },
+  choice: {
+    minHeight: 46,
+    justifyContent: 'center',
+    borderRadius: radius.tile,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+    paddingHorizontal: spacing.md,
+  },
+  choiceActive: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(123,97,255,0.22)',
+  },
+  choicePressed: {
+    opacity: 0.75,
+  },
+  choiceLabel: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
     fontSize: 14,
+  },
+  choiceLabelActive: {
+    color: colors.text,
+    fontFamily: fonts.bodyBold,
+  },
+  hint: {
+    color: colors.textDim,
+    fontFamily: fonts.body,
+    fontSize: 12,
+    lineHeight: 17,
   },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    minHeight: 44,
+    minHeight: 42,
   },
   toggleLabel: {
-    color: '#f8fafc',
-    fontSize: 15,
-    fontWeight: '600',
+    color: colors.text,
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
   },
   toggle: {
-    borderRadius: 999,
+    borderRadius: radius.chip,
     paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingVertical: 5,
     minWidth: 56,
     alignItems: 'center',
   },
   toggleOn: {
-    backgroundColor: '#2f9e44',
+    backgroundColor: colors.collection,
   },
   toggleOff: {
-    backgroundColor: '#1f2937',
+    backgroundColor: 'rgba(255,255,255,0.08)',
   },
   toggleText: {
-    color: '#f8fafc',
-    fontSize: 13,
-    fontWeight: '700',
+    color: '#ffffff',
+    fontFamily: fonts.title,
+    fontSize: 12,
   },
 });
