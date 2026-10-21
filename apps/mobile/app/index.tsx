@@ -7,6 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { listLocalCardStates, listLocalCards, listLocalSets, listLocalTopics, openLocalDatabase, type LocalSet, type LocalTopic } from '@/db/local';
 import { readCollection, readWallet } from '@/db/wallet';
 import { scopeTitle, useSettings } from '@/settings';
+import { colors, font, radius } from '@/theme';
 
 /**
  * The home screen (SPEC "Session flow").
@@ -120,10 +121,46 @@ export default function HomeScreen() {
         </Text>
 
         <View style={styles.wallet} accessibilityLabel={`${balance ?? 0} tokens`}>
-          <Text style={styles.walletTokens}>🪙 {balance ?? '…'}</Text>
+          <View>
+            <Text style={styles.walletTokens}>🪙 {balance ?? '…'}</Text>
+            <Text style={styles.walletLabel}>tokens</Text>
+          </View>
           <Text style={styles.walletExtra}>
             🎟️ {packTickets} · 🐾 {critterCount} critters
           </Text>
+        </View>
+
+        <View style={styles.hub}>
+          <HubButton
+            emoji="🎁"
+            label="PACKS"
+            hint="Buy a pack"
+            color={colors.shop}
+            dark={colors.shopDark}
+            onPress={() => {
+              router.push('/packs');
+            }}
+          />
+          <HubButton
+            emoji="📖"
+            label="COLLECTION"
+            hint="Sell dupes"
+            color={colors.collection}
+            dark={colors.collectionDark}
+            onPress={() => {
+              router.push('/collection');
+            }}
+          />
+          <HubButton
+            emoji="🎡"
+            label="DAILY SPIN"
+            hint="Free tokens"
+            color={colors.wheel}
+            dark={colors.wheelDark}
+            onPress={() => {
+              router.push('/spin');
+            }}
+          />
         </View>
 
         <View style={styles.card}>
@@ -242,6 +279,40 @@ function Toggle({
   );
 }
 
+/** One of the big buttons of the hub (the shop, the book, the wheel). */
+function HubButton({
+  emoji,
+  label,
+  hint,
+  color,
+  dark,
+  onPress,
+}: {
+  emoji: string;
+  label: string;
+  hint: string;
+  color: string;
+  dark: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${label}. ${hint}`}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.hubButton,
+        { backgroundColor: color, borderBottomColor: dark },
+        pressed && styles.hubButtonPressed,
+      ]}
+    >
+      <Text style={styles.hubEmoji}>{emoji}</Text>
+      <Text style={styles.hubLabel}>{label}</Text>
+      <Text style={styles.hubHint}>{hint}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -266,20 +337,61 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#16213e',
-    borderRadius: 18,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    borderWidth: 2,
+    borderColor: colors.border,
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   walletTokens: {
-    color: '#fcd34d',
-    fontSize: 24,
-    fontWeight: '800',
+    color: colors.gold,
+    fontSize: 28,
+    fontWeight: font.heavy,
+  },
+  walletLabel: {
+    color: colors.textDim,
+    fontSize: 11,
+    fontWeight: font.bold,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
   },
   walletExtra: {
-    color: '#cbd5f5',
+    color: colors.textMuted,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: font.bold,
+  },
+  hub: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  hubButton: {
+    flex: 1,
+    borderRadius: radius.button,
+    borderBottomWidth: 7,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    gap: 2,
+  },
+  hubButtonPressed: {
+    opacity: 0.85,
+    transform: [{ translateY: 3 }],
+  },
+  hubEmoji: {
+    fontSize: 28,
+  },
+  hubLabel: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: font.heavy,
+    letterSpacing: 0.5,
+    textAlign: 'center',
+  },
+  hubHint: {
+    color: 'rgba(255, 255, 255, 0.85)',
+    fontSize: 11,
+    fontWeight: font.bold,
   },
   card: {
     backgroundColor: '#16213e',
