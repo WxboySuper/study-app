@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "study-app-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // The Worker is served from *.workers.dev, no custom domain (yet).
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "study-app",
+      // TODO: replace with the real D1 database id (`wrangler d1 create study-app`).
+      "database_id": "TODO",
+      "migrations_dir": "migrations"
+    }
+  ]
+  // Phase 2: the MCP server is mounted on /mcp in the same Worker and is
+  // protected by a bearer token stored as a Worker secret (`MCP_TOKEN`).
+  // Secrets are *not* listed here on purpose, they never live in the repo.
+}
