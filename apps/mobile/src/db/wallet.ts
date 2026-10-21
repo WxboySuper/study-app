@@ -80,6 +80,43 @@ export async function readCollection(db: SQLite.SQLiteDatabase): Promise<Map<str
   return new Map(rows.map((row) => [row.critter_id, row.count]));
 }
 
+/** Writes the wallet back to the store (the one row of the wallet table). */
+export async function writeWallet(
+  db: SQLite.SQLiteDatabase,
+  wallet: WalletSnapshot,
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO wallet (id, balance, day, tokens_today, pack_tickets_today, pack_tickets)
+     VALUES (1, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       balance = excluded.balance,
+       day = excluded.day,
+       tokens_today = excluded.tokens_today,
+       pack_tickets_today = excluded.pack_tickets_today,
+       pack_tickets = excluded.pack_tickets`,
+    wallet.balance,
+    wallet.day,
+    wallet.tokensToday,
+    wallet.packTicketsToday,
+    wallet.packTickets,
+  );
+}
+
+/** Adds one copy of a critter to the collection. */
+export async function addCritter(
+  db: SQLite.SQLiteDatabase,
+  critterId: string,
+  now: number = Date.now(),
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO collection (critter_id, count, first_caught_at)
+     VALUES (?, 1, ?)
+     ON CONFLICT(critter_id) DO UPDATE SET count = count + 1`,
+    critterId,
+    now,
+  );
+}
+
 /**
  * Settles a finished session: credits the tokens, the capped pack tickets and
  * the caught critters in one transaction. Returns `null` when the session was
@@ -110,30 +147,10 @@ export async function settleLocalSession(
     const owned = await readCollection(tx);
     const result = settleSession(wallet, outcome, owned, today);
 
-    await tx.runAsync(
-      `INSERT INTO wallet (id, balance, day, tokens_today, pack_tickets_today, pack_tickets)
-       VALUES (1, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
-         balance = excluded.balance,
-         day = excluded.day,
-         tokens_today = excluded.tokens_today,
-         pack_tickets_today = excluded.pack_tickets_today,
-         pack_tickets = excluded.pack_tickets`,
-      result.wallet.balance,
-      result.wallet.day,
-      result.wallet.tokensToday,
-      result.wallet.packTicketsToday,
-      result.wallet.packTickets,
-    );
+    await writeWallet(tx, result.wallet);
 
     for (const critter of result.critters) {
-      await tx.runAsync(
-        `INSERT INTO collection (critter_id, count, first_caught_at)
-         VALUES (?, 1, ?)
-         ON CONFLICT(critter_id) DO UPDATE SET count = count + 1`,
-        critter.critterId,
-        now,
-      );
+      await addCritter(tx, critter.critterId, now);
     }
 
     await tx.runAsync(
