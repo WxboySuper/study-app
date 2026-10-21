@@ -40,6 +40,11 @@ export interface CardState {
   state: State;
   /** Epoch milliseconds, `null` when the card has never been reviewed. */
   lastReview: number | null;
+  /**
+   * Position inside the (re)learning steps. Mirrors ts-fsrs' `learning_steps`
+   * and is optional so rows written before the column existed still load.
+   */
+  learningSteps?: number;
 }
 
 /** A single review, flattened for storage in `review_logs`. */
