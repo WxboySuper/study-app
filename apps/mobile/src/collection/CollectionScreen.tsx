@@ -6,32 +6,45 @@ import {
   type CritterDef,
   type WalletSnapshot,
 } from '@study-app/core';
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View, type HostInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { openLocalStore } from '@/db/local';
-import { colors, fonts, radius, rarityColors, rarityLabels } from '@/theme';
+import { hapticImpact, hapticSuccess } from '@/haptics';
+import { colors, fonts, radius } from '@/theme';
 import { GameBackground, GameButton, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
 
-import { critterArt } from '../packs/critterArt';
+import { CoinFlight } from './CoinFlight';
+import { CritterCard } from './CritterCard';
+import { CritterSheet } from './CritterSheet';
+import { PackHeader } from './PackHeader';
+import { PackTabs } from './PackTabs';
+import { SellAllSheet } from './SellAllSheet';
 
 /**
  * The collection book.
  *
- * Every pack has its own page: the critters the player owns are shown in
- * color with how many copies there are, the ones that are missing are dark
- * silhouettes. Duplicates can be sold from here, one critter at a time or all
- * at once, but the last copy of a critter is never sold.
+ * The album of the critters: one page per pack, a chunky pill for every
+ * page, a header that shows how much of the pack is collected and a shelf of
+ * glassy cards. The critters the player owns are drawn in the gradient of
+ * their rarity, the missing ones are dark silhouettes that shimmer, and a
+ * tap opens the critter in a sheet that sells the duplicates.
  */
-
 export function CollectionScreen() {
+  const params = useLocalSearchParams<{ demo?: string }>();
   const [collection, setCollection] = useState<Map<string, number>>(new Map());
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
   const [packId, setPackId] = useState(PACKS[0]?.id ?? '');
-  const [sheet, setSheet] = useState<Sheet | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<CritterDef | null>(null);
+  const [sellAll, setSellAll] = useState(false);
+  const [flight, setFlight] = useState<{
+    from: { x: number; y: number };
+    to: { x: number; y: number };
+    count: number;
+  } | null>(null);
+  const counterRef = useRef<HostInstance>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -55,17 +68,35 @@ export function CollectionScreen() {
   );
   const progress = useMemo(() => collectionProgress(collection, pack), [collection, pack]);
 
-  const duplicates = useMemo(
-    () =>
-      PACKS.reduce((total, entry) => {
-        let sum = 0;
-        for (const critter of entry.critters) {
-          sum += Math.max(0, (collection.get(critter.id) ?? 0) - 1);
+  /** The duplicates of the whole collection and what they are worth. */
+  const duplicates = useMemo(() => {
+    let copies = 0;
+    let tokens = 0;
+    for (const entry of PACKS) {
+      for (const critter of entry.critters) {
+        const owned = collection.get(critter.id) ?? 0;
+        const extra = Math.max(0, owned - 1);
+        if (extra === 0) {
+          continue;
         }
-        return total + sum;
-      }, 0),
-    [collection],
-  );
+        copies += extra;
+        const value = collectionEntry(collection, critter.id)?.sellValue ?? 0;
+        tokens += extra * value;
+      }
+    }
+    return { copies, tokens };
+  }, [collection]);
+
+  // The demo of the web build opens the sheet of the first critter.
+  useEffect(() => {
+    if (params.demo !== 'sheet') {
+      return;
+    }
+    const first = pack.critters.find((critter) => (collection.get(critter.id) ?? 0) > 0);
+    if (first !== undefined) {
+      setSheet(first);
+    }
+  }, [collection, pack.critters, params.demo]);
 
   const onSell = useCallback(
     async (critterId: string, qty: number) => {
@@ -73,34 +104,55 @@ export function CollectionScreen() {
         const store = await openLocalStore();
         const result = await store.sellDuplicates(critterId, qty);
         if (result.ok) {
-          setMessage(`+${result.tokens} tokens!`);
+          hapticSuccess();
           setWallet(result.wallet);
+          setSheet(null);
           await refresh();
-        } else {
-          setMessage(result.message);
         }
       } catch {
-        setMessage('The critters could not be sold.');
+        // The critters stay in the collection.
       }
     },
     [refresh],
   );
 
-  const onSellAll = useCallback(async () => {
-    try {
-      const store = await openLocalStore();
-      const result = await store.sellAllDuplicates();
-      if (result.ok) {
-        setMessage(`+${result.tokens} tokens!`);
+  const onSellAll = useCallback(
+    async (origin: { x: number; y: number }) => {
+      try {
+        const store = await openLocalStore();
+        const result = await store.sellAllDuplicates();
+        if (!result.ok) {
+          setSellAll(false);
+          return;
+        }
+
+        hapticImpact('heavy');
         setWallet(result.wallet);
+        setSellAll(false);
         await refresh();
-      } else {
-        setMessage(result.message);
+
+        // The coins fly from the button to the counter of the wallet.
+        const count = Math.min(12, Math.max(4, result.sold));
+        const node = counterRef.current;
+        if (node === null) {
+          setFlight({ from: origin, to: { x: 0, y: 0 }, count });
+          return;
+        }
+        node.measureInWindow((x, y, width, height) => {
+          setFlight({
+            from: origin,
+            to: { x: x + width / 2, y: y + height / 2 },
+            count,
+          });
+        });
+      } catch {
+        setSellAll(false);
       }
-    } catch {
-      setMessage('The critters could not be sold.');
-    }
-  }, [refresh]);
+    },
+    [refresh],
+  );
+
+  const entry = sheet === null ? undefined : collectionEntry(collection, sheet.id);
 
   return (
     <GameBackground variant="collection">
@@ -110,245 +162,101 @@ export function CollectionScreen() {
             title="COLLECTION"
             subtitle="Your critters, and the duplicates you can sell"
             right={
-              <GlassCard borderRadius={radius.chip} elevated={false} style={styles.headerChip}>
-                <TokenCounter value={wallet?.balance ?? 0} size={18} />
-              </GlassCard>
+              <View ref={counterRef} collapsable={false}>
+                <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.headerChip}>
+                  <TokenCounter value={wallet?.balance ?? 0} size={18} />
+                </GlassCard>
+              </View>
             }
           />
 
-          <View style={styles.tabs}>
-            {PACKS.map((entry) => (
-              <Pressable
-                key={entry.id}
-                accessibilityRole="button"
-                accessibilityState={{ selected: entry.id === pack.id }}
+          <PackTabs
+            packs={PACKS}
+            activeId={pack.id}
+            onSelect={(id) => {
+              setPackId(id);
+            }}
+          />
+
+          <PackHeader pack={pack} owned={progress.owned} total={progress.total} />
+
+          <View style={styles.grid}>
+            {pack.critters.map((critter, index) => (
+              <CritterCard
+                key={critter.id}
+                critter={critter}
+                count={collection.get(critter.id) ?? 0}
+                index={index}
                 onPress={() => {
-                  setPackId(entry.id);
+                  hapticImpact('light');
+                  setSheet(critter);
                 }}
-                style={({ pressed }) => [
-                  styles.tab,
-                  entry.id === pack.id ? styles.tabOn : null,
-                  pressed ? styles.pressed : null,
-                ]}
-              >
-                <Text style={[styles.tabText, entry.id === pack.id ? styles.tabTextOn : null]}>
-                  {entry.name}
-                </Text>
-              </Pressable>
+              />
             ))}
           </View>
 
-          <GlassCard style={styles.progressCard} tint={colors.collection}>
-            <Text style={styles.progressTitle}>{pack.name}</Text>
-            <View style={styles.progressBar}>
-              <View
-                style={[
-                  styles.progressFill,
-                  { width: `${progress.total === 0 ? 0 : (progress.owned / progress.total) * 100}%` },
-                ]}
-              />
-            </View>
-            <Text style={styles.progressText}>
-              {progress.owned}/{progress.total} collected
-            </Text>
-          </GlassCard>
-
-        {message === null ? null : (
-          <Pressable
-            accessibilityRole="button"
+          <GameButton
+            label={
+              duplicates.copies === 0 ? 'NO DUPLICATES TO SELL' : `SELL ALL DUPES (${duplicates.copies})`
+            }
+            variant="collection"
+            size="lg"
+            disabled={duplicates.copies === 0}
             onPress={() => {
-              setMessage(null);
+              hapticImpact('medium');
+              setSellAll(true);
             }}
-            style={styles.message}
-          >
-            <Text style={styles.messageText}>{message}</Text>
-          </Pressable>
-        )}
+            accessibilityLabel="Sell all duplicates"
+          />
 
-        <View style={styles.grid}>
-          {pack.critters.map((critter) => (
-            <CritterTile
-              key={critter.id}
-              critter={critter}
-              count={collection.get(critter.id) ?? 0}
-              onPress={() => {
-                setSheet({ kind: 'critter', critter });
-              }}
-            />
-          ))}
-        </View>
-
-        <GameButton
-          label={duplicates === 0 ? 'No duplicates to sell' : `Sell all dupes (${duplicates})`}
-          variant="collection"
-          size="lg"
-          disabled={duplicates === 0}
-          onPress={() => {
-            setSheet({ kind: 'all' });
-          }}
-          accessibilityLabel="Sell all duplicates"
-        />
+          {duplicates.copies === 0 ? null : (
+            <Text style={styles.footnote}>
+              {duplicates.copies} duplicate{duplicates.copies === 1 ? '' : 's'} are worth{' '}
+              {duplicates.tokens} coins.
+            </Text>
+          )}
         </ScrollView>
 
         {sheet === null ? null : (
-          <SellSheet
-            sheet={sheet}
-            collection={collection}
-            onCancel={() => {
+          <CritterSheet
+            critter={sheet}
+            count={entry?.count ?? 0}
+            duplicates={entry?.duplicates ?? 0}
+            sellValue={entry?.sellValue ?? 0}
+            onClose={() => {
               setSheet(null);
             }}
-            onSell={(critterId, qty) => {
-              void onSell(critterId, qty);
+            onSell={(qty) => {
+              void onSell(sheet.id, qty);
             }}
-            onSellAll={() => {
-              void onSellAll();
+          />
+        )}
+
+        {sellAll ? (
+          <SellAllSheet
+            copies={duplicates.copies}
+            tokens={duplicates.tokens}
+            onClose={() => {
+              setSellAll(false);
+            }}
+            onConfirm={(origin) => {
+              void onSellAll(origin);
+            }}
+          />
+        ) : null}
+
+        {flight === null ? null : (
+          <CoinFlight
+            from={flight.from}
+            to={flight.to}
+            count={flight.count}
+            onDone={() => {
+              setFlight(null);
             }}
           />
         )}
       </SafeAreaView>
     </GameBackground>
-  );
-}
-
-/** The sheet that is shown when a critter (or everything) is tapped. */
-type Sheet = { kind: 'critter'; critter: CritterDef } | { kind: 'all' };
-
-function CritterTile({
-  critter,
-  count,
-  onPress,
-}: {
-  critter: CritterDef;
-  count: number;
-  onPress: () => void;
-}) {
-  const art = critterArt(critter);
-  const owned = count > 0;
-  const color = rarityColors[critter.rarity];
-
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={
-        owned ? `${critter.name}, ${count} owned` : `${critter.name}, not collected yet`
-      }
-      onPress={onPress}
-      style={({ pressed }) => [styles.tile, pressed && styles.pressedTile]}
-    >
-      <View style={styles.tileArt}>
-        {art === null ? (
-          <Text style={[styles.emoji, !owned && styles.emojiMissing]}>{critter.emoji}</Text>
-        ) : (
-          <Image
-            source={art}
-            style={[styles.sprite, !owned && styles.silhouette]}
-            resizeMode="contain"
-          />
-        )}
-        {owned ? (
-          <View style={styles.countBadge}>
-            <Text style={styles.countBadgeText}>x{count}</Text>
-          </View>
-        ) : null}
-      </View>
-
-      <View style={[styles.rarityChip, { backgroundColor: color }]}>
-        <Text style={styles.rarityChipText}>{rarityLabels[critter.rarity]}</Text>
-      </View>
-
-      <Text style={[styles.tileName, !owned && styles.tileNameMissing]} numberOfLines={2}>
-        {critter.name}
-      </Text>
-    </Pressable>
-  );
-}
-
-function SellSheet({
-  sheet,
-  collection,
-  onCancel,
-  onSell,
-  onSellAll,
-}: {
-  sheet: Sheet;
-  collection: Map<string, number>;
-  onCancel: () => void;
-  onSell: (critterId: string, qty: number) => void;
-  onSellAll: () => void;
-}) {
-  if (sheet.kind === 'all') {
-    return (
-      <View style={styles.backdrop}>
-        <GlassCard style={styles.sheet} padded>
-          <Text style={styles.sheetTitle}>Sell every duplicate?</Text>
-          <Text style={styles.sheetBody}>
-            Every copy above the first one is sold. You keep one of every critter you own.
-          </Text>
-          <GameButton
-            label="Sell them all"
-            variant="collection"
-            size="lg"
-            onPress={() => {
-              onSellAll();
-              onCancel();
-            }}
-          />
-          <GameButton label="Keep them" variant="ghost" size="md" onPress={onCancel} />
-        </GlassCard>
-      </View>
-    );
-  }
-
-  const entry = collectionEntry(collection, sheet.critter.id);
-  const owned = (entry?.count ?? 0) > 0;
-  const duplicates = entry?.duplicates ?? 0;
-  const value = entry?.sellValue ?? 0;
-
-  return (
-    <View style={styles.backdrop}>
-      <GlassCard style={styles.sheet} padded>
-        <View style={styles.sheetArt}>
-          {critterArt(sheet.critter) === null ? (
-            <Text style={styles.emoji}>{sheet.critter.emoji}</Text>
-          ) : (
-            <Image source={critterArt(sheet.critter)!} style={styles.sheetSprite} />
-          )}
-        </View>
-        <Text style={styles.sheetTitle}>{sheet.critter.name}</Text>
-        <Text style={styles.sheetBody}>
-          {!owned
-            ? 'You do not own this critter yet. Open a pack to find it.'
-            : duplicates === 0
-              ? 'You only own one copy, and the last copy is never sold.'
-              : `You own ${entry?.count ?? 0} copies · ${duplicates} duplicate${duplicates === 1 ? '' : 's'} · ${value} tokens each`}
-        </Text>
-
-        {duplicates === 0 ? null : (
-          <>
-            <GameButton
-              label={`Sell 1 (+${value})`}
-              variant="primary"
-              size="lg"
-              onPress={() => {
-                onSell(sheet.critter.id, 1);
-                onCancel();
-              }}
-            />
-            <GameButton
-              label={`Sell all ${duplicates} (+${duplicates * value})`}
-              variant="collection"
-              size="lg"
-              onPress={() => {
-                onSell(sheet.critter.id, duplicates);
-                onCancel();
-              }}
-            />
-          </>
-        )}
-
-        <GameButton label="Cancel" variant="ghost" size="md" onPress={onCancel} />
-      </GlassCard>
-    </View>
   );
 }
 
@@ -368,177 +276,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
-  tabs: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  tab: {
-    flex: 1,
-    borderRadius: radius.button,
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 11,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-  },
-  tabOn: {
-    backgroundColor: 'rgba(52,211,153,0.2)',
-    borderColor: colors.collection,
-  },
-  tabText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontFamily: fonts.titleSemi,
-    textAlign: 'center',
-  },
-  tabTextOn: {
-    color: '#ffffff',
-  },
-  progressCard: {
-    gap: 8,
-  },
-  progressTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontFamily: fonts.title,
-  },
-  progressBar: {
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 6,
-    backgroundColor: colors.collection,
-  },
-  progressText: {
-    color: colors.textMuted,
-    fontSize: 13,
-    fontFamily: fonts.titleSemi,
-  },
-  message: {
-    borderRadius: radius.button,
-    backgroundColor: colors.success,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-  },
-  messageText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontFamily: fonts.titleSemi,
-    textAlign: 'center',
-  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
   },
-  tile: {
-    width: '31%',
-    backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: radius.tile,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: 6,
-    alignItems: 'center',
-    gap: 4,
-  },
-  tileArt: {
-    width: '100%',
-    aspectRatio: 1,
-  },
-  sprite: {
-    width: '100%',
-    height: '100%',
-  },
-  silhouette: {
-    tintColor: colors.silhouette,
-    opacity: 0.3,
-  },
-  emoji: {
-    fontSize: 44,
-    textAlign: 'center',
-  },
-  emojiMissing: {
-    opacity: 0.3,
-  },
-  countBadge: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    backgroundColor: colors.primary,
-    borderRadius: radius.chip,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderWidth: 2,
-    borderColor: colors.backgroundDeep,
-  },
-  countBadgeText: {
-    color: '#ffffff',
-    fontSize: 12,
-    fontFamily: fonts.title,
-  },
-  rarityChip: {
-    borderRadius: radius.chip,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-  },
-  rarityChipText: {
-    color: '#ffffff',
-    fontSize: 10,
-    fontFamily: fonts.title,
-    letterSpacing: 0.5,
-  },
-  tileName: {
-    color: colors.text,
-    fontSize: 11,
-    fontFamily: fonts.titleSemi,
-    textAlign: 'center',
-  },
-  tileNameMissing: {
+  footnote: {
     color: colors.textDim,
-  },
-  pressed: {
-    opacity: 0.75,
-  },
-  pressedTile: {
-    opacity: 0.8,
-  },
-  backdrop: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 7, 11, 0.86)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
-  sheet: {
-    width: '100%',
-    maxWidth: 380,
-    gap: 10,
-    alignItems: 'stretch',
-  },
-  sheetArt: {
-    alignSelf: 'center',
-    width: 96,
-    height: 96,
-  },
-  sheetSprite: {
-    width: 96,
-    height: 96,
-  },
-  sheetTitle: {
-    color: colors.text,
-    fontSize: 22,
-    fontFamily: fonts.title,
-    textAlign: 'center',
-  },
-  sheetBody: {
-    color: colors.textMuted,
-    fontSize: 14,
     fontFamily: fonts.bodySemi,
+    fontSize: 12,
     textAlign: 'center',
   },
 });

@@ -122,13 +122,13 @@ export function PacksScreen() {
             title="PACK SHOP"
             subtitle="Open a pack, find a critter"
             right={
-              <GlassCard borderRadius={radius.chip} elevated={false} style={styles.headerChip}>
+              <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.headerChip}>
                 <TokenCounter value={balance} size={18} />
               </GlassCard>
             }
           />
 
-          <GlassCard style={styles.wallet} tint={colors.ticket}>
+          <GlassCard contentStyle={styles.wallet} tint={colors.ticket}>
             <View style={styles.walletCell}>
               <TokenCounter value={balance} size={20} />
               <Text style={styles.walletLabel}>tokens</Text>

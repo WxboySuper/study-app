@@ -1,4 +1,5 @@
 import * as Haptics from 'expo-haptics';
+import { Platform } from 'react-native';
 
 /**
  * The haptics of the app.
@@ -6,6 +7,9 @@ import * as Haptics from 'expo-haptics';
  * Every tap of the game (a button, a pack, a tile) can buzz a little: the
  * setting of the player turns the whole thing off, and a device without a
  * motor never breaks the game.
+ *
+ * The browser has no motor to speak of (and Chrome only knows the vibration
+ * of a phone), so the haptics are simply skipped there.
  */
 
 let enabled = true;
@@ -22,7 +26,7 @@ export function isHapticsEnabled(): boolean {
 
 /** Runs a haptic pattern, when the player wants to feel it. */
 export function runHaptic(action: () => Promise<void>): void {
-  if (!enabled) {
+  if (!enabled || Platform.OS === 'web') {
     return;
   }
   try {

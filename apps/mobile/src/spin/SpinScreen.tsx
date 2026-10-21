@@ -1,12 +1,13 @@
 import {
+  SPIN_JACKPOT,
   SPIN_SEGMENTS,
   canSpin,
   localDayKey,
   spinSegmentIndex,
   type WalletSnapshot,
 } from '@study-app/core';
-import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
@@ -19,9 +20,18 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { openLocalStore } from '@/db/local';
+import { hapticImpact, hapticSuccess } from '@/haptics';
 import { playSfx, prepareSfx } from '@/modes/fishing/sfx';
 import { colors, fonts, radius, spinSegmentColors } from '@/theme';
-import { GameBackground, GameButton, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
+import {
+  GameBackground,
+  GameButton,
+  GlassCard,
+  LightRays,
+  Particles,
+  ScreenHeader,
+  TokenCounter,
+} from '@/ui';
 
 import { SpinWheel } from './SpinWheel';
 
@@ -30,22 +40,34 @@ import { SpinWheel } from './SpinWheel';
  *
  * The wheel can be spun once per local day. The reward is decided by the
  * local store (the same pure code the server would run), and the wheel then
- * spins down to the segment that was won.
+ * spins down to the segment that was won: it decelerates like a real wheel,
+ * overshoots a little and settles, while the pointer ticks on every segment
+ * that passes under it.
+ *
+ * The jackpot is a show of its own: golden rays, a storm of confetti and
+ * the heavy buzz of the phone.
  */
 
+/** How long the wheel spins. */
 const SPIN_DURATION_MS = 4200;
 
+/** How far the wheel overshoots before it settles (in degrees). */
+const OVERSHOOT_DEG = 26;
+
 export function SpinScreen() {
+  const params = useLocalSearchParams<{ demo?: string }>();
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
   const [reward, setReward] = useState<number | null>(null);
   const [wonToday, setWonToday] = useState<number | null>(null);
   const [alreadySpun, setAlreadySpun] = useState(false);
   const [spinning, setSpinning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [burst, setBurst] = useState(0);
 
   const rotation = useSharedValue(0);
   const cardScale = useSharedValue(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spunRef = useRef(false);
 
   const refresh = useCallback(async () => {
     try {
@@ -97,14 +119,19 @@ export function SpinScreen() {
 
       setWallet(result.wallet);
 
-      // The wheel spins down to the segment that was won.
+      // The wheel spins down to the segment that was won: it overshoots a
+      // little and settles back on it.
       const index = Math.max(0, spinSegmentIndex(result.reward));
-      const jitter = (Math.random() - 0.5) * 24;
-      const target = 5 * 360 - index * (360 / SPIN_SEGMENTS.length) + jitter;
-      rotation.value = withTiming(target, {
-        duration: SPIN_DURATION_MS,
-        easing: Easing.out(Easing.cubic),
-      });
+      const jitter = (Math.random() - 0.5) * 20;
+      const step = 360 / SPIN_SEGMENTS.length;
+      const target = 5 * 360 - index * step - step / 2 + jitter;
+      rotation.value = withSequence(
+        withTiming(target + OVERSHOOT_DEG, {
+          duration: SPIN_DURATION_MS,
+          easing: Easing.out(Easing.cubic),
+        }),
+        withSpring(target, { damping: 11, stiffness: 120, mass: 1.1 }),
+      );
 
       const timer = setTimeout(() => {
         timerRef.current = null;
@@ -112,11 +139,18 @@ export function SpinScreen() {
         setWonToday(result.reward);
         setSpinning(false);
         setAlreadySpun(true);
+        setBurst((current) => current + 1);
         cardScale.value = withSequence(
           withTiming(1.12, { duration: 160, easing: Easing.out(Easing.quad) }),
           withSpring(1, { damping: 11, stiffness: 170 }),
         );
         playSfx('coin');
+        if (result.reward >= SPIN_JACKPOT) {
+          hapticImpact('heavy');
+          hapticSuccess();
+        } else {
+          hapticSuccess();
+        }
       }, SPIN_DURATION_MS + 120);
       timerRef.current = timer;
     } catch {
@@ -125,10 +159,30 @@ export function SpinScreen() {
     }
   }, [spinning, alreadySpun, rotation, cardScale]);
 
+  // The demo of the web build spins the wheel right away.
+  useEffect(() => {
+    if (params.demo !== 'spin' || spunRef.current) {
+      return;
+    }
+    spunRef.current = true;
+    const timer = setTimeout(() => {
+      void onSpin();
+    }, 700);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [onSpin, params.demo]);
+
   const cardStyle = useAnimatedStyle(() => ({
     opacity: reward === null ? 0 : 1,
     transform: [{ scale: cardScale.value }],
   }));
+
+  const jackpot = reward !== null && reward >= SPIN_JACKPOT;
+  const winningIndex = useMemo(
+    () => (reward === null ? null : Math.max(0, spinSegmentIndex(reward))),
+    [reward],
+  );
 
   return (
     <GameBackground variant="spin">
@@ -138,14 +192,19 @@ export function SpinScreen() {
             title="DAILY SPIN"
             subtitle="One spin a day. The tokens are a bonus, not a grind."
             right={
-              <GlassCard borderRadius={radius.chip} elevated={false} style={styles.headerChip}>
+              <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.headerChip}>
                 <TokenCounter value={wallet?.balance ?? 0} size={18} />
               </GlassCard>
             }
           />
 
           <View style={styles.wheelBox}>
-            <SpinWheel rotation={rotation} />
+            <SpinWheel
+              rotation={rotation}
+              dimmed={alreadySpun && !spinning}
+              winningIndex={winningIndex}
+              ticking={spinning}
+            />
           </View>
 
           {message === null ? null : <Text style={styles.message}>{message}</Text>}
@@ -164,7 +223,9 @@ export function SpinScreen() {
             <Text style={styles.wonToday}>Today the wheel paid you 🪙 {wonToday} tokens</Text>
           )}
 
-          <GlassCard style={styles.legend}>
+          {alreadySpun ? <MidnightCountdown /> : null}
+
+          <GlassCard contentStyle={styles.legend}>
             {SPIN_SEGMENTS.map((segment, index) => (
               <View key={segment.reward} style={styles.legendRow}>
                 <View style={[styles.legendDot, { backgroundColor: segmentColorOf(index) }]} />
@@ -177,13 +238,30 @@ export function SpinScreen() {
 
         {reward === null ? null : (
           <View style={styles.backdrop}>
+            {jackpot ? (
+              <LightRays color={colors.gold} count={20} size={820} opacity={0.42} style={styles.rays} />
+            ) : null}
+
             <Animated.View style={[styles.rewardCard, cardStyle]}>
-              <Text style={styles.rewardTitle}>YOU WON</Text>
-              <Text style={styles.rewardValue}>+{reward}</Text>
+              {jackpot ? (
+                <View style={styles.jackpot}>
+                  <Text style={styles.jackpotText}>JACKPOT!</Text>
+                </View>
+              ) : (
+                <Text style={styles.rewardTitle}>YOU WON</Text>
+              )}
+
+              <TokenCounter
+                value={reward}
+                startAt={0}
+                size={64}
+                duration={1100}
+                accessibilityLabel={`${reward} tokens`}
+              />
               <Text style={styles.rewardLabel}>tokens</Text>
               <Text style={styles.rewardHint}>Come back tomorrow for another spin.</Text>
               <GameButton
-                label="Nice!"
+                label="NICE!"
                 variant="wheel"
                 size="lg"
                 onPress={() => {
@@ -191,6 +269,19 @@ export function SpinScreen() {
                 }}
               />
             </Animated.View>
+
+            <Particles
+              trigger={burst}
+              count={jackpot ? 90 : 46}
+              colors={
+                jackpot
+                  ? [colors.gold, '#fff7d6', '#fbbf24', '#ffffff', '#f472b6']
+                  : [colors.wheel, '#ffffff', '#f472b6', '#7b61ff']
+              }
+              size={jackpot ? 18 : 13}
+              distance={jackpot ? 320 : 240}
+              gravity={jackpot ? 340 : 280}
+            />
           </View>
         )}
       </SafeAreaView>
@@ -201,6 +292,42 @@ export function SpinScreen() {
 /** The color of the segment with an index. */
 function segmentColorOf(index: number): string {
   return spinSegmentColors[index % spinSegmentColors.length] ?? colors.primary;
+}
+
+/** The countdown to the next local midnight (the next spin). */
+function MidnightCountdown() {
+  const [left, setLeft] = useState(() => msUntilMidnight());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setLeft(msUntilMidnight());
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, []);
+
+  const total = Math.max(0, Math.floor(left / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+
+  return (
+    <View style={styles.countdown}>
+      <Text style={styles.countdownLabel}>NEXT SPIN IN</Text>
+      <Text style={styles.countdownValue}>
+        {String(hours).padStart(2, '0')}:{String(minutes).padStart(2, '0')}:
+        {String(seconds).padStart(2, '0')}
+      </Text>
+    </View>
+  );
+}
+
+/** The milliseconds until the next local midnight. */
+function msUntilMidnight(): number {
+  const now = new Date();
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 0, 0);
+  return midnight.getTime() - now.getTime();
 }
 
 const styles = StyleSheet.create({
@@ -232,9 +359,30 @@ const styles = StyleSheet.create({
   },
   wonToday: {
     color: colors.gold,
-    fontSize: 14,
     fontFamily: fonts.titleSemi,
+    fontSize: 14,
     textAlign: 'center',
+  },
+  countdown: {
+    alignItems: 'center',
+    borderRadius: radius.tile,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 10,
+    gap: 2,
+  },
+  countdownLabel: {
+    color: colors.textDim,
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    letterSpacing: 2,
+  },
+  countdownValue: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 26,
+    letterSpacing: 1,
   },
   legend: {
     gap: 6,
@@ -263,10 +411,16 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 7, 11, 0.88)',
+    backgroundColor: 'rgba(6, 7, 11, 0.82)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
+  },
+  rays: {
+    top: '50%',
+    left: '50%',
+    marginTop: -410,
+    marginLeft: -410,
   },
   rewardCard: {
     width: '100%',
@@ -286,10 +440,18 @@ const styles = StyleSheet.create({
     fontFamily: fonts.title,
     letterSpacing: 3,
   },
-  rewardValue: {
-    color: colors.text,
-    fontSize: 56,
+  jackpot: {
+    borderRadius: radius.chip,
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+    backgroundColor: colors.gold,
+    transform: [{ rotate: '-3deg' }],
+  },
+  jackpotText: {
+    color: '#4a2a00',
+    fontSize: 20,
     fontFamily: fonts.title,
+    letterSpacing: 2,
   },
   rewardLabel: {
     color: colors.textMuted,
@@ -304,5 +466,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemi,
     marginTop: 6,
     marginBottom: 10,
+    textAlign: 'center',
   },
 });

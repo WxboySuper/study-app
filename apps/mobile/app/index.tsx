@@ -170,13 +170,14 @@ export default function HomeScreen() {
             entering={FadeInDown.springify().damping(16).delay(80)}
             style={styles.walletRow}
           >
-            <GlassCard style={styles.walletCard} tint={colors.gold}>
+            <GlassCard style={styles.walletCard} contentStyle={styles.walletCardContent} tint={colors.gold}>
               <TokenCounter value={balance ?? 0} size={26} accessibilityLabel={`${balance ?? 0} tokens`} />
               <Text style={styles.walletLabel}>tokens</Text>
             </GlassCard>
 
             <GlassCard
               style={styles.walletCard}
+              contentStyle={styles.walletCardContent}
               tint={colors.ticket}
               accessibilityLabel={`${packTickets} pack tickets`}
             >
@@ -338,7 +339,7 @@ function PlayCard({
       <View style={styles.playWrap}>
         <Glow color={colors.primary} size={300} opacity={0.55} style={styles.playGlow} />
 
-        <GlassCard style={styles.playCard} tint="#7b61ff">
+        <GlassCard contentStyle={styles.playCard} tint="#7b61ff">
           <View style={styles.playTop}>
             <View style={styles.playText}>
               <Text style={styles.playKicker}>PLAY</Text>
@@ -535,6 +536,8 @@ const styles = StyleSheet.create({
   },
   walletCard: {
     flex: 1,
+  },
+  walletCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
