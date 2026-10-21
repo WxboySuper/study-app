@@ -4,6 +4,8 @@ import { useEffect } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 
+import { GameBackground } from '@/ui';
+
 import { tierColor } from './assets';
 import { playSfxSequence } from './sfx';
 import { Sprite } from './Sprite';
@@ -59,8 +61,9 @@ export function PayoutScreen({ result, tokens, onPlayAgain, onHome, reduceMotion
   const biggest = result.biggest;
 
   return (
-    <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+    <GameBackground variant="ocean">
+      <View style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Pack up!</Text>
 
         <Animated.View style={[styles.tokenCard, cardStyle]}>
@@ -147,7 +150,8 @@ export function PayoutScreen({ result, tokens, onPlayAgain, onHome, reduceMotion
           <Text style={styles.homeText}>Home</Text>
         </Pressable>
       </View>
-    </View>
+      </View>
+    </GameBackground>
   );
 }
 
@@ -163,7 +167,6 @@ function Stat({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0b1020',
   },
   content: {
     padding: 18,

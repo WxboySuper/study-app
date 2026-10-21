@@ -7,7 +7,7 @@ import {
 } from '@study-app/core';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
@@ -22,7 +22,8 @@ import { openLocalDatabase } from '@/db/local';
 import { readLastSpin, spinDailyWheelLocal } from '@/db/packs';
 import { readWallet } from '@/db/wallet';
 import { playSfx, prepareSfx } from '@/modes/fishing/sfx';
-import { colors, font, radius, spinSegmentColors } from '@/theme';
+import { colors, fonts, radius, spinSegmentColors } from '@/theme';
+import { GameBackground, GameButton, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
 
 import { SpinWheel } from './SpinWheel';
 
@@ -132,74 +133,70 @@ export function SpinScreen() {
   }));
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>DAILY SPIN</Text>
-        <Text style={styles.subtitle}>One spin a day. The tokens are a bonus, not a grind.</Text>
+    <GameBackground variant="spin">
+      <SafeAreaView style={styles.container}>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <ScreenHeader
+            title="DAILY SPIN"
+            subtitle="One spin a day. The tokens are a bonus, not a grind."
+            right={
+              <GlassCard borderRadius={radius.chip} elevated={false} style={styles.headerChip}>
+                <TokenCounter value={wallet?.balance ?? 0} size={18} />
+              </GlassCard>
+            }
+          />
 
-        <View style={styles.wallet}>
-          <Text style={styles.walletValue}>🪙 {wallet?.balance ?? 0}</Text>
-          <Text style={styles.walletLabel}>tokens</Text>
-        </View>
+          <View style={styles.wheelBox}>
+            <SpinWheel rotation={rotation} />
+          </View>
 
-        <View style={styles.wheelBox}>
-          <SpinWheel rotation={rotation} />
-        </View>
+          {message === null ? null : <Text style={styles.message}>{message}</Text>}
 
-        {message === null ? null : <Text style={styles.message}>{message}</Text>}
+          <GameButton
+            label={spinning ? 'SPINNING…' : alreadySpun ? 'COME BACK TOMORROW' : 'SPIN THE WHEEL'}
+            variant="wheel"
+            size="lg"
+            disabled={spinning || alreadySpun}
+            onPress={() => {
+              void onSpin();
+            }}
+          />
 
-        <Pressable
-          accessibilityRole="button"
-          disabled={spinning || alreadySpun}
-          onPress={() => {
-            void onSpin();
-          }}
-          style={({ pressed }) => [
-            styles.spinButton,
-            alreadySpun ? styles.spinButtonOff : null,
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={styles.spinButtonText}>
-            {spinning ? 'SPINNING…' : alreadySpun ? 'COME BACK TOMORROW' : 'SPIN THE WHEEL'}
-          </Text>
-        </Pressable>
+          {wonToday === null ? null : (
+            <Text style={styles.wonToday}>Today the wheel paid you 🪙 {wonToday} tokens</Text>
+          )}
 
-        {wonToday === null ? null : (
-          <Text style={styles.wonToday}>Today the wheel paid you 🪙 {wonToday} tokens</Text>
+          <GlassCard style={styles.legend}>
+            {SPIN_SEGMENTS.map((segment, index) => (
+              <View key={segment.reward} style={styles.legendRow}>
+                <View style={[styles.legendDot, { backgroundColor: segmentColorOf(index) }]} />
+                <Text style={styles.legendText}>{segment.reward} tokens</Text>
+                <Text style={styles.legendWeight}>{segment.weight}%</Text>
+              </View>
+            ))}
+          </GlassCard>
+        </ScrollView>
+
+        {reward === null ? null : (
+          <View style={styles.backdrop}>
+            <Animated.View style={[styles.rewardCard, cardStyle]}>
+              <Text style={styles.rewardTitle}>YOU WON</Text>
+              <Text style={styles.rewardValue}>+{reward}</Text>
+              <Text style={styles.rewardLabel}>tokens</Text>
+              <Text style={styles.rewardHint}>Come back tomorrow for another spin.</Text>
+              <GameButton
+                label="Nice!"
+                variant="wheel"
+                size="lg"
+                onPress={() => {
+                  setReward(null);
+                }}
+              />
+            </Animated.View>
+          </View>
         )}
-
-        <View style={styles.legend}>
-          {SPIN_SEGMENTS.map((segment, index) => (
-            <View key={segment.reward} style={styles.legendRow}>
-              <View style={[styles.legendDot, { backgroundColor: segmentColorOf(index) }]} />
-              <Text style={styles.legendText}>{segment.reward} tokens</Text>
-              <Text style={styles.legendWeight}>{segment.weight}%</Text>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-
-      {reward === null ? null : (
-        <View style={styles.backdrop}>
-          <Animated.View style={[styles.rewardCard, cardStyle]}>
-            <Text style={styles.rewardTitle}>YOU WON</Text>
-            <Text style={styles.rewardValue}>+{reward}</Text>
-            <Text style={styles.rewardLabel}>tokens</Text>
-            <Text style={styles.rewardHint}>Come back tomorrow for another spin.</Text>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setReward(null);
-              }}
-              style={({ pressed }) => [styles.continue, pressed && styles.pressed]}
-            >
-              <Text style={styles.continueText}>Nice!</Text>
-            </Pressable>
-          </Animated.View>
-        </View>
-      )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </GameBackground>
   );
 }
 
@@ -211,94 +208,39 @@ function segmentColorOf(index: number): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   content: {
-    padding: 18,
+    padding: 16,
     paddingBottom: 48,
     gap: 14,
-    alignItems: 'center',
+    alignItems: 'stretch',
   },
-  title: {
-    color: colors.text,
-    fontSize: 32,
-    fontWeight: font.heavy,
-    letterSpacing: 2,
-    textAlign: 'center',
-  },
-  subtitle: {
-    color: colors.textMuted,
-    fontSize: 14,
-    fontWeight: font.medium,
-    textAlign: 'center',
-  },
-  wallet: {
+  headerChip: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 8,
-    backgroundColor: colors.surface,
-    borderRadius: radius.chip,
-    borderWidth: 2,
-    borderColor: colors.border,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
-  },
-  walletValue: {
-    color: colors.gold,
-    fontSize: 22,
-    fontWeight: font.heavy,
-  },
-  walletLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: font.bold,
-    textTransform: 'uppercase',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   wheelBox: {
     marginVertical: 10,
+    alignItems: 'center',
   },
   message: {
     color: colors.danger,
     fontSize: 14,
-    fontWeight: font.bold,
-  },
-  spinButton: {
-    width: '100%',
-    borderRadius: radius.button,
-    backgroundColor: colors.wheel,
-    borderBottomWidth: 7,
-    borderBottomColor: colors.wheelDark,
-    minHeight: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  spinButtonOff: {
-    backgroundColor: colors.surfaceLight,
-    borderBottomColor: colors.backgroundDeep,
-  },
-  pressed: {
-    opacity: 0.85,
-    transform: [{ translateY: 2 }],
-  },
-  spinButtonText: {
-    color: '#3b2400',
-    fontSize: 20,
-    fontWeight: font.heavy,
-    letterSpacing: 1,
+    fontFamily: fonts.titleSemi,
+    textAlign: 'center',
   },
   wonToday: {
     color: colors.gold,
     fontSize: 14,
-    fontWeight: font.bold,
+    fontFamily: fonts.titleSemi,
+    textAlign: 'center',
   },
   legend: {
-    width: '100%',
-    backgroundColor: colors.surface,
-    borderRadius: radius.card,
-    borderWidth: 2,
-    borderColor: colors.border,
-    padding: 12,
     gap: 6,
+    padding: 12,
   },
   legendRow: {
     flexDirection: 'row',
@@ -314,16 +256,16 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.text,
     fontSize: 14,
-    fontWeight: font.bold,
+    fontFamily: fonts.titleSemi,
   },
   legendWeight: {
     color: colors.textDim,
     fontSize: 13,
-    fontWeight: font.bold,
+    fontFamily: fonts.titleSemi,
   },
   backdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(6, 3, 16, 0.85)',
+    backgroundColor: 'rgba(6, 7, 11, 0.88)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -331,53 +273,38 @@ const styles = StyleSheet.create({
   rewardCard: {
     width: '100%',
     maxWidth: 340,
-    backgroundColor: colors.surface,
     borderRadius: radius.card,
-    borderWidth: 4,
+    backgroundColor: 'rgba(24, 25, 31, 0.96)',
+    borderWidth: 2,
     borderColor: colors.gold,
-    paddingVertical: 24,
-    paddingHorizontal: 18,
+    paddingVertical: 26,
+    paddingHorizontal: 20,
     alignItems: 'center',
     gap: 4,
   },
   rewardTitle: {
     color: colors.gold,
     fontSize: 20,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
     letterSpacing: 3,
   },
   rewardValue: {
     color: colors.text,
     fontSize: 56,
-    fontWeight: font.heavy,
+    fontFamily: fonts.title,
   },
   rewardLabel: {
     color: colors.textMuted,
     fontSize: 16,
-    fontWeight: font.bold,
-    textTransform: 'uppercase',
+    fontFamily: fonts.titleSemi,
     letterSpacing: 2,
+    textTransform: 'uppercase',
   },
   rewardHint: {
     color: colors.textDim,
     fontSize: 13,
-    fontWeight: font.medium,
+    fontFamily: fonts.bodySemi,
     marginTop: 6,
-  },
-  continue: {
-    marginTop: 16,
-    width: '100%',
-    borderRadius: radius.button,
-    backgroundColor: colors.wheel,
-    borderBottomWidth: 6,
-    borderBottomColor: colors.wheelDark,
-    minHeight: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  continueText: {
-    color: '#3b2400',
-    fontSize: 18,
-    fontWeight: font.heavy,
+    marginBottom: 10,
   },
 });

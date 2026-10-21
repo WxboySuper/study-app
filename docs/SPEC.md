@@ -251,6 +251,17 @@ Visual reference: AI Studio "Blookless" prototype (dark navy + neon, 6-tab botto
 ## UX direction (Alex, Oct 21 2026)
 The AI Studio "Blookless" prototype is NOT the UX reference; Alex disliked its UI/UX. Game modes must look and play like real game scenes, close to Blooket's Fishing Frenzy (animated lake, casting, fish reveal, weight/haul) and Café (counter, customers lining up, serving food, upgrades), not a quiz card with a themed skin. Do a dedicated game-feel/UX design pass (scene layout, animations, juice, sound) before building each mode.
 
+## Visual design system (Alex, Oct 21 2026)
+The app is a premium mobile game, not a React Native app with a theme. One design system for every screen (`apps/mobile/src/ui/`, tokens in `apps/mobile/src/theme.ts`):
+
+- **Background:** deep layered dark gradient (`#111214` → `#181818`, indigo and navy washes), radial colored glows behind the focal elements, a field of stars and slow bokeh. Every screen has a variant: `home`, `packs`, `collection`, `spin`, `ocean`.
+- **Cards:** glassy — a gradient border, a 1px inset top highlight and a soft large drop shadow.
+- **Buttons:** chunky 3D — a gradient face on a darker base 6px below it; the face sinks into the base with a spring and the phone buzzes when it is pressed. No default `Pressable` look anywhere.
+- **Accent:** a violet gradient at 135deg (`#7b61ff` → brand blue `#4f7dff`), gold for the tokens, pink for the shop, amber for the wheel, green for the collection.
+- **Type:** Fredoka (600/700) for the titles, the buttons and the numbers, Nunito for the body. The fonts are loaded in `app/_layout.tsx` and the splash screen is held until they are there.
+- **Motion:** Reanimated everywhere, springs for the presses, staggered `FadeInDown` entrances, count-up token counters, particle bursts and shine sweeps. When the player (or the system) asks for less motion, the loops stop and the screens stay still.
+- The reference is Alex's GFC marketing page (layered dark gradients, radial glows, soft shadows, glassy cards) combined with the chunky, playful energy of Blooket.
+
 ## Session flow
 Every mode is played in short sessions, not one endless game. All of it is one tap.
 - **Start:** Home → pick a mode (Fishing, later Café, Factory, Gold Quest) → pick a set, a topic or **All** → **Go**. The last choice is remembered, so "Play again" from Home is a single tap.
