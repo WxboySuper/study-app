@@ -2,98 +2,50 @@ import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_PAYOUT_RULES, computePayout } from '../src/payout';
 
+const zero = { correct: 0, graduated: 0, dueCleared: 0, modeScore: 0, tokensToday: 0 };
+
 describe('computePayout', () => {
   it('uses the documented token economy', () => {
     expect(DEFAULT_PAYOUT_RULES).toEqual({
-      tokensPerCorrect: 10,
-      tokensPerGraduated: 25,
-      tokensPerDueCleared: 5,
-      modeBonusPerPoint: 0.1,
-      softCap: 300,
+      tokensPerCorrect: 1.5,
+      tokensPerGraduated: 1,
+      tokensPerDueCleared: 0.25,
+      modeBonusPerPoint: 0.01,
+      softCap: 500,
       softCapRatio: 0.25,
     });
   });
 
-  it('pays 10 tokens per correct answer', () => {
-    const payout = computePayout({
-      correct: 3,
-      graduated: 0,
-      dueCleared: 0,
-      modeScore: 0,
-      tokensToday: 0,
-    });
+  it('pays ~1.5 tokens per correct answer (rounded down)', () => {
+    expect(computePayout({ ...zero, correct: 3 }).tokens).toBe(4);
+    expect(computePayout({ ...zero, correct: 4 }).tokens).toBe(6);
+  });
 
-    expect(payout.baseTokens).toBe(30);
-    expect(payout.tokens).toBe(30);
+  it('hits the ~50 tokens per 10 minute session benchmark', () => {
+    const payout = computePayout({ ...zero, correct: 30, graduated: 3, dueCleared: 10, modeScore: 200 });
+    expect(payout.baseTokens).toBe(45 + 3 + 2);
+    expect(payout.bonusTokens).toBe(2);
+    expect(payout.tokens).toBeGreaterThanOrEqual(45);
+    expect(payout.tokens).toBeLessThanOrEqual(60);
     expect(payout.capped).toBe(false);
   });
 
-  it('pays 25 tokens per graduated card and 5 per cleared due card', () => {
-    const payout = computePayout({
-      correct: 2,
-      graduated: 1,
-      dueCleared: 4,
-      modeScore: 0,
-      tokensToday: 0,
-    });
-
-    expect(payout.baseTokens).toBe(20 + 25 + 20);
-    expect(payout.tokens).toBe(65);
-  });
-
-  it('adds a mode bonus', () => {
-    const payout = computePayout({
-      correct: 0,
-      graduated: 0,
-      dueCleared: 0,
-      modeScore: 145,
-      tokensToday: 0,
-    });
-
-    expect(payout.bonusTokens).toBe(14);
-    expect(payout.grossTokens).toBe(14);
-    expect(payout.tokens).toBe(14);
-  });
-
   it('applies the soft daily cap', () => {
-    const payout = computePayout({
-      correct: 100,
-      graduated: 0,
-      dueCleared: 0,
-      modeScore: 0,
-      tokensToday: 250,
-    });
-
-    // 50 of the 1000 tokens are still worth full price, the remaining 950 are
-    // worth a quarter.
-    expect(payout.grossTokens).toBe(1000);
-    expect(payout.tokens).toBe(50 + Math.floor(950 * 0.25));
+    const payout = computePayout({ ...zero, correct: 100, tokensToday: 450 });
+    expect(payout.grossTokens).toBe(150);
+    expect(payout.tokens).toBe(50 + Math.floor(100 * 0.25));
     expect(payout.capped).toBe(true);
   });
 
   it('does not cap a payout that fits into the remaining budget', () => {
-    const payout = computePayout({
-      correct: 5,
-      graduated: 0,
-      dueCleared: 0,
-      modeScore: 0,
-      tokensToday: 250,
-    });
-
-    expect(payout.tokens).toBe(50);
+    const payout = computePayout({ ...zero, correct: 20, tokensToday: 450 });
+    expect(payout.tokens).toBe(30);
     expect(payout.capped).toBe(false);
   });
 
   it('keeps paying a reduced rate once the cap is reached', () => {
-    const payout = computePayout({
-      correct: 10,
-      graduated: 0,
-      dueCleared: 0,
-      modeScore: 0,
-      tokensToday: 400,
-    });
-
-    expect(payout.tokens).toBe(25);
+    const payout = computePayout({ ...zero, correct: 40, tokensToday: 600 });
+    expect(payout.tokens).toBe(15);
     expect(payout.capped).toBe(true);
   });
 
@@ -146,6 +98,6 @@ describe('computePayout', () => {
       tokensToday: 0,
     });
 
-    expect(payout.softCap).toBe(300);
+    expect(payout.softCap).toBe(500);
   });
 });

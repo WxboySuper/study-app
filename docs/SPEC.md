@@ -204,3 +204,23 @@ Build Phase 0 + the FSRS core of a personal study app: a solo, untimed, Blooket-
 
 Finish by listing what was built, how to run it, and anything left TODO.
 ```
+
+## Economy tuning (Alex, Oct 21 2026)
+- Benchmark: a ~10 min session at ~70% accuracy (~30 correct) should earn ~50 tokens (~1.5 tokens/correct, before mode bonuses).
+- Pack prices: standard packs 20–25 tokens (Brain Buddies 20, seasonal packs like Midterm Monsters 25), so ~2 packs per solid session.
+- Selling: duplicates only. Provide a "Sell all duplicates" button; the last copy of any critter can never be sold. Sell value scales with rarity.
+- Soft daily cap should sit well above a normal day's play so it never feels punishing.
+
+## Daily spin + XP (Alex, Oct 21 2026; reference: Blooket wiki "Tokens and XP")
+- Blooket reference: 2 tokens per correct answer in most solo modes, 500 token daily earning cap, Daily Wheel once per day (10–1,000 tokens, weighted low, does not count toward the cap), XP 300/day feeding a 100-level Class Pass of cosmetics.
+- Ours: ~1.5–2 tokens per correct (keep the ~50 tokens per 10 min benchmark), soft daily earning cap ~500.
+- Daily Spin: once per local day, server-side RNG, weighted wheel (most spins 10–50, rare 100–250, very rare jackpot), outside the daily cap. Table `daily_spins(user_id, local_date UNIQUE, reward)`. Phase 1 or 2.
+- XP + level pass (later phase): XP per session, daily XP cap, levels unlock cosmetics/critter accessories.
+
+## Economy principle (Alex, Oct 21 2026)
+Tokens exist to keep Alex studying: rewarding but not too easy.
+- Pay for learning, not grinding: correct answers on due/new cards and cards that graduate earn full value; bonus-review (nothing due) and rapid repeat answers earn reduced tokens.
+- No farming: per-card diminishing returns within a session; guessing fast streaks don't pay extra.
+- Keep the next pack ~1 session away: prices and payout tuned so a normal 10-15 min session buys about 1-2 packs, never 5.
+- Daily spin weighted low; jackpots rare so the main source stays studying.
+- Streak bonus for showing up daily (small, scales slowly) to reward consistency over marathon sessions.

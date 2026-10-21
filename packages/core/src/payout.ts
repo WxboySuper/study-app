@@ -31,15 +31,16 @@ export interface PayoutRules {
 }
 
 /**
- * Defaults taken from docs/SPEC.md §3:
- * `tokens = 10·correct + 25·newCardsGraduated + 5·dueCleared + modeBonus(score)`
+ * Defaults from docs/SPEC.md "Economy tuning": ~1.5 tokens per correct answer,
+ * so a ~10 min session (~30 correct) earns ~50 tokens and buys ~2 packs (20-25).
+ * The soft daily cap (~500) sits well above a normal day's play.
  */
 export const DEFAULT_PAYOUT_RULES: PayoutRules = {
-  tokensPerCorrect: 10,
-  tokensPerGraduated: 25,
-  tokensPerDueCleared: 5,
-  modeBonusPerPoint: 0.1,
-  softCap: 300,
+  tokensPerCorrect: 1.5,
+  tokensPerGraduated: 1,
+  tokensPerDueCleared: 0.25,
+  modeBonusPerPoint: 0.01,
+  softCap: 500,
   softCapRatio: 0.25,
 };
 
@@ -79,10 +80,11 @@ export function computePayout(input: PayoutInput, rules: Partial<PayoutRules> = 
   const modeScore = nonNegative(input.modeScore);
   const tokensToday = nonNegative(input.tokensToday);
 
-  const baseTokens =
+  const baseTokens = Math.floor(
     economy.tokensPerCorrect * correct +
     economy.tokensPerGraduated * graduated +
-    economy.tokensPerDueCleared * dueCleared;
+    economy.tokensPerDueCleared * dueCleared,
+  );
   const bonusTokens = Math.floor(modeScore * economy.modeBonusPerPoint);
   const grossTokens = baseTokens + bonusTokens;
 
