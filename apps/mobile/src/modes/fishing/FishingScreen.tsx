@@ -9,6 +9,8 @@ import {
   remainingCards,
   toSessionResult,
   type CardState,
+  type FishingEvent,
+  type FishingState,
   type QueueItem,
   type QueueScope,
   type StudyCard,
@@ -16,7 +18,7 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { settleLocalSession } from '@/db/wallet';
+import { settleLocalSession, readWallet } from '@/db/wallet';
 import { enqueueReview, listLocalCardStates, listLocalCards, openLocalDatabase, upsertLocalCardState } from '@/db/local';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
 
@@ -58,6 +60,31 @@ export interface FishingScreenProps {
   onPlayAgain: () => void;
 }
 
+/**
+ * The events of the screen.
+ *
+ * Next to the events of the machine, the screen hydrates the pack tickets
+ * that were already earned today: the wallet is read when the screen opens,
+ * so the mode cannot roll a second ticket on a day that already had one.
+ */
+type ScreenEvent = FishingEvent | { type: 'hydrate_pack_tickets'; count: number };
+
+function screenReducer(state: FishingState, event: ScreenEvent): FishingState {
+  if (event.type === 'hydrate_pack_tickets') {
+    return {
+      ...state,
+      session: {
+        ...state.session,
+        roll: {
+          ...state.session.roll,
+          packTicketsToday: Math.max(state.session.roll.packTicketsToday, event.count),
+        },
+      },
+    };
+  }
+  return fishingReducer(state, event);
+}
+
 export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { autoReel, bait } = useSettings();
@@ -89,7 +116,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   }, [queueScope]);
 
   const [machine, dispatch] = useReducer(
-    fishingReducer,
+    screenReducer,
     undefined,
     () =>
       createFishingState({
@@ -124,6 +151,14 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         cardsRef.current = buildQuestionCards(cards);
         statesRef.current = states;
         dispatch({ type: 'set_queue', queue: buildQueueNow() });
+
+        // The wallet knows how many pack tickets were already earned today:
+        // the mode must not roll a second one.
+        const wallet = await readWallet(db, localDayKey(new Date()));
+        if (cancelled) {
+          return;
+        }
+        dispatch({ type: 'hydrate_pack_tickets', count: wallet.packTicketsToday });
       } catch {
         // Without the local store there is nothing to study; the screen shows
         // the empty state.
