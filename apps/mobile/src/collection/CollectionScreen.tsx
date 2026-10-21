@@ -242,7 +242,7 @@ function CritterTile({
             resizeMode="contain"
           />
         )}
-        {owned && count > 1 ? (
+        {owned ? (
           <View style={styles.countBadge}>
             <Text style={styles.countBadgeText}>x{count}</Text>
           </View>
@@ -304,6 +304,7 @@ function SellSheet({
   }
 
   const entry = collectionEntry(collection, sheet.critter.id);
+  const owned = (entry?.count ?? 0) > 0;
   const duplicates = entry?.duplicates ?? 0;
   const value = entry?.sellValue ?? 0;
 
@@ -319,9 +320,11 @@ function SellSheet({
         </View>
         <Text style={styles.sheetTitle}>{sheet.critter.name}</Text>
         <Text style={styles.sheetBody}>
-          {duplicates === 0
-            ? 'You only own one copy, and the last copy is never sold.'
-            : `You own ${entry?.count ?? 0} copies · ${duplicates} duplicate${duplicates === 1 ? '' : 's'} · ${value} tokens each`}
+          {!owned
+            ? 'You do not own this critter yet. Open a pack to find it.'
+            : duplicates === 0
+              ? 'You only own one copy, and the last copy is never sold.'
+              : `You own ${entry?.count ?? 0} copies · ${duplicates} duplicate${duplicates === 1 ? '' : 's'} · ${value} tokens each`}
         </Text>
 
         {duplicates === 0 ? null : (
