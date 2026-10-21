@@ -2,18 +2,26 @@
 
 Status: design, pre-build. Owner: Alex. Supersedes the AI Studio "Cast" prototype, which is **not** a UX reference.
 
+> **Update (Oct 2026): the mode catches critters, not fish.** The tiers of the
+> ladder are filled with the critters of the packs that are on sale, the
+> bottom tier is junk and the "Special" slice is the table of the specials.
+> The fish are gone: their registry (`packages/core/src/content/fish.ts`) is
+> typed and empty, so the first fish is a data change. See §7 and
+> `docs/ADDING-CONTENT.md`.
+
 ## 1. Goal
 Look and play like Blooket's Fishing Frenzy, solo and untimed: an animated lake you fish in, where every catch is gated by answering one card. The card lives *inside* the scene (a speech bubble / note pinned to the line) — never a full-screen quiz card with a fishing label. The session ends only when you tap **End**, which triggers the server payout.
 
 Design pillars:
 1. **The scene is the screen.** Water, dock, sky, and fisher fill the screen at all times. UI is chrome around the scene.
-2. **Every answer has a physical consequence.** Correct → the fish is reeled in. Wrong → the line snaps and the fish swims off.
+2. **Every answer has a physical consequence.** Correct → the catch is reeled in. Wrong → the line snaps and the critter swims off.
 3. **Number goes up.** The haul counter (lbs) ticks up visibly on each catch. Big catches get extra juice.
 4. **Studying is the only throttle.** No timers. The pace is your own. Rewards follow the SPEC economy (≈1.5 tokens/correct, full rate only for due/new cards).
 
 ## 1b. Faithfulness and session flow
 - **Stay faithful to Blooket's Fishing Frenzy.** Same loop, same HOOKED! moment, lure ranks reeled up during play, the 7-tier rarity ladder, the ~10× weight ladder, Frenzy, and the lbs haul as score. The only changes are what solo, untimed play needs: **no timer**, **no distractions** (Blooket solo has none either), FSRS card selection, and the End payout.
 - **Additions Alex asked for, kept small:** powerups, persistent bait/lure upgrades, extra silly junk, and critter/pack-ticket catches.
+- **Our twist:** the catches are **critters**, not fish. Every tier of the ladder holds the critters of the packs that are on sale, so the mode is another way to fill the collection (and to farm duplicates to sell).
 - **Session flow** (see SPEC "Session flow"): Home → Fishing → set/topic/All → **Go** lands you on the dock, ready to cast. **End** → payout summary (tokens, haul lbs, catches by tier, biggest catch, new/dupe critters, pack tickets) → **Play again** (one tap, same set) or **Home**. Lure rank and Frenzy reset each session.
 
 ## 2. Research: how Blooket's Fishing Frenzy works
@@ -55,8 +63,9 @@ any ─End─▶ END_CONFIRM ─▶ PAYOUT
 
 ## 5. Reveal card
 - It springs in (scale 0.6→1.05→1) over a burst in the rarity colour.
-- It shows the art, name, **rarity ribbon** using Blooket-style tier names (below), **weight** counting up, and a **NEW!** stamp the first time you catch something. Silly catches get a one-line joke caption ("Smells like detention").
+- It shows the art, name, **rarity ribbon** using Blooket-style tier names (below), **weight** counting up, and a **NEW!** stamp the first time you catch something. Silly catches get a one-line joke caption ("Smells like detention"), critters show their vibe.
 - Catch of the Day and Angler's Legend get a full-screen flash, a slow-mo leap, a fanfare and a triple haptic.
+- The art of a catch comes from the art resolver of the app (`apps/mobile/src/content/art.ts`): the PNG of the critter (or of the junk item) when it exists, the placeholder of its type when it does not.
 
 ## 6. Catch tiers, odds and weights
 Our tiers mirror Blooket's names, with a ~10× weight ladder so the number goes up:
@@ -80,18 +89,29 @@ Odds per **lure rank** (%; the remaining slice is the "special" table in §8):
 - **Lure rank rises within a session.** You *reel up* "New Lure!" as a special catch, guaranteed by 5, 12, 22 and 35 correct answers at the latest, as in Blooket. Rank resets each session. The **base lure** you start at is a persistent shop upgrade (§9), so progress carries over.
 - **Bonus or repeat cards** (not due, not new) roll at rank 1 at best, mirroring the SPEC's lower token rate, so farming an easy deck stays boring.
 - **Haul lbs is the score for bests and achievements. Tokens still come only from the SPEC payout formula** (~1.5/correct). Catches never mint tokens directly, apart from the capped specials in §8.
+- **What a tier holds:** the bottom tier holds junk, every other tier holds the **critters of that rarity** of the packs that are on sale (Common → Easy One, Uncommon → Great Catch, Rare → Rare Find, Epic → Epic Grab, Legendary → Angler's Legend). A tier without any catch (the Catch of the Day tier has no critter yet) falls back to the closest tier that has one, so the game never dead ends.
 
 ## 7. Catch list
-Original names (no Blooket IP), with silly ones encouraged. Each line shows tier and lbs.
-- **Trash (junk):** Old Sneaker, Soggy Waffle, Lost Homework (soaked), Two of Clubs, Rubber Duck, Tangled Earbuds, Half a Pencil, Mystery Tin Can, Expired Hall Pass. 1–10 lbs each.
-- **Easy One:** Minnow Memo 10–25, Flashcard Flounder 15–40, Bluegill Bookmark 20–45, Goldfish Cracker (the fish) 30–65, Lilypad Frog 50–100.
-- **Great Catch:** Highlighter Trout 100–150, Wet Cat (deeply unhappy) 100–200, Sticky-Note Sunfish 150–350, Cram Carp 250–750.
-- **Rare Find:** Quizzical Catfish 500–1k, Seal of Approval 700–2.2k, Margin-Note Crab 1k–2.5k, Pop-Quiz Pufferfish 2k–4k, Blobfish of Burnout 3k–5k.
-- **Epic Grab:** Lantern of Lore (anglerfish) 7k–10k, Octo-Tutor 10k–15k, Thesis Tuna 12k–20k, Donut Blobfish 13k–25k.
-- **Catch of the Day:** Synapse Narwhal 25k–50k, Scholar Sturgeon 50k–100k, Mega-Lodon of Midterms 250k–500k.
-- **Angler's Legend:** The Spaced Leviathan 500k–700k, Golden Grade Koi 750k–1M, Teacher's UFO 1M–2M, and a seasonal slot (Pumpkin Kraken for Halloween, Frost Whale for Winter) at 1M–2M.
-- **Critter catches:** any **Brain Buddies critter** from the SPEC (Mnemo the Memory Jelly, The Spaced Ranger, Gigabrain Golem…) can show up as a catch at its own rarity's tier. See §8.
-Data lives in `packages/core/src/fishing/catches.ts` with `{id, name, tier, minLbs, maxLbs, joke?, seasonal?, critterId?}`.
+The mode catches **critters, junk and specials**. There is no fish left in the
+catalogue: the fish registry is typed and empty (`packages/core/src/content/fish.ts`).
+- **Trash (junk):** Old Sneaker, Soggy Waffle, Lost Homework (soaked), Two of Clubs, Rubber Duck, Tangled Earbuds, Half a Pencil, Mystery Tin Can, Expired Hall Pass, plus the seasonal Pumpkin Carving (Halloween) and Snowy Mittens (Winter). 1–10 lbs each.
+- **Easy One (common critters):** every critter of the packs that are on sale with the rarity *common* — Nibbles the Notecard, Pip Pencil, Doodle Moth, Sir Highlighter (Brain Buddies) and Candy Corn Kid, Pumpkin Pupil, Bat-ter Up (Midterm Monsters, while that pack is on sale). 10–100 lbs.
+- **Great Catch (uncommon critters):** Gummy Eraser, Captain Cram, Recall Raccoon, Ghost of Finals Past, Mummy Wrapped-Up. 100–750 lbs.
+- **Rare Find (rare critters):** Synapse Sprite, Professor Hoot-n-Holler, Count Flashula. 500–5,000 lbs.
+- **Epic Grab (epic critters):** Mnemo the Memory Jelly, The Spaced Ranger, The Witching Hour Owl. 7,000–30,000 lbs.
+- **Catch of the Day:** no critter has that rarity yet: the tier falls back to the Angler's Legend (the fish registry will fill it).
+- **Angler's Legend (legendary critters):** Gigabrain Golem and Headless Homework Horseman. 500,000–2,500,000 lbs.
+- **Specials (§8):** New Lure!, FRENZY!, a powerup bottle and a Pack Ticket. They are not catches of the ladder: they change the session or give something.
+
+A critter catch **is added to the collection at End** of the session (a duplicate
+only bumps the count, so it can be sold). The critters of a pack that is not
+on sale never swim up: the pool of a tier is built from the packs that are
+available at the time of the session.
+
+Data lives in the content registries (`packages/core/src/content/`): the
+critters in `critters.ts`, the junk in `junk.ts`, the specials in
+`specials.ts`. The logic that turns them into catches lives in
+`packages/core/src/fishing/catches.ts`.
 
 ## 8. Special catches: lures, Frenzy, powerups, critters
 The "Special" slice in §6 rolls on this table:
@@ -99,10 +119,10 @@ The "Special" slice in §6 rolls on this table:
 |---|---|---|
 | **New Lure!** | 30% (plus guarantees) | lure rank +1 for this session (max 5), with a big reel-up and a lure-glow trail |
 | **FRENZY!** | 15% | rainbow sky and water, music tempo up. The **next 5 catches** roll at rank +2 with ×2 weight. Counted in catches, not seconds, so it fits untimed play |
-| **Powerup bottle** | 40% | one of: **Double Hook** (next correct lands 2 catches), **Lucky Charm** (next catch rerolls Trash/Easy once), **Second Chance** (next wrong answer lets the fish stay on, so you can retry the same card once; the SRS still logs the first miss as Again), **Heavy Sinker** (×3 weight on the next catch) |
-| **Critter catch** | 12% | a Brain Buddies critter swims up. Rarity is rolled with SPEC pack odds. A **new** critter is added to the collection, and a **duplicate** counts as a dupe (sellable, as in the SPEC) |
+| **Powerup bottle** | 40% | one of: **Double Hook** (next correct lands 2 catches), **Lucky Charm** (next catch rerolls Trash/Easy once), **Second Chance** (next wrong answer lets the catch stay on, so you can retry the same card once; the SRS still logs the first miss as Again), **Heavy Sinker** (×3 weight on the next catch) |
+| **Critter catch** | 12% | a bonus critter swims up, whatever the tier roll was. Rarity is rolled with the SPEC pack odds. It goes into the collection like any other critter catch |
 | **Pack Ticket** | 3% | one free Brain Buddies pack, max 1 per session and 1 per day. It counts against the SPEC economy, so a ticket ≈ 20 tokens of value inside the daily cap |
-Critter and ticket catches **only roll on due or new cards** (never bonus review) and are validated server-side at End, as tokens are, so they can't be farmed.
+The critter special and the ticket **only roll on due or new cards** (never bonus review) and are validated server-side at End, as tokens are, so they can't be farmed.
 
 ## 9. Lures and upgrades (shop, persistent)
 | Item | Effect | Price (tokens) |
@@ -122,7 +142,7 @@ You equip one bait at a time on the pre-session screen. Prices stay below pack p
 - A catch log strip shows the last 5 catches.
 
 ## 10. End and payout
-End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:id/end` → the payout screen: the fisher holds the biggest catch, the haul total, the fish caught by rarity, tokens earned (count-up, coin sfx) and a "Open pack" CTA. The client works offline. The outbox syncs and the server stays the source of truth for tokens.
+End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:id/end` → the payout screen: the fisher holds the biggest catch, the haul total, the catches by rarity, the critters that were caught (new ones are stamped **NEW**), tokens earned (count-up, coin sfx) and a "Open pack" CTA. The critters are added to the collection when the session ends (a duplicate only bumps the count). The client works offline. The outbox syncs and the server stays the source of truth for tokens.
 
 ## 11. Rendering approach (lean MVP)
 **Build it with plain React Native Views/Images and react-native-reanimated 4** (already installed). No Skia for v1.
@@ -139,7 +159,7 @@ End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:i
 - **Haptics:** `expo-haptics`. Cast is Light, bite is Heavy, correct is Success notification, wrong is Error notification, reel is rhythmic Light every 120ms, and Legendary is Heavy×3. All can be turned off in settings.
 
 ## 13. Art plan
-Simple 2D sprites, **AI-generated in one batch** from the prompts in §13a. Transparent PNGs go in `apps/mobile/assets/fishing/`, named by asset id. Until the art exists, the build uses coloured placeholder shapes (a tinted circle for each catch, with its emoji as a fallback) so it never blocks.
+Simple 2D sprites, **AI-generated in one batch** from the prompts in §13a. Transparent PNGs go in `apps/mobile/assets/fishing/` (the scene, the junk, the lures, the specials and the UI), named by asset id. The critters reuse the art of the pack system (`apps/mobile/assets/critters/`). Until an image exists, the art resolver of the app (`apps/mobile/src/content/art.ts`) falls back to the placeholder of the type of the entry (a critter, a junk item, a special or a fish), so it never blocks.
 Sizes: catches and lures 512×512, background 1080×1920 (portrait), UI pieces as noted. Shared style suffix for every prompt:
 > *"…, cute chunky cartoon game sprite, thick dark outline, flat bright colours, soft cel shading, centered, single object, transparent background, no text, mobile game asset, Blooket-like style"*
 
@@ -163,38 +183,8 @@ Sizes: catches and lures 512×512, background 1080×1920 (portrait), UI pieces a
 - `junk_half_pencil`: "broken half of a yellow pencil"
 - `junk_tin_can`: "rusty dented tin can with no label"
 - `junk_hall_pass`: "faded laminated school hall pass on a lanyard"
-**Easy One**
-- `fish_minnow_memo`: "tiny silver minnow holding a small sticky memo note"
-- `fish_flashcard_flounder`: "flat flounder fish shaped like an index flashcard"
-- `fish_bluegill_bookmark`: "bluegill fish with a ribbon bookmark tail"
-- `fish_goldfish_cracker`: "orange goldfish that looks like a smiling cracker snack"
-- `fish_lilypad_frog`: "green frog sitting on a lilypad"
-**Great Catch**
-- `fish_highlighter_trout`: "trout with neon yellow highlighter stripes"
-- `fish_wet_cat`: "very grumpy soaking wet cat"
-- `fish_sticky_note_sunfish`: "round sunfish covered in colourful sticky notes"
-- `fish_cram_carp`: "chubby carp with stuffed cheeks and tired eyes, carrying a stack of books"
-**Rare Find**
-- `fish_quizzical_catfish`: "catfish with a question mark on its forehead and long whiskers"
-- `fish_seal_of_approval`: "happy grey seal with a gold ribbon medal stamp"
-- `fish_margin_note_crab`: "red crab holding a pencil, notes doodled on its shell"
-- `fish_pop_quiz_puffer`: "inflated pufferfish with surprised face and a tiny quiz paper"
-- `fish_blobfish_burnout`: "droopy pink blobfish looking exhausted, with a tiny coffee cup"
-**Epic Grab**
-- `fish_lantern_of_lore`: "anglerfish whose glowing lure is a tiny open book"
-- `fish_octo_tutor`: "purple octopus wearing glasses, holding chalk and a tiny chalkboard"
-- `fish_thesis_tuna`: "large tuna wearing a graduation cap"
-- `fish_donut_blobfish`: "pink blobfish shaped like a frosted sprinkle donut"
-**Catch of the Day**
-- `fish_synapse_narwhal`: "narwhal whose horn crackles with blue neural lightning"
-- `fish_scholar_sturgeon`: "huge wise sturgeon with a monocle and bow tie"
-- `fish_megalodon_midterms`: "giant cartoon megalodon shark with a backpack, toothy grin"
-**Angler's Legend**
-- `fish_spaced_leviathan`: "majestic sea serpent made of starry space, glowing calendar runes"
-- `fish_golden_grade_koi`: "shining gold koi fish with an A+ pattern on its scales, glowing"
-- `fish_teachers_ufo`: "cartoon flying saucer with an apple on top and a tractor beam"
-- `fish_pumpkin_kraken`: "orange jack-o-lantern kraken with tentacles (Halloween)"
-- `fish_frost_whale`: "icy blue whale with snowflakes and a scarf (winter)"
+- `junk_pumpkin_carving`: "carved pumpkin with a triangle smile (Halloween)"
+- `junk_snowy_mittens`: "pair of knitted mittens covered in snow (winter)"
 **Lures and baits**
 - `lure_r1_worm`: "pink wriggly worm on a hook"
 - `lure_r2_spinner`: "shiny silver spinner fishing lure"
@@ -217,10 +207,13 @@ Sizes: catches and lures 512×512, background 1080×1920 (portrait), UI pieces a
 - `ui_reveal_rays`: "radial light rays burst, white, for tinting" (1024)
 - `ui_tier_ribbon`: "blank ribbon banner, white, for tinting" (512×128)
 - `ui_coin`: "gold token coin with a brain symbol" (256)
-Critter catches reuse the existing critter art from the pack system.
+**Critters**
+Critter catches reuse the existing critter art from the pack system
+(`apps/mobile/assets/critters/`). There is **no fish art**: the mode catches
+critters, junk and specials.
 
 ## 14. Out of scope (MVP)
-Multiplayer, real distractions against other players, timers, fish selling, an aquarium display, and quests.
+Multiplayer, real distractions against other players, timers, an aquarium display, and quests.
 
 ## 15. Acceptance checklist
 - [ ] The scene is always visible and runs smoothly on a mid-range Android phone. It works with the placeholder fallback art.
@@ -228,7 +221,9 @@ Multiplayer, real distractions against other players, timers, fish selling, an a
 - [ ] The full loop works: cast → wait → HOOKED! → answer → reel + reveal, or got away → cast again.
 - [ ] The haul counter rolls up, and the End confirmation leads to the server payout screen.
 - [ ] The HOOKED! banner, GOT_AWAY and the in-session lure ranks 1–5 work. Frenzy lasts 5 catches. Powerups, critter catches and the Pack Ticket caps all work.
-- [ ] Bonus cards roll at rank 1 at most and never roll critters or tickets.
+- [ ] A critter catch is added to the collection when the session ends; a duplicate only bumps the count.
+- [ ] Only the critters of the packs that are on sale swim up.
+- [ ] Bonus cards roll at rank 1 at most and never roll the critter special or a ticket.
 - [ ] Sound, haptics and Reduce Motion all have toggles.
 - [ ] Unit tests cover the reducer, the tier odds per rank, the weight roll, the specials and their caps (seeded RNG).
 
@@ -239,10 +234,10 @@ Multiplayer, real distractions against other players, timers, fish selling, an a
 > You are implementing the Fishing ("Fish Frenzy") game mode in the `WxboySuper/study-app` monorepo (pnpm workspaces; Expo SDK 58 app in `apps/mobile`, expo-router; shared logic in `packages/core`; React Native 0.88, react-native-reanimated 4.7 + react-native-worklets already installed). Read `docs/SPEC.md` and `docs/design/fishing.md` first. The design doc is the source of truth for look and feel.
 >
 > Build:
-> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and catch list from §7, including junk, jokes, seasonal flags and critter links to the existing critter data), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critters/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End.
+> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and the catch list from §7: the junk of the bottom tier, the critters of the packs that are on sale in the other tiers and the specials), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critter special/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). The content (the critters, the packs, the junk and the specials) lives in the registries of `packages/core/src/content/`: the logic only reads them. Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End.
 > 2. Add `expo-haptics` and `expo-audio` with `npx expo install`. **Do not add Skia.** Animate with react-native-reanimated (§11).
 > 3. `apps/mobile/src/modes/fishing/`: `FishingScreen.tsx` (wires the machine to the existing FSRS queue from `@study-app/core`), `LakeScene.tsx` (layered Images: background, wave strips, shadow, bobber, line, fisher; Reanimated loops), `HookedBanner.tsx`, `QuestionNote.tsx` (an in-scene parchment note with 4 wooden-tag answers, at least 56dp each), `RevealCard.tsx`, `Hud.tsx` (haul lbs roll-up, streak, due count, lure pips, End with confirm), `PayoutScreen.tsx` (tokens, haul, catches by tier, critters, tickets; **Play again** with the same mode and set in one tap, and Home), `sfx.ts`, `haptics.ts`, and Reduce Motion support. Add a `app/fishing.tsx` route and a one-tap start from Home: mode → set/topic/All → Go.
-> 4. Assets: load sprites from `apps/mobile/assets/fishing/<asset_id>.png` using the ids in §13a, through one `assets.ts` map. Any missing file falls back to a tier-coloured circle with an emoji, so the game runs with no art. Sound: CC0 SFX only (Kenney audio packs or Freesound CC0), credited in `assets/CREDITS.md`. Stay lean: if you're short on time, ship the core loop first (§3–6, 10) and leave the specials from §8–9 for run 2.
+> 4. Assets: the art resolver of the app (`apps/mobile/src/content/art.ts`) maps the art key of every entry to its PNG and falls back to the placeholder of its type, so the game runs with no art. Sound: CC0 SFX only (Kenney audio packs or Freesound CC0), credited in `assets/CREDITS.md`. Stay lean: if you're short on time, ship the core loop first (§3–6, 10) and leave the specials from §8–9 for run 2.
 > 5. No timers anywhere in the mode. HOOKED! shows a big banner and a tap to Reel (with an auto-advance setting). A wrong answer means GOT_AWAY: the line snaps, the catch is lost, and the correct answer shows for 1.5s. The SRS grade is derived exactly as SPEC describes. Bite wait is 0.8–2.5s.
 >
 > Constraints: TypeScript strict, no `any`. `pnpm -r typecheck`, `pnpm -r lint` and `pnpm -r test` must pass. Don't touch `.github/workflows/android-release.yml`. Keep each animation on the UI thread (Reanimated shared values), with no setState per frame. Commit in small logical commits with conventional-commit messages. When finished, summarise what was built, what's placeholder, and any acceptance-checklist items (§15) not met.
