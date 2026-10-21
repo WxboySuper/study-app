@@ -7,6 +7,12 @@ Paste this whole file to Codex (or ChatGPT image gen). Task:
 **Style suffix (append to every prompt):**
 "cute chunky cartoon game sprite, thick dark outline, flat bright colours, soft cel shading, centered, single object, transparent background, no text, mobile game asset, Blooket-like style"
 
+> **The fishing mode catches critters, junk and specials — there is no fish
+> art.** The critters reuse the art of the pack system (the last section of
+> this file), the junk and the specials need their own sprites, and every
+> missing image falls back to the placeholder of its type (a critter, a junk
+> item, a special or a fish), so the game runs with or without this batch.
+
 ### 13a. Art list (one prompt each; append the style suffix)
 **Scene**
 - `bg_lake_day`: "portrait mobile game background, calm cartoon lake under a bright blue sky with puffy clouds, distant green hills and pine trees, a wooden dock jutting in from the bottom-left, empty water in the middle" (1080×1920, opaque, no transparency)
@@ -27,38 +33,8 @@ Paste this whole file to Codex (or ChatGPT image gen). Task:
 - `junk_half_pencil`: "broken half of a yellow pencil"
 - `junk_tin_can`: "rusty dented tin can with no label"
 - `junk_hall_pass`: "faded laminated school hall pass on a lanyard"
-**Easy One**
-- `fish_minnow_memo`: "tiny silver minnow holding a small sticky memo note"
-- `fish_flashcard_flounder`: "flat flounder fish shaped like an index flashcard"
-- `fish_bluegill_bookmark`: "bluegill fish with a ribbon bookmark tail"
-- `fish_goldfish_cracker`: "orange goldfish that looks like a smiling cracker snack"
-- `fish_lilypad_frog`: "green frog sitting on a lilypad"
-**Great Catch**
-- `fish_highlighter_trout`: "trout with neon yellow highlighter stripes"
-- `fish_wet_cat`: "very grumpy soaking wet cat"
-- `fish_sticky_note_sunfish`: "round sunfish covered in colourful sticky notes"
-- `fish_cram_carp`: "chubby carp with stuffed cheeks and tired eyes, carrying a stack of books"
-**Rare Find**
-- `fish_quizzical_catfish`: "catfish with a question mark on its forehead and long whiskers"
-- `fish_seal_of_approval`: "happy grey seal with a gold ribbon medal stamp"
-- `fish_margin_note_crab`: "red crab holding a pencil, notes doodled on its shell"
-- `fish_pop_quiz_puffer`: "inflated pufferfish with surprised face and a tiny quiz paper"
-- `fish_blobfish_burnout`: "droopy pink blobfish looking exhausted, with a tiny coffee cup"
-**Epic Grab**
-- `fish_lantern_of_lore`: "anglerfish whose glowing lure is a tiny open book"
-- `fish_octo_tutor`: "purple octopus wearing glasses, holding chalk and a tiny chalkboard"
-- `fish_thesis_tuna`: "large tuna wearing a graduation cap"
-- `fish_donut_blobfish`: "pink blobfish shaped like a frosted sprinkle donut"
-**Catch of the Day**
-- `fish_synapse_narwhal`: "narwhal whose horn crackles with blue neural lightning"
-- `fish_scholar_sturgeon`: "huge wise sturgeon with a monocle and bow tie"
-- `fish_megalodon_midterms`: "giant cartoon megalodon shark with a backpack, toothy grin"
-**Angler's Legend**
-- `fish_spaced_leviathan`: "majestic sea serpent made of starry space, glowing calendar runes"
-- `fish_golden_grade_koi`: "shining gold koi fish with an A+ pattern on its scales, glowing"
-- `fish_teachers_ufo`: "cartoon flying saucer with an apple on top and a tractor beam"
-- `fish_pumpkin_kraken`: "orange jack-o-lantern kraken with tentacles (Halloween)"
-- `fish_frost_whale`: "icy blue whale with snowflakes and a scarf (winter)"
+- `junk_pumpkin_carving`: "carved pumpkin with a triangle smile (Halloween)"
+- `junk_snowy_mittens`: "pair of knitted mittens covered in snow (winter)"
 **Lures and baits**
 - `lure_r1_worm`: "pink wriggly worm on a hook"
 - `lure_r2_spinner`: "shiny silver spinner fishing lure"
@@ -86,3 +62,9 @@ Paste this whole file to Codex (or ChatGPT image gen). Task:
 Brain Buddies: `critter_nibbles_the_notecard`, `critter_pip_pencil`, `critter_doodle_moth`, `critter_sir_highlighter`, `critter_gummy_eraser`, `critter_captain_cram`, `critter_recall_raccoon`, `critter_synapse_sprite`, `critter_professor_hoot_n_holler`, `critter_mnemo_the_memory_jelly`, `critter_the_spaced_ranger`, `critter_gigabrain_golem`
 Midterm Monsters (Halloween): `critter_candy_corn_kid`, `critter_pumpkin_pupil`, `critter_bat_ter_up`, `critter_ghost_of_finals_past`, `critter_mummy_wrapped_up`, `critter_count_flashula`, `critter_the_witching_hour_owl`, `critter_headless_homework_horseman`
 (Prompt each as "<name as a cute cartoon creature>, <one-line vibe from its name>".)
+
+**No fish art.** The catches of the fishing mode are critters, junk and
+specials, so the `fish_*` sprites of the first version of this list are not
+needed. The fish registry of the game (`packages/core/src/content/fish.ts`) is
+typed and empty: when the first fish is added, it gets its own prompt and its
+own PNG then.

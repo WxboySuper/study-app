@@ -6,14 +6,24 @@ import {
   CATCH_TIERS,
   CRITTER_TIER,
   SPECIAL_COLOR,
+  catchPool,
   catchesOfTier,
   findCatch,
   findCritterCatch,
   formatLbs,
+  isCatchAvailable,
   tierDefinition,
+  type CatchDef,
   type CatchTier,
 } from '../../src/fishing/catches';
-import { CRITTERS } from '../../src/critters';
+import { CRITTERS } from '../../src/content/critters';
+import { JUNK } from '../../src/content/junk';
+import { FISHES } from '../../src/content/fish';
+
+/** Oct 21 2026: inside the window of the seasonal pack. */
+const INSIDE_THE_WINDOW = Date.UTC(2026, 9, 21, 12, 0, 0);
+/** Dec 24 2026: after the window of the seasonal pack. */
+const OUTSIDE_THE_WINDOW = Date.UTC(2026, 11, 24, 12, 0, 0);
 
 describe('the catch tiers (§6)', () => {
   it('has the seven tiers of the design doc', () => {
@@ -79,80 +89,101 @@ describe('the catch list (§7)', () => {
       expect(entry.minLbs).toBe(1);
       expect(entry.maxLbs).toBe(10);
       expect(entry.joke).toBeDefined();
+      expect(entry.contentType).toBe('junk');
     }
   });
 
-  it('has the five easy catches', () => {
-    const easy = catchesOfTier('easy');
+  it('reads the junk from the junk registry', () => {
+    expect(JUNK).toHaveLength(11);
+    for (const junk of JUNK) {
+      const catchDef = findCatch(junk.id);
+      expect(catchDef?.name).toBe(junk.name);
+      expect(catchDef?.assetId).toBe(junk.assetId);
+      expect(catchDef?.emoji).toBe(junk.emoji);
+    }
+  });
+
+  it('only shows the seasonal junk in its season', () => {
+    const halloween = catchesOfTier('trash', { season: 'halloween' });
+    expect(halloween.map((entry) => entry.name)).toContain('Pumpkin Carving');
+    expect(halloween.map((entry) => entry.name)).not.toContain('Snowy Mittens');
+
+    const winter = catchesOfTier('trash', { season: 'winter' });
+    expect(winter.map((entry) => entry.name)).toContain('Snowy Mittens');
+    expect(winter.map((entry) => entry.name)).not.toContain('Pumpkin Carving');
+
+    // Without a season only the junk that is always there swims up.
+    expect(catchesOfTier('trash').map((entry) => entry.name)).not.toContain('Pumpkin Carving');
+  });
+
+  it('has no fish left in the catalogue', () => {
+    expect(FISHES).toHaveLength(0);
+    for (const entry of CATCHES) {
+      expect(entry.contentType).not.toBe('fish');
+      expect(entry.assetId).not.toMatch(/^fish_/);
+    }
+  });
+
+  it('builds the catalogue from the registries', () => {
+    // A fish of the (empty) fish registry would be a catch of its own, so
+    // adding one is a data change.
+    expect(CATCHES).toHaveLength(JUNK.length + FISHES.length + CRITTERS.length);
+  });
+
+  it('fills every rarity tier with the critters of that rarity', () => {
+    const easy = catchesOfTier('easy', { now: INSIDE_THE_WINDOW });
     expect(easy.map((entry) => entry.name)).toEqual([
-      'Minnow Memo',
-      'Flashcard Flounder',
-      'Bluegill Bookmark',
-      'Goldfish Cracker',
-      'Lilypad Frog',
+      'Nibbles the Notecard',
+      'Pip Pencil',
+      'Doodle Moth',
+      'Sir Highlighter',
+      'Candy Corn Kid',
+      'Pumpkin Pupil',
+      'Bat-ter Up',
     ]);
-    expect(easy.map((entry) => [entry.minLbs, entry.maxLbs])).toEqual([
-      [10, 25],
-      [15, 40],
-      [20, 45],
-      [30, 65],
-      [50, 100],
-    ]);
-  });
 
-  it('has the four great catches', () => {
-    expect(catchesOfTier('great').map((entry) => entry.name)).toEqual([
-      'Highlighter Trout',
-      'Wet Cat',
-      'Sticky-Note Sunfish',
-      'Cram Carp',
+    expect(catchesOfTier('great', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+      'Gummy Eraser',
+      'Captain Cram',
+      'Recall Raccoon',
+      'Ghost of Finals Past',
+      'Mummy Wrapped-Up',
     ]);
-  });
 
-  it('has the five rare catches', () => {
-    expect(catchesOfTier('rare').map((entry) => entry.name)).toEqual([
-      'Quizzical Catfish',
-      'Seal of Approval',
-      'Margin-Note Crab',
-      'Pop-Quiz Pufferfish',
-      'Blobfish of Burnout',
+    expect(catchesOfTier('rare', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+      'Synapse Sprite',
+      'Professor Hoot-n-Holler',
+      'Count Flashula',
     ]);
-  });
 
-  it('has the four epic catches', () => {
-    expect(catchesOfTier('epic').map((entry) => entry.name)).toEqual([
-      'Lantern of Lore',
-      'Octo-Tutor',
-      'Thesis Tuna',
-      'Donut Blobfish',
+    expect(catchesOfTier('epic', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+      'Mnemo the Memory Jelly',
+      'The Spaced Ranger',
+      'The Witching Hour Owl',
+    ]);
+
+    expect(catchesOfTier('legend', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+      'Gigabrain Golem',
+      'Headless Homework Horseman',
     ]);
   });
 
-  it('has the three catches of the day', () => {
-    expect(catchesOfTier('cotd').map((entry) => entry.name)).toEqual([
-      'Synapse Narwhal',
-      'Scholar Sturgeon',
-      'Mega-Lodon of Midterms',
+  it('only swims up the critters of the packs that are on sale', () => {
+    const easy = catchesOfTier('easy', { now: OUTSIDE_THE_WINDOW });
+    expect(easy.map((entry) => entry.name)).toEqual([
+      'Nibbles the Notecard',
+      'Pip Pencil',
+      'Doodle Moth',
+      'Sir Highlighter',
     ]);
   });
 
-  it('has the legends, including the seasonal slot', () => {
-    const legends = catchesOfTier('legend');
-    expect(legends.map((entry) => entry.name)).toEqual([
-      'The Spaced Leviathan',
-      'Golden Grade Koi',
-      "Teacher's UFO",
-    ]);
-  });
+  it('keeps the tier weights of the design doc', () => {
+    const easy = catchesOfTier('easy', { now: INSIDE_THE_WINDOW })[0]!;
+    expect([easy.minLbs, easy.maxLbs]).toEqual([10, 100]);
 
-  it('only shows the seasonal catches in their season', () => {
-    const halloween = catchesOfTier('legend', { season: 'halloween' });
-    expect(halloween.map((entry) => entry.name)).toContain('Pumpkin Kraken');
-    expect(halloween.map((entry) => entry.name)).not.toContain('Frost Whale');
-
-    const winter = catchesOfTier('legend', { season: 'winter' });
-    expect(winter.map((entry) => entry.name)).toContain('Frost Whale');
-    expect(winter.map((entry) => entry.name)).not.toContain('Pumpkin Kraken');
+    const legend = catchesOfTier('legend', { now: INSIDE_THE_WINDOW })[0]!;
+    expect([legend.minLbs, legend.maxLbs]).toEqual([500_000, 2_500_000]);
   });
 
   it('keeps every catch inside the weight range of its tier', () => {
@@ -180,6 +211,8 @@ describe('the critter catches', () => {
       expect(linked?.critterId).toBe(critter.id);
       expect(linked?.name).toBe(critter.name);
       expect(linked?.assetId).toBe(critter.assetId);
+      expect(linked?.packId).toBe(critter.packId);
+      expect(linked?.contentType).toBe('critter');
     }
   });
 
@@ -193,17 +226,71 @@ describe('the critter catches', () => {
     });
   });
 
-  it('keeps the critter catches out of the normal tier pools', () => {
+  it('has the critter catches in the pools of their tier', () => {
     for (const tier of CATCH_TIER_ORDER) {
-      for (const entry of catchesOfTier(tier)) {
-        expect(entry.critterId).toBeUndefined();
+      for (const entry of catchesOfTier(tier, { now: INSIDE_THE_WINDOW })) {
+        if (tier === 'trash') {
+          expect(entry.critterId).toBeUndefined();
+        } else {
+          expect(entry.critterId).toBeDefined();
+        }
       }
     }
   });
 
-  it('can include the critter catches on request', () => {
-    const easy = catchesOfTier('easy', { includeCritters: true });
-    expect(easy.some((entry) => entry.critterId !== undefined)).toBe(true);
+  it('can leave the critter catches out on request', () => {
+    const easy = catchesOfTier('easy', { now: INSIDE_THE_WINDOW, includeCritters: false });
+    expect(easy).toHaveLength(0);
+  });
+
+  it('knows whether a catch is available', () => {
+    const seasonal = findCritterCatch('candy_corn_kid')!;
+    expect(isCatchAvailable(seasonal, INSIDE_THE_WINDOW)).toBe(true);
+    expect(isCatchAvailable(seasonal, OUTSIDE_THE_WINDOW)).toBe(false);
+
+    const starter = findCritterCatch('nibbles_the_notecard')!;
+    expect(isCatchAvailable(starter, OUTSIDE_THE_WINDOW)).toBe(true);
+
+    const junk = findCatch('old_sneaker')!;
+    expect(isCatchAvailable(junk, OUTSIDE_THE_WINDOW)).toBe(true);
+  });
+
+  it('knows whether a catch is inside its own window', () => {
+    const timed: CatchDef = {
+      id: 'timed',
+      name: 'Timed',
+      tier: 'trash',
+      minLbs: 1,
+      maxLbs: 10,
+      assetId: 'junk_timed',
+      emoji: '⏳',
+      contentType: 'junk',
+      availableFrom: 100,
+      availableUntil: 200,
+    };
+
+    expect(isCatchAvailable(timed, 99)).toBe(false);
+    expect(isCatchAvailable(timed, 100)).toBe(true);
+    expect(isCatchAvailable(timed, 199)).toBe(true);
+    expect(isCatchAvailable(timed, 200)).toBe(false);
+  });
+});
+
+describe('the pool of a tier', () => {
+  it('falls back to the closest tier when a tier has no catch', () => {
+    // The "Catch of the Day" tier has no critter: the pool is the legends.
+    expect(catchesOfTier('cotd', { now: INSIDE_THE_WINDOW })).toHaveLength(0);
+
+    const pool = catchPool('cotd', { now: INSIDE_THE_WINDOW });
+    expect(pool.map((entry) => entry.name)).toEqual([
+      'Gigabrain Golem',
+      'Headless Homework Horseman',
+    ]);
+  });
+
+  it('falls back to the junk when nothing else is there', () => {
+    const pool = catchPool('cotd', { now: INSIDE_THE_WINDOW, includeCritters: false });
+    expect(pool.map((entry) => entry.name)).toContain('Old Sneaker');
   });
 });
 

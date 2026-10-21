@@ -335,7 +335,7 @@ describe('the fishing machine', () => {
   });
 
   it('builds the result of the session', () => {
-    let state = createState();
+    let state = createState({ rng: sequenceRng([0.1, 0.0, 0.5]) });
     state = toHooked(state);
     state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW });
     state = apply(state, { type: 'reel_finished' });
@@ -349,6 +349,34 @@ describe('the fishing machine', () => {
     expect(result.reviews).toHaveLength(1);
     expect(result.log).toHaveLength(1);
     expect(result.critters).toEqual([]);
+  });
+
+  it('keeps the critters that were caught for the collection', () => {
+    // The tier roll lands on "Easy One": the catch is a common critter.
+    let state = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), now: NOW });
+    state = toHooked(state);
+    state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW });
+    state = apply(state, { type: 'reel_finished' });
+
+    expect(state.session.critters).toHaveLength(1);
+    const critter = state.session.critters[0]!;
+    expect(critter.critterId).toBe('nibbles_the_notecard');
+    expect(critter.rarity).toBe('common');
+    expect(critter.tier).toBe('easy');
+
+    // The result of the session carries the critters, so the app can add
+    // them to the collection when the session ends.
+    const result = toSessionResult(state);
+    expect(result.critters.map((entry) => entry.critterId)).toEqual(['nibbles_the_notecard']);
+  });
+
+  it('only catches the critters of the packs that are on sale', () => {
+    const closed = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), now: Date.UTC(2026, 11, 24) });
+    const hooked = toHooked(closed);
+    expect(hooked.onTheLine?.kind).toBe('critter');
+    if (hooked.onTheLine?.kind === 'critter') {
+      expect(hooked.onTheLine.critter.packId).toBe('brain_buddies');
+    }
   });
 
   it('starts at the rank of the equipped starting lure', () => {
@@ -366,7 +394,7 @@ describe('the fishing machine', () => {
   it('keeps the joke of a silly catch', () => {
     const junk = createState({ rng: sequenceRng([0.1, 0.0, 0.5]) });
     const hookedJunk = toHooked(junk);
-    expect(hookedJunk.onTheLine?.kind).toBe('fish');
+    expect(hookedJunk.onTheLine?.kind).toBe('junk');
 
     const landedJunk = apply(
       hookedJunk,
@@ -386,7 +414,7 @@ describe('the fishing machine', () => {
       { type: 'reel_finished' },
     );
 
-    expect(landed.session.log[0]?.name).toBe('Minnow Memo');
+    expect(landed.session.log[0]?.name).toBe('Nibbles the Notecard');
     expect(landed.session.log[0]?.joke).toBeUndefined();
   });
 

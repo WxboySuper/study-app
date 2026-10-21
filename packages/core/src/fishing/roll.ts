@@ -8,12 +8,13 @@
 import {
   CRITTER_RARITIES,
   CRITTER_RARITY_ODDS,
-  crittersByRarity,
-  crittersOfPack,
   type CritterDef,
   type CritterRarity,
-} from '../critters';
+} from '../content/critters';
+import { POWERUPS, type PowerupDef, type PowerupId } from '../content/specials';
+import { crittersByRarity, crittersOfPack, findCritter, findPack, isPackAvailable } from '../critters';
 import {
+  catchPool,
   catchesOfTier,
   findCritterCatch,
   type CatchDef,
@@ -21,6 +22,8 @@ import {
   type FishingSeason,
 } from './catches';
 import { equippedBaitEffect, MAX_LURE_RANK, type EquippedBaits, type LureRank } from './lures';
+
+export { POWERUPS, type PowerupDef, type PowerupId } from '../content/specials';
 
 /* -------------------------------------------------------------------------
  * The random source
@@ -140,51 +143,6 @@ function baitsWithoutEffect(): EquippedBaits {
  * The special table (§8)
  * ---------------------------------------------------------------------- */
 
-/** The powerups that can be found in a bottle. */
-export type PowerupId = 'double_hook' | 'lucky_charm' | 'second_chance' | 'heavy_sinker';
-
-/** A powerup and what it does. */
-export interface PowerupDef {
-  id: PowerupId;
-  name: string;
-  description: string;
-  emoji: string;
-  /** The sprite id (see docs/design/fishing.md §13a). */
-  assetId: string;
-}
-
-/** Every powerup. */
-export const POWERUPS: readonly PowerupDef[] = [
-  {
-    id: 'double_hook',
-    name: 'Double Hook',
-    description: 'The next correct answer lands 2 catches.',
-    emoji: '🪝',
-    assetId: 'pu_double_hook',
-  },
-  {
-    id: 'lucky_charm',
-    name: 'Lucky Charm',
-    description: 'The next catch rerolls Trash and Easy One once.',
-    emoji: '🍀',
-    assetId: 'pu_lucky_charm',
-  },
-  {
-    id: 'second_chance',
-    name: 'Second Chance',
-    description: 'The next wrong answer keeps the fish on the line.',
-    emoji: '💗',
-    assetId: 'pu_second_chance',
-  },
-  {
-    id: 'heavy_sinker',
-    name: 'Heavy Sinker',
-    description: '×3 weight on the next catch.',
-    emoji: '⚓',
-    assetId: 'pu_heavy_sinker',
-  },
-];
-
 /** Looks a powerup up by id. */
 export function findPowerup(id: PowerupId): PowerupDef {
   const definition = POWERUPS.find((entry) => entry.id === id);
@@ -277,10 +235,19 @@ export function createRollState(overrides: Partial<RollState> = {}): RollState {
 export type RolledCatch =
   | { kind: 'fish'; tier: CatchTier; catch: CatchDef; lbs: number }
   | { kind: 'critter'; tier: CatchTier; catch: CatchDef; lbs: number; critter: CritterDef }
+  | { kind: 'junk'; tier: CatchTier; catch: CatchDef; lbs: number }
   | { kind: 'new_lure' }
   | { kind: 'frenzy' }
   | { kind: 'powerup'; powerup: PowerupId }
   | { kind: 'pack_ticket' };
+
+/** The rolls that land a catch (a critter, a fish or a piece of junk). */
+export type CatchOutcome = Extract<RolledCatch, { kind: 'fish' | 'critter' | 'junk' }>;
+
+/** Whether the roll landed a catch. */
+export function isCatchOutcome(outcome: RolledCatch): outcome is CatchOutcome {
+  return outcome.kind === 'fish' || outcome.kind === 'critter' || outcome.kind === 'junk';
+}
 
 /** The result of one roll. */
 export interface RollResult {
@@ -307,6 +274,13 @@ export interface RollOptions {
   season?: FishingSeason | null;
   /** The pack the critter catch is drawn from. */
   critterPackId?: string;
+  /**
+   * The time of the roll (epoch milliseconds).
+   *
+   * It decides which packs are on sale, so a critter of a seasonal pack only
+   * swims up while the pack is available. Defaults to `Date.now()`.
+   */
+  now?: number;
 }
 
 /**
@@ -384,8 +358,21 @@ export function rollTier(rng: Rng, rank: number, baits?: EquippedBaits): CatchTi
   return fallback;
 }
 
-/** Rolls a critter of a pack, using the pack odds of the SPEC (§3). */
-export function rollCritter(rng: Rng, packId: string): CritterDef | undefined {
+/**
+ * Rolls a critter of a pack, using the pack odds of the SPEC (§3).
+ *
+ * A pack that is not on sale at `now` has no critters to give.
+ */
+export function rollCritter(
+  rng: Rng,
+  packId: string,
+  now: number = Date.now(),
+): CritterDef | undefined {
+  const pack = findPack(packId);
+  if (pack === undefined || !isPackAvailable(pack, now)) {
+    return undefined;
+  }
+
   const roll = rng.next() * 100;
   let cumulative = 0;
   let rarity: CritterRarity = 'common';
@@ -434,6 +421,7 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
   const bonus = options.bonus ?? false;
   const season = options.season ?? null;
   const critterPackId = options.critterPackId ?? 'brain_buddies';
+  const now = options.now ?? Date.now();
 
   const next: RollState = {
     ...state,
@@ -477,7 +465,7 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
 
   // 3. The special table.
   if (tier === 'special') {
-    const special = rollSpecial(rng, next, bonus, critterPackId);
+    const special = rollSpecial(rng, next, bonus, critterPackId, now);
     if (special !== null) {
       return {
         outcome: special.outcome,
@@ -492,20 +480,21 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
     tier = 'trash';
   }
 
-  // 4. A fish.
-  const pool = catchesOfTier(tier, { season });
+  // 4. The catch of the tier: a critter (or a piece of junk at the bottom of
+  // the ladder). The pool holds the critters of the packs that are on sale.
+  const pool = catchPool(tier, { season, now });
   const catchDef = pool[rng.int(0, pool.length - 1)];
-  /* v8 ignore next -- every tier of the catalogue has at least one catch */
+  /* v8 ignore next -- the junk pile always has a catch */
   if (catchDef === undefined) {
-    // The pool is empty (only possible for a season without seasonal
-    // catches), fall back to the trash pool so the game never dead ends.
-    const fallbackPool = catchesOfTier('trash', { season });
+    // The pool is empty (only possible when the catalogue is empty), fall
+    // back to the junk pile so the game never dead ends.
+    const fallbackPool = catchesOfTier('trash', { season, now });
     const fallback = fallbackPool[rng.int(0, fallbackPool.length - 1)];
     if (fallback === undefined) {
       throw new Error('The catch catalogue is empty.');
     }
     return {
-      outcome: { kind: 'fish', tier: 'trash', catch: fallback, lbs: rollWeight(rng, fallback) },
+      outcome: { kind: 'junk', tier: 'trash', catch: fallback, lbs: rollWeight(rng, fallback) },
       state: next,
       rank,
       luckyCharmUsed,
@@ -520,20 +509,51 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
   }
   const lbs = Math.max(1, Math.round(rollWeight(rng, catchDef) * multiplier));
 
-  return { outcome: { kind: 'fish', tier: catchDef.tier, catch: catchDef, lbs }, state: next, rank, luckyCharmUsed, frenzyActive };
+  return {
+    outcome: toOutcome(catchDef, lbs),
+    state: next,
+    rank,
+    luckyCharmUsed,
+    frenzyActive,
+  };
+}
+
+/**
+ * Turns a catch of the catalogue into the outcome of a roll.
+ *
+ * A critter catch carries the critter itself, so the session can add it to
+ * the collection at the end.
+ */
+export function toOutcome(catchDef: CatchDef, lbs: number): CatchOutcome {
+  if (catchDef.contentType === 'critter') {
+    const critter = findCritter(catchDef.critterId ?? '');
+    /* v8 ignore next -- every critter catch links to a critter of the catalogue */
+    if (critter === undefined) {
+      throw new Error(`The catch "${catchDef.id}" has no critter.`);
+    }
+    return { kind: 'critter', tier: catchDef.tier, catch: catchDef, lbs, critter };
+  }
+
+  if (catchDef.contentType === 'fish') {
+    /* v8 ignore next -- the fish registry is empty until the first fish is added */
+    return { kind: 'fish', tier: catchDef.tier, catch: catchDef, lbs };
+  }
+
+  return { kind: 'junk', tier: catchDef.tier, catch: catchDef, lbs };
 }
 
 /**
  * Rolls the special table (§8).
  *
  * Returns `null` when the table cannot produce a catch (an empty critter
- * pack), so the caller can fall back to a normal fish.
+ * pack), so the caller can fall back to a normal catch.
  */
 function rollSpecial(
   rng: Rng,
   state: RollState,
   bonus: boolean,
   critterPackId: string,
+  now: number,
 ): { outcome: RolledCatch; state: RollState } | null {
   const next: RollState = { ...state, baits: { ...state.baits } };
   const odds = specialOddsFor(next, { bonus });
@@ -570,7 +590,7 @@ function rollSpecial(
       return { outcome: { kind: 'powerup', powerup: powerup.id }, state: next };
     }
     case 'critter': {
-      const critter = rollCritter(rng, critterPackId);
+      const critter = rollCritter(rng, critterPackId, now);
       if (critter === undefined) {
         return null;
       }

@@ -2,6 +2,7 @@ import {
   buildQueue,
   computePayout,
   countStudyProgress,
+  isCatchOutcome,
   localDayKey,
   createFishingState,
   createRandomRng,
@@ -9,6 +10,8 @@ import {
   remainingCards,
   toSessionResult,
   type CardState,
+  type FishingEvent,
+  type FishingState,
   type QueueItem,
   type QueueScope,
   type StudyCard,
@@ -16,7 +19,7 @@ import {
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { settleLocalSession } from '@/db/wallet';
+import { settleLocalSession, readCollection, readWallet } from '@/db/wallet';
 import { enqueueReview, listLocalCardStates, listLocalCards, openLocalDatabase, upsertLocalCardState } from '@/db/local';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
 
@@ -58,6 +61,31 @@ export interface FishingScreenProps {
   onPlayAgain: () => void;
 }
 
+/**
+ * The events of the screen.
+ *
+ * Next to the events of the machine, the screen hydrates the pack tickets
+ * that were already earned today: the wallet is read when the screen opens,
+ * so the mode cannot roll a second ticket on a day that already had one.
+ */
+type ScreenEvent = FishingEvent | { type: 'hydrate_pack_tickets'; count: number };
+
+function screenReducer(state: FishingState, event: ScreenEvent): FishingState {
+  if (event.type === 'hydrate_pack_tickets') {
+    return {
+      ...state,
+      session: {
+        ...state.session,
+        roll: {
+          ...state.session.roll,
+          packTicketsToday: Math.max(state.session.roll.packTicketsToday, event.count),
+        },
+      },
+    };
+  }
+  return fishingReducer(state, event);
+}
+
 export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { autoReel, bait } = useSettings();
@@ -69,6 +97,8 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   const sessionIdRef = useRef(`fishing-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [settledTokens, setSettledTokens] = useState<number | null>(null);
   const [newCritterIds, setNewCritterIds] = useState<ReadonlySet<string>>(new Set());
+  /** The critters the player already owns (for the "NEW!" stamp). */
+  const [ownedCritters, setOwnedCritters] = useState<ReadonlySet<string>>(new Set());
 
   const queueScope = useMemo<QueueScope>(() => {
     switch (scope.kind) {
@@ -89,7 +119,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   }, [queueScope]);
 
   const [machine, dispatch] = useReducer(
-    fishingReducer,
+    screenReducer,
     undefined,
     () =>
       createFishingState({
@@ -103,6 +133,9 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
                 critterChum: bait === 'critter_chum',
               },
         startRank: 1,
+        // The time of the session decides which packs are on sale, so the
+        // critters of a seasonal pack only swim up while it is available.
+        now: Date.now(),
         refillQueue: () => buildQueueNow(),
       }),
   );
@@ -124,6 +157,22 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         cardsRef.current = buildQuestionCards(cards);
         statesRef.current = states;
         dispatch({ type: 'set_queue', queue: buildQueueNow() });
+
+        // The collection knows which critters are already owned: a critter
+        // that is new gets the "NEW!" stamp on the reveal card.
+        const collection = await readCollection(db);
+        if (cancelled) {
+          return;
+        }
+        setOwnedCritters(new Set(collection.keys()));
+
+        // The wallet knows how many pack tickets were already earned today:
+        // the mode must not roll a second one.
+        const wallet = await readWallet(db, localDayKey(new Date()));
+        if (cancelled) {
+          return;
+        }
+        dispatch({ type: 'hydrate_pack_tickets', count: wallet.packTicketsToday });
       } catch {
         // Without the local store there is nothing to study; the screen shows
         // the empty state.
@@ -187,7 +236,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
       }
       case 'reveal': {
         const landed = machine.reveal;
-        const tier = landed !== null && (landed.kind === 'fish' || landed.kind === 'critter') ? landed.tier : null;
+        const tier = landed !== null && isCatchOutcome(landed) ? landed.tier : null;
         if (tier === 'cotd' || tier === 'legend') {
           playSfx('legend');
           hapticLegend();
@@ -398,11 +447,21 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   const biggestTier = machine.session.biggest?.tier ?? null;
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
   const onTheLine = machine.onTheLine;
-  const hintTier =
-    onTheLine !== null && (onTheLine.kind === 'fish' || onTheLine.kind === 'critter')
-      ? onTheLine.tier
-      : null;
+  const hintTier = onTheLine !== null && isCatchOutcome(onTheLine) ? onTheLine.tier : null;
   const nothingToStudy = !loading && machine.session.queue.length === 0;
+
+  // A critter that is not in the collection yet (and that was not caught
+  // earlier in this session) is new.
+  const revealIsNew = useMemo(() => {
+    const revealed = machine.reveal;
+    if (revealed === null || revealed.kind !== 'critter') {
+      return false;
+    }
+    if (ownedCritters.has(revealed.critter.id)) {
+      return false;
+    }
+    return machine.session.critters.filter((entry) => entry.critterId === revealed.critter.id).length === 1;
+  }, [machine.reveal, machine.session.critters, ownedCritters]);
 
   return (
     <View style={styles.container}>
@@ -439,7 +498,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         <RevealCard
           visible
           catch={machine.reveal}
-          isNew={false}
+          isNew={revealIsNew}
           reduceMotion={reduceMotion}
           onContinue={() => {
             dispatch({ type: 'continue' });

@@ -1,28 +1,38 @@
 /**
  * The catch catalogue of the fishing mode (docs/design/fishing.md §6 and §7).
  *
- * The tiers mirror the Blooket names and the weights grow about 10x per tier,
- * so the haul counter goes up fast. All names are original.
+ * The mode catches **critters**, not fish: every tier of the ladder is
+ * filled with the critters of the packs that are on sale, mapped by their
+ * rarity (a common critter is an "Easy One", a legendary one is an
+ * "Angler's Legend"). The bottom of the ladder is junk and the "Special"
+ * slice is the table of the specials (a new lure, the frenzy, a powerup, a
+ * pack ticket).
+ *
+ * The data lives in the content registries (`src/content/critters.ts`,
+ * `src/content/junk.ts`, `src/content/fish.ts`), this module only turns it
+ * into the catches of the mode. See `docs/ADDING-CONTENT.md`.
  */
 
-import { CRITTERS, type CritterDef, type CritterRarity } from '../critters';
+import { CRITTERS, type CritterDef, type CritterRarity } from '../content/critters';
+import { FISHES, type FishDef } from '../content/fish';
+import { JUNK, type JunkDef } from '../content/junk';
+import {
+  isAvailable,
+  CATCH_TIER_ORDER,
+  type CatchTier,
+  type ContentSeason,
+  type ContentType,
+} from '../content/types';
+import { findPack, isPackAvailable } from '../critters';
 
 /** The seven rarity tiers of a catch, from the most common to the rarest. */
-export type CatchTier = 'trash' | 'easy' | 'great' | 'rare' | 'epic' | 'cotd' | 'legend';
-
-/** The seasons that unlock extra catches. */
-export type FishingSeason = 'halloween' | 'winter';
+export type { CatchTier } from '../content/types';
 
 /** The tiers in ladder order. */
-export const CATCH_TIER_ORDER: readonly CatchTier[] = [
-  'trash',
-  'easy',
-  'great',
-  'rare',
-  'epic',
-  'cotd',
-  'legend',
-];
+export { CATCH_TIER_ORDER };
+
+/** The seasons that unlock extra catches. */
+export type FishingSeason = ContentSeason;
 
 /** The colour of a tier. */
 export interface CatchTierDef {
@@ -67,16 +77,24 @@ export interface CatchDef {
   minLbs: number;
   /** The heaviest possible weight, in lbs. */
   maxLbs: number;
-  /** The sprite id (see docs/design/fishing.md §13a). */
+  /** The art key of the catch (the file name of the PNG). */
   assetId: string;
   /** Emoji shown when the sprite is not available yet. */
   emoji: string;
+  /** The kind of content the catch is (a critter, junk or a fish). */
+  contentType: ContentType;
   /** A one line joke for the silly catches. */
   joke?: string;
   /** The season this catch is only available in. */
   seasonal?: FishingSeason;
   /** The critter this catch is (critter catches only). */
   critterId?: string;
+  /** The pack the critter of this catch comes from (critter catches only). */
+  packId?: string;
+  /** Epoch milliseconds; `null` (or missing) means "always". */
+  availableFrom?: number | null;
+  /** Epoch milliseconds (exclusive); `null` (or missing) means "always". */
+  availableUntil?: number | null;
 }
 
 /** The tier a critter rarity shows up as when it swims onto the line. */
@@ -88,6 +106,28 @@ export const CRITTER_TIER: Readonly<Record<CritterRarity, CatchTier>> = {
   legendary: 'legend',
 };
 
+/** Turns a junk item into a catch of the "Trash" tier. */
+function junkCatch(junk: JunkDef): CatchDef {
+  return {
+    id: junk.id,
+    name: junk.name,
+    tier: junk.tier,
+    minLbs: junk.minLbs,
+    maxLbs: junk.maxLbs,
+    assetId: junk.assetId,
+    emoji: junk.emoji,
+    contentType: 'junk',
+    ...(junk.joke === undefined ? {} : { joke: junk.joke }),
+    ...(junk.seasonal === undefined ? {} : { seasonal: junk.seasonal }),
+    ...(junk.availableFrom === undefined ? {} : { availableFrom: junk.availableFrom }),
+    ...(junk.availableUntil === undefined ? {} : { availableUntil: junk.availableUntil }),
+  };
+}
+
+/**
+ * Turns a critter into a catch: it swims up on the tier of its rarity and
+ * weighs as much as the tier says.
+ */
 function critterCatch(critter: CritterDef): CatchDef {
   const tier = CRITTER_TIER[critter.rarity];
   const tierDef = tierDefinition(tier);
@@ -99,364 +139,47 @@ function critterCatch(critter: CritterDef): CatchDef {
     maxLbs: tierDef.maxLbs,
     assetId: critter.assetId,
     emoji: critter.emoji,
+    contentType: 'critter',
     critterId: critter.id,
+    packId: critter.packId,
+    ...(critter.availableFrom === undefined ? {} : { availableFrom: critter.availableFrom }),
+    ...(critter.availableUntil === undefined ? {} : { availableUntil: critter.availableUntil }),
+  };
+}
+
+/**
+ * Turns a fish into a catch: it swims up on its tier and weighs as much as
+ * the tier says.
+ */
+/* v8 ignore next -- the fish registry is empty until the first fish is added */
+function fishCatch(fish: FishDef): CatchDef {
+  return {
+    id: fish.id,
+    name: fish.name,
+    tier: fish.tier,
+    minLbs: fish.minLbs,
+    maxLbs: fish.maxLbs,
+    assetId: fish.assetId,
+    emoji: fish.emoji,
+    contentType: 'fish',
+    ...(fish.joke === undefined ? {} : { joke: fish.joke }),
+    ...(fish.seasonal === undefined ? {} : { seasonal: fish.seasonal }),
+    ...(fish.availableFrom === undefined ? {} : { availableFrom: fish.availableFrom }),
+    ...(fish.availableUntil === undefined ? {} : { availableUntil: fish.availableUntil }),
   };
 }
 
 /**
  * Every catch of the game.
  *
- * The critter catches are part of the list (so the reveal card can show them
- * like any other catch) but they never show up in the normal tier pools:
- * they are only rolled by the special table (§8).
+ * The catalogue holds the junk of the bottom tier, the fish of the future
+ * registry and every critter of the catalogue. The critters of a pack that
+ * is not on sale are in the catalogue too, but they never show up in a pool
+ * (see {@link isCatchAvailable}).
  */
 export const CATCHES: readonly CatchDef[] = [
-  // --- Trash (junk) ------------------------------------------------------
-  {
-    id: 'old_sneaker',
-    name: 'Old Sneaker',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_old_sneaker',
-    emoji: '👟',
-    joke: 'Smells like detention.',
-  },
-  {
-    id: 'soggy_waffle',
-    name: 'Soggy Waffle',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_soggy_waffle',
-    emoji: '🧇',
-    joke: 'Breakfast, mostly.',
-  },
-  {
-    id: 'lost_homework',
-    name: 'Lost Homework',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_lost_homework',
-    emoji: '📄',
-    joke: 'The F is now decorative.',
-  },
-  {
-    id: 'two_of_clubs',
-    name: 'Two of Clubs',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_two_of_clubs',
-    emoji: '🃏',
-    joke: 'Still the wrong card.',
-  },
-  {
-    id: 'rubber_duck',
-    name: 'Rubber Duck',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_rubber_duck',
-    emoji: '🦆',
-    joke: 'Quacks under pressure.',
-  },
-  {
-    id: 'tangled_earbuds',
-    name: 'Tangled Earbuds',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_tangled_earbuds',
-    emoji: '🎧',
-    joke: 'One for each ear, none for music.',
-  },
-  {
-    id: 'half_pencil',
-    name: 'Half a Pencil',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_half_pencil',
-    emoji: '✏️',
-    joke: 'Pointless.',
-  },
-  {
-    id: 'mystery_tin_can',
-    name: 'Mystery Tin Can',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_tin_can',
-    emoji: '🥫',
-    joke: 'Contents: unclear.',
-  },
-  {
-    id: 'expired_hall_pass',
-    name: 'Expired Hall Pass',
-    tier: 'trash',
-    minLbs: 1,
-    maxLbs: 10,
-    assetId: 'junk_hall_pass',
-    emoji: '🎫',
-    joke: 'No longer valid.',
-  },
-
-  // --- Easy One ----------------------------------------------------------
-  {
-    id: 'minnow_memo',
-    name: 'Minnow Memo',
-    tier: 'easy',
-    minLbs: 10,
-    maxLbs: 25,
-    assetId: 'fish_minnow_memo',
-    emoji: '🐟',
-  },
-  {
-    id: 'flashcard_flounder',
-    name: 'Flashcard Flounder',
-    tier: 'easy',
-    minLbs: 15,
-    maxLbs: 40,
-    assetId: 'fish_flashcard_flounder',
-    emoji: '🐠',
-  },
-  {
-    id: 'bluegill_bookmark',
-    name: 'Bluegill Bookmark',
-    tier: 'easy',
-    minLbs: 20,
-    maxLbs: 45,
-    assetId: 'fish_bluegill_bookmark',
-    emoji: '🐟',
-  },
-  {
-    id: 'goldfish_cracker',
-    name: 'Goldfish Cracker',
-    tier: 'easy',
-    minLbs: 30,
-    maxLbs: 65,
-    assetId: 'fish_goldfish_cracker',
-    emoji: '🍘',
-    joke: 'Cheese or crackers? Crackers.',
-  },
-  {
-    id: 'lilypad_frog',
-    name: 'Lilypad Frog',
-    tier: 'easy',
-    minLbs: 50,
-    maxLbs: 100,
-    assetId: 'fish_lilypad_frog',
-    emoji: '🐸',
-  },
-
-  // --- Great Catch -------------------------------------------------------
-  {
-    id: 'highlighter_trout',
-    name: 'Highlighter Trout',
-    tier: 'great',
-    minLbs: 100,
-    maxLbs: 150,
-    assetId: 'fish_highlighter_trout',
-    emoji: '🐡',
-    joke: 'Permanently neon.',
-  },
-  {
-    id: 'wet_cat',
-    name: 'Wet Cat',
-    tier: 'great',
-    minLbs: 100,
-    maxLbs: 200,
-    assetId: 'fish_wet_cat',
-    emoji: '🐈',
-    joke: 'Deeply unhappy.',
-  },
-  {
-    id: 'sticky_note_sunfish',
-    name: 'Sticky-Note Sunfish',
-    tier: 'great',
-    minLbs: 150,
-    maxLbs: 350,
-    assetId: 'fish_sticky_note_sunfish',
-    emoji: '🐠',
-  },
-  {
-    id: 'cram_carp',
-    name: 'Cram Carp',
-    tier: 'great',
-    minLbs: 250,
-    maxLbs: 750,
-    assetId: 'fish_cram_carp',
-    emoji: '🐟',
-    joke: 'Crammed for the exam.',
-  },
-
-  // --- Rare Find ---------------------------------------------------------
-  {
-    id: 'quizzical_catfish',
-    name: 'Quizzical Catfish',
-    tier: 'rare',
-    minLbs: 500,
-    maxLbs: 1_000,
-    assetId: 'fish_quizzical_catfish',
-    emoji: '🐱',
-  },
-  {
-    id: 'seal_of_approval',
-    name: 'Seal of Approval',
-    tier: 'rare',
-    minLbs: 700,
-    maxLbs: 2_200,
-    assetId: 'fish_seal_of_approval',
-    emoji: '🦭',
-    joke: 'Signed, sealed, delivered.',
-  },
-  {
-    id: 'margin_note_crab',
-    name: 'Margin-Note Crab',
-    tier: 'rare',
-    minLbs: 1_000,
-    maxLbs: 2_500,
-    assetId: 'fish_margin_note_crab',
-    emoji: '🦀',
-  },
-  {
-    id: 'pop_quiz_pufferfish',
-    name: 'Pop-Quiz Pufferfish',
-    tier: 'rare',
-    minLbs: 2_000,
-    maxLbs: 4_000,
-    assetId: 'fish_pop_quiz_puffer',
-    emoji: '🐡',
-  },
-  {
-    id: 'blobfish_of_burnout',
-    name: 'Blobfish of Burnout',
-    tier: 'rare',
-    minLbs: 3_000,
-    maxLbs: 5_000,
-    assetId: 'fish_blobfish_burnout',
-    emoji: '🫧',
-    joke: 'Running on fumes.',
-  },
-
-  // --- Epic Grab ---------------------------------------------------------
-  {
-    id: 'lantern_of_lore',
-    name: 'Lantern of Lore',
-    tier: 'epic',
-    minLbs: 7_000,
-    maxLbs: 10_000,
-    assetId: 'fish_lantern_of_lore',
-    emoji: '🐟',
-  },
-  {
-    id: 'octo_tutor',
-    name: 'Octo-Tutor',
-    tier: 'epic',
-    minLbs: 10_000,
-    maxLbs: 15_000,
-    assetId: 'fish_octo_tutor',
-    emoji: '🐙',
-  },
-  {
-    id: 'thesis_tuna',
-    name: 'Thesis Tuna',
-    tier: 'epic',
-    minLbs: 12_000,
-    maxLbs: 20_000,
-    assetId: 'fish_thesis_tuna',
-    emoji: '🐠',
-  },
-  {
-    id: 'donut_blobfish',
-    name: 'Donut Blobfish',
-    tier: 'epic',
-    minLbs: 13_000,
-    maxLbs: 25_000,
-    assetId: 'fish_donut_blobfish',
-    emoji: '🍩',
-  },
-
-  // --- Catch of the Day --------------------------------------------------
-  {
-    id: 'synapse_narwhal',
-    name: 'Synapse Narwhal',
-    tier: 'cotd',
-    minLbs: 25_000,
-    maxLbs: 50_000,
-    assetId: 'fish_synapse_narwhal',
-    emoji: '🐳',
-  },
-  {
-    id: 'scholar_sturgeon',
-    name: 'Scholar Sturgeon',
-    tier: 'cotd',
-    minLbs: 50_000,
-    maxLbs: 100_000,
-    assetId: 'fish_scholar_sturgeon',
-    emoji: '🐟',
-  },
-  {
-    id: 'megalodon_of_midterms',
-    name: 'Mega-Lodon of Midterms',
-    tier: 'cotd',
-    minLbs: 250_000,
-    maxLbs: 500_000,
-    assetId: 'fish_megalodon_midterms',
-    emoji: '🦈',
-  },
-
-  // --- Angler's Legend ----------------------------------------------------
-  {
-    id: 'spaced_leviathan',
-    name: 'The Spaced Leviathan',
-    tier: 'legend',
-    minLbs: 500_000,
-    maxLbs: 700_000,
-    assetId: 'fish_spaced_leviathan',
-    emoji: '🐉',
-  },
-  {
-    id: 'golden_grade_koi',
-    name: 'Golden Grade Koi',
-    tier: 'legend',
-    minLbs: 750_000,
-    maxLbs: 1_000_000,
-    assetId: 'fish_golden_grade_koi',
-    emoji: '🐠',
-  },
-  {
-    id: 'teachers_ufo',
-    name: "Teacher's UFO",
-    tier: 'legend',
-    minLbs: 1_000_000,
-    maxLbs: 2_000_000,
-    assetId: 'fish_teachers_ufo',
-    emoji: '🛸',
-  },
-  {
-    id: 'pumpkin_kraken',
-    name: 'Pumpkin Kraken',
-    tier: 'legend',
-    minLbs: 1_000_000,
-    maxLbs: 2_000_000,
-    assetId: 'fish_pumpkin_kraken',
-    emoji: '🎃',
-    seasonal: 'halloween',
-  },
-  {
-    id: 'frost_whale',
-    name: 'Frost Whale',
-    tier: 'legend',
-    minLbs: 1_000_000,
-    maxLbs: 2_000_000,
-    assetId: 'fish_frost_whale',
-    emoji: '❄️',
-    seasonal: 'winter',
-  },
-
+  ...JUNK.map(junkCatch),
+  ...FISHES.map(fishCatch),
   ...CRITTERS.map(critterCatch),
 ];
 
@@ -473,19 +196,44 @@ export function tierDefinition(tier: CatchTier): CatchTierDef {
 export interface CatchPoolOptions {
   /** The season; seasonal catches are only included when it matches. */
   season?: FishingSeason | null;
-  /** Whether critter catches are part of the pool. Default `false`. */
+  /**
+   * The time the pool is built for (epoch milliseconds).
+   *
+   * It decides which packs are on sale, so a critter of a seasonal pack only
+   * swims up while its pack is available. Defaults to `Date.now()`.
+   */
+  now?: number;
+  /** Whether the critter catches are part of the pool. Default `true`. */
   includeCritters?: boolean;
+}
+
+/**
+ * Whether the catch is available at `now`.
+ *
+ * A catch is available when its own window allows it and, for a critter,
+ * when the pack it belongs to is on sale.
+ */
+export function isCatchAvailable(entry: CatchDef, now: number): boolean {
+  if (!isAvailable(entry, now)) {
+    return false;
+  }
+  if (entry.packId === undefined) {
+    return true;
+  }
+  const pack = findPack(entry.packId);
+  return pack !== undefined && isPackAvailable(pack, now);
 }
 
 /**
  * Every catch of a tier.
  *
- * Critter catches are excluded by default because they are only rolled by
- * the special table (§8), and seasonal catches only show up in their season.
+ * The critters of a pack that is not on sale are left out, and seasonal
+ * catches only show up in their season.
  */
 export function catchesOfTier(tier: CatchTier, options: CatchPoolOptions = {}): CatchDef[] {
   const season = options.season ?? null;
-  const includeCritters = options.includeCritters ?? false;
+  const now = options.now ?? Date.now();
+  const includeCritters = options.includeCritters ?? true;
 
   return CATCHES.filter((entry) => {
     if (entry.tier !== tier) {
@@ -497,8 +245,38 @@ export function catchesOfTier(tier: CatchTier, options: CatchPoolOptions = {}): 
     if (entry.seasonal !== undefined && entry.seasonal !== season) {
       return false;
     }
-    return true;
+    return isCatchAvailable(entry, now);
   });
+}
+
+/**
+ * The pool a tier rolls from.
+ *
+ * A tier without any catch (the "Catch of the Day" tier has no critter
+ * yet) falls back to the closest tier of the ladder that has one, so the
+ * game never dead ends.
+ */
+export function catchPool(tier: CatchTier, options: CatchPoolOptions = {}): CatchDef[] {
+  const pool = catchesOfTier(tier, options);
+  if (pool.length > 0) {
+    return pool;
+  }
+
+  const index = CATCH_TIER_ORDER.indexOf(tier);
+  for (let offset = 1; offset < CATCH_TIER_ORDER.length; offset += 1) {
+    const candidates = [CATCH_TIER_ORDER[index + offset], CATCH_TIER_ORDER[index - offset]];
+    for (const candidate of candidates) {
+      if (candidate === undefined) {
+        continue;
+      }
+      const fallback = catchesOfTier(candidate, options);
+      if (fallback.length > 0) {
+        return fallback;
+      }
+    }
+  }
+
+  return [];
 }
 
 /** Looks a catch up by id. */

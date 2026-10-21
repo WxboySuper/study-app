@@ -1,14 +1,16 @@
 import type { ImageStyle, StyleProp } from 'react-native';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
-import { fallbackFor, fishingSprite } from './assets';
+import { resolveArt } from '@/content/art';
+
+import { fallbackFor } from './assets';
 
 /**
  * A sprite of the fishing mode.
  *
- * When the PNG does not exist (yet) the sprite falls back to a coloured
- * circle with the emoji of the catch, so the game always looks right and
- * never blocks on missing art.
+ * The art resolver of the app (`src/content/art.ts`) returns the PNG of the
+ * catch, or the placeholder of its type when the PNG does not exist (yet),
+ * so the game always looks right and never blocks on missing art.
  */
 export interface SpriteProps {
   /** The asset id (see `docs/design/fishing.md` §13a). */
@@ -22,12 +24,13 @@ export interface SpriteProps {
 }
 
 export function Sprite({ assetId, size, style, inset = 0 }: SpriteProps) {
-  const source = fishingSprite(assetId);
+  const art = resolveArt(assetId);
+  const diameter = Math.max(8, size - inset * 2);
 
-  if (source !== null) {
+  if (!art.placeholder) {
     return (
       <Image
-        source={source}
+        source={art.source}
         resizeMode="contain"
         style={[{ width: size, height: size }, style]}
         accessibilityIgnoresInvertColors
@@ -35,8 +38,9 @@ export function Sprite({ assetId, size, style, inset = 0 }: SpriteProps) {
     );
   }
 
+  // The art is missing: the placeholder of the type is shown, with the emoji
+  // of the catch on its belly.
   const fallback = fallbackFor(assetId);
-  const diameter = Math.max(8, size - inset * 2);
 
   return (
     <View
@@ -47,11 +51,18 @@ export function Sprite({ assetId, size, style, inset = 0 }: SpriteProps) {
           height: diameter,
           borderRadius: diameter / 2,
           backgroundColor: fallback.color,
+          paddingBottom: diameter * 0.06,
         },
         style,
       ]}
     >
-      <Text style={{ fontSize: Math.max(10, diameter * 0.55) }}>{fallback.emoji}</Text>
+      <Image
+        source={art.source}
+        resizeMode="contain"
+        style={StyleSheet.absoluteFill}
+        accessibilityIgnoresInvertColors
+      />
+      <Text style={{ fontSize: Math.max(10, diameter * 0.34) }}>{fallback.emoji}</Text>
     </View>
   );
 }
@@ -59,7 +70,7 @@ export function Sprite({ assetId, size, style, inset = 0 }: SpriteProps) {
 const styles = StyleSheet.create({
   circle: {
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     overflow: 'hidden',
   },
 });
