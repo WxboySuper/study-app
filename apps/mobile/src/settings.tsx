@@ -3,7 +3,7 @@ import { AccessibilityInfo } from 'react-native';
 
 import type { BaitId } from '@study-app/core';
 
-import { setHapticsEnabled } from './modes/fishing/haptics';
+import { setHapticsEnabled } from './haptics';
 import { setSfxEnabled } from './modes/fishing/sfx';
 
 /**
