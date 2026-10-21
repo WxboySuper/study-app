@@ -11,6 +11,11 @@ Design pillars:
 3. **Number goes up.** The haul counter (lbs) ticks up visibly on each catch. Big catches get extra juice.
 4. **Studying is the only throttle.** No timers. The pace is your own. Rewards follow the SPEC economy (≈1.5 tokens/correct, full rate only for due/new cards).
 
+## 1b. Faithfulness and session flow
+- **Stay faithful to Blooket's Fishing Frenzy.** Same loop, same HOOKED! moment, lure ranks reeled up during play, the 7-tier rarity ladder, the ~10× weight ladder, Frenzy, and the lbs haul as score. The only changes are what solo, untimed play needs: **no timer**, **no distractions** (Blooket solo has none either), FSRS card selection, and the End payout.
+- **Additions Alex asked for, kept small:** powerups, persistent bait/lure upgrades, extra silly junk, and critter/pack-ticket catches.
+- **Session flow** (see SPEC "Session flow"): Home → Fishing → set/topic/All → **Go** lands you on the dock, ready to cast. **End** → payout summary (tokens, haul lbs, catches by tier, biggest catch, new/dupe critters, pack tickets) → **Play again** (one tap, same set) or **Home**. Lure rank and Frenzy reset each session.
+
 ## 2. Research: how Blooket's Fishing Frenzy works
 Sources: the [Fandom wiki](https://blooket.fandom.com/wiki/Fishing_Frenzy), the [Blooket help center overview](https://help.blooket.com/hc/en-us/articles/42439256581655-Game-Overview-Fishing-Frenzy), the Miraheze wiki and the blooketiq.com guide (all checked Oct 21, 2026).
 - **Loop:** tap to cast → when a fish bites a big **"Hooked!"** banner appears → tap to start reeling → answer a question → correct lands the catch, wrong means "the fish got away" and you cast again. Wrong answers cost no lives, only the catch.
@@ -32,7 +37,7 @@ QUESTION ─wrong──▶ GOT_AWAY (line snaps, fish swims off, right answer sh
 any ─End─▶ END_CONFIRM ─▶ PAYOUT
 ```
 - **Card selection:** each HOOKED! pulls the next card from the FSRS queue in `@study-app/core` (due first, then new, then bonus review). The *catch is rolled when the fish is hooked*, before you answer. The silhouette size and the shimmer of the shadow hint at what's on the line (a big shadow, a rarity-coloured glow), so a wrong answer on a hinted Megalodon *hurts*. That's the Blooket tension, without a timer.
-- **IDLE:** your equipped critter sits on the dock with a rod and idle animation. Big **Cast** button. Hold-to-power cast distance is cosmetic only.
+- **IDLE:** your equipped critter sits on the dock with a rod and idle animation. Big **Cast** button.
 - **CASTING (~600ms):** rod swing, a bezier line arc, splash and ripples, *plop*.
 - **WAITING:** the bobber bobs, shadows drift, and the bobber twitches on nibbles. The wait is always short (≤2.5s), since waiting isn't studying.
 - **HOOKED!:** the bobber yanks under, and a giant tilted **"HOOKED!"** banner slams in with a screen shake and a heavy haptic. The shadow on the line shows its size. Tap **Reel** (auto-advances after 600ms if Alex prefers; it's a setting).
@@ -88,14 +93,13 @@ Original names (no Blooket IP), with silly ones encouraged. Each line shows tier
 - **Critter catches:** any **Brain Buddies critter** from the SPEC (Mnemo the Memory Jelly, The Spaced Ranger, Gigabrain Golem…) can show up as a catch at its own rarity's tier. See §8.
 Data lives in `packages/core/src/fishing/catches.ts` with `{id, name, tier, minLbs, maxLbs, joke?, seasonal?, critterId?}`.
 
-## 8. Special catches: powerups, Frenzy, mishaps, critters
+## 8. Special catches: lures, Frenzy, powerups, critters
 The "Special" slice in §6 rolls on this table:
 | Special | Share | Effect |
 |---|---|---|
 | **New Lure!** | 30% (plus guarantees) | lure rank +1 for this session (max 5), with a big reel-up and a lure-glow trail |
 | **FRENZY!** | 15% | rainbow sky and water, music tempo up. The **next 5 catches** roll at rank +2 with ×2 weight. Counted in catches, not seconds, so it fits untimed play |
-| **Powerup bottle** | 25% | one of: **Double Hook** (next correct lands 2 catches), **Lucky Charm** (next catch rerolls Trash/Easy once), **Second Chance** (next wrong answer lets the fish stay on, so you can retry the same card once; the SRS still logs the first miss as Again), **Heavy Sinker** (×3 weight on the next catch) |
-| **Mishap** (solo "distraction") | 15% | a harmless 1.5s gag: an octopus ink splat you swipe off, a seagull steals your hat, a duck armada paddles across. Pure fun, no penalty, since solo has no rivals to slow down |
+| **Powerup bottle** | 40% | one of: **Double Hook** (next correct lands 2 catches), **Lucky Charm** (next catch rerolls Trash/Easy once), **Second Chance** (next wrong answer lets the fish stay on, so you can retry the same card once; the SRS still logs the first miss as Again), **Heavy Sinker** (×3 weight on the next catch) |
 | **Critter catch** | 12% | a Brain Buddies critter swims up. Rarity is rolled with SPEC pack odds. A **new** critter is added to the collection, and a **duplicate** counts as a dupe (sellable, as in the SPEC) |
 | **Pack Ticket** | 3% | one free Brain Buddies pack, max 1 per session and 1 per day. It counts against the SPEC economy, so a ticket ≈ 20 tokens of value inside the daily cap |
 Critter and ticket catches **only roll on due or new cards** (never bonus review) and are validated server-side at End, as tokens are, so they can't be farmed.
@@ -133,7 +137,7 @@ Recommendation: **@shopify/react-native-skia** for the scene canvas, driven by *
 - **Haptics:** `expo-haptics`. Cast is Light, bite is Heavy, correct is Success notification, wrong is Error notification, reel is rhythmic Light every 120ms, and Legendary is Heavy×3. All can be turned off in settings.
 
 ## 13. Art plan
-Phase 1 uses placeholder art (junk items, fish and the duck armada can mostly come from Kenney packs), all **CC0**, credited in `assets/CREDITS.md` even though CC0 doesn't require it:
+Phase 1 uses placeholder art (junk items and fish can mostly come from Kenney packs), all **CC0**, credited in `assets/CREDITS.md` even though CC0 doesn't require it:
 - **Kenney.nl** (CC0): "Fish Pack" (fish sprites), "Pixel Platformer"/"Nature Kit" (dock, trees), and UI packs for the tags, ribbons and buttons.
 - **OpenGameArt.org**, filtered to CC0 only, for water tiles, splash and particle sprites.
 - **Freesound.org**, filtered to CC0 only, plus **Kenney audio packs** (CC0) for the SFX.
@@ -148,7 +152,7 @@ Multiplayer, real distractions against other players, timers, fish selling, an a
 - [ ] The question shows as an in-scene note. There is never a full-screen quiz card.
 - [ ] The full loop works: cast → wait → HOOKED! → answer → reel + reveal, or got away → cast again.
 - [ ] The haul counter rolls up, and the End confirmation leads to the server payout screen.
-- [ ] The HOOKED! banner, GOT_AWAY and the in-session lure ranks 1–5 work. Frenzy lasts 5 catches. Powerups, mishaps, critter catches and the Pack Ticket caps all work.
+- [ ] The HOOKED! banner, GOT_AWAY and the in-session lure ranks 1–5 work. Frenzy lasts 5 catches. Powerups, critter catches and the Pack Ticket caps all work.
 - [ ] Bonus cards roll at rank 1 at most and never roll critters or tickets.
 - [ ] Sound, haptics and Reduce Motion all have toggles.
 - [ ] Unit tests cover the reducer, the tier odds per rank, the weight roll, the specials and their caps (seeded RNG).
@@ -160,9 +164,9 @@ Multiplayer, real distractions against other players, timers, fish selling, an a
 > You are implementing the Fishing ("Fish Frenzy") game mode in the `WxboySuper/study-app` monorepo (pnpm workspaces; Expo SDK 58 app in `apps/mobile`, expo-router; shared logic in `packages/core`; React Native 0.88, react-native-reanimated 4.7 + react-native-worklets already installed). Read `docs/SPEC.md` and `docs/design/fishing.md` first. The design doc is the source of truth for look and feel.
 >
 > Build:
-> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and catch list from §7, including junk, jokes, seasonal flags and critter links to the existing critter data), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, mishaps, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critters/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End.
+> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and catch list from §7, including junk, jokes, seasonal flags and critter links to the existing critter data), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critters/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End.
 > 2. Add `@shopify/react-native-skia`, `expo-haptics` and `expo-audio` to `apps/mobile` using `npx expo install`.
-> 3. `apps/mobile/src/modes/fishing/`: `FishingScreen.tsx` (wires the machine to the existing card queue/scheduler from `@study-app/core`), `LakeScene.tsx` (a single Skia Canvas: sky gradient, parallax shore, water RuntimeEffect shader with waves, fish shadow sprites, bezier line + bobber + ripples, dock + fisher, particles), `QuestionNote.tsx` (an in-scene parchment note plus 4 lure-tag answer buttons, as RN Views over the canvas, accessible, at least 56dp touch targets), `HookedBanner.tsx`, `RevealCard.tsx`, `FrenzyFx` (rainbow shader palette and music rate), `MishapFx` (ink splat, seagull, duck armada), `Hud.tsx` (haul lbs roll-up, streak, due count, End button with a confirm sheet), `PayoutScreen.tsx`, `sfx.ts` and `haptics.ts` (§10, with settings toggles), and Reduce Motion support. Add an expo-router route `app/fishing.tsx` and a "Fish" entry on the home screen.
+> 3. `apps/mobile/src/modes/fishing/`: `FishingScreen.tsx` (wires the machine to the existing card queue/scheduler from `@study-app/core`), `LakeScene.tsx` (a single Skia Canvas: sky gradient, parallax shore, water RuntimeEffect shader with waves, fish shadow sprites, bezier line + bobber + ripples, dock + fisher, particles), `QuestionNote.tsx` (an in-scene parchment note plus 4 lure-tag answer buttons, as RN Views over the canvas, accessible, at least 56dp touch targets), `HookedBanner.tsx`, `RevealCard.tsx`, `FrenzyFx` (rainbow shader palette and music rate),  `Hud.tsx` (haul lbs roll-up, streak, due count, End button with a confirm sheet), `PayoutScreen.tsx` (summary with Play again = same mode+set in one tap, and Home), `sfx.ts` and `haptics.ts` (§10, with settings toggles), and Reduce Motion support. Add an expo-router route `app/fishing.tsx` and a "Fish" entry on the home screen.
 > 4. Assets: use only CC0 placeholders (Kenney.nl Fish Pack / Nature Kit / UI and audio packs, OpenGameArt or Freesound items explicitly marked CC0). If you can't download them, generate simple vector placeholders in Skia (coloured fish shapes tinted by rarity) and leave TODOs. Record every asset's source and licence in `apps/mobile/assets/CREDITS.md`.
 > 5. No timers anywhere in the mode. HOOKED! shows a big banner and a tap to Reel (with an auto-advance setting). A wrong answer means GOT_AWAY: the line snaps, the catch is lost, and the correct answer shows for 1.5s. The SRS grade is derived exactly as SPEC describes. Bite wait is 0.8–2.5s.
 >

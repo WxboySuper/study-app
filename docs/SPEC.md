@@ -232,3 +232,11 @@ Visual reference: AI Studio "Blookless" prototype (dark navy + neon, 6-tab botto
 
 ## UX direction (Alex, Oct 21 2026)
 The AI Studio "Blookless" prototype is NOT the UX reference; Alex disliked its UI/UX. Game modes must look and play like real game scenes, close to Blooket's Fishing Frenzy (animated lake, casting, fish reveal, weight/haul) and Café (counter, customers lining up, serving food, upgrades), not a quiz card with a themed skin. Do a dedicated game-feel/UX design pass (scene layout, animations, juice, sound) before building each mode.
+
+## Session flow
+Every mode is played in short sessions, not one endless game. All of it is one tap.
+- **Start:** Home → pick a mode (Fishing, later Café, Factory, Gold Quest) → pick a set, a topic or **All** → **Go**. The last choice is remembered, so "Play again" from Home is a single tap.
+- **Play:** untimed. Cards come from the FSRS queue (due, then new, then bonus review).
+- **End:** one **End** button (with a light confirm) → `POST /sessions/:id/end` → **payout summary** with tokens earned, catches and score (e.g. haul lbs), and new or duplicate critters and pack tickets.
+- **Restart:** the summary has **Play again** (same mode and set, one tap) and **Home**.
+- Mode design rule: stay faithful to the Blooket original. Change only what solo, untimed play requires: no timer, no rivals or distractions, and the End payout.
