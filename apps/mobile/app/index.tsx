@@ -181,7 +181,11 @@ export default function HomeScreen() {
               <Text style={styles.walletLabel}>tokens</Text>
             </GlassCard>
 
-            <GlassCard style={styles.walletCard} tint={colors.ticket}>
+            <GlassCard
+              style={styles.walletCard}
+              tint={colors.ticket}
+              accessibilityLabel={`${packTickets} pack tickets`}
+            >
               <Text style={styles.ticketEmoji}>🎟️</Text>
               <Text style={styles.ticketCount}>{packTickets}</Text>
               <Text style={styles.walletLabel}>tickets</Text>

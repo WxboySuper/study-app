@@ -24,6 +24,8 @@ export interface GlassCardProps {
   padded?: boolean;
   /** `false` to draw the card without the drop shadow. */
   elevated?: boolean;
+  /** The label the screen reader reads. */
+  accessibilityLabel?: string;
 }
 
 /** A glassy card of the game. */
@@ -34,9 +36,14 @@ export function GlassCard({
   borderRadius = radius.card,
   padded = false,
   elevated = true,
+  accessibilityLabel,
 }: GlassCardProps) {
   return (
-    <View style={[styles.wrapper, { borderRadius }, elevated ? shadow.card : null, style]}>
+    <View
+      style={[styles.wrapper, { borderRadius }, elevated ? shadow.card : null, style]}
+      accessible={accessibilityLabel !== undefined}
+      accessibilityLabel={accessibilityLabel}
+    >
       <LinearGradient
         colors={[`${tint}38`, `${tint}0d`]}
         start={gradientDirection.start}
