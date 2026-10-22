@@ -28,7 +28,7 @@ import { GameButton, GlassCard, CritterLoader } from '@/ui';
 
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
-import { hapticBite, hapticCast, hapticCorrect, hapticLegend, hapticReel, hapticWrong } from './haptics';
+import { hapticBite, hapticCast, hapticCorrect, hapticHeavy, hapticLegend, hapticReel, hapticWrong } from './haptics';
 import { LakeScene } from './LakeScene';
 import { PayoutScreen } from './PayoutScreen';
 import { QuestionNote } from './QuestionNote';
@@ -259,6 +259,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
           playSfx('legend');
           play('legendary');
           hapticLegend();
+        } else if (tier === 'heavy') {
+          // A heavy catch gets the fanfare and a heavy haptic of its own.
+          playSfx('legend');
+          play('legendary');
+          hapticHeavy();
         } else {
           playSfx('reveal');
           play('reveal');
@@ -414,9 +419,10 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       graduated: progress.graduated,
       dueCleared: progress.dueCleared,
       modeScore: 0,
+      heavyCatches: result.heavyCatches,
       tokensToday: 0,
     }).tokens;
-  }, [result.correct, result.reviews]);
+  }, [result.correct, result.reviews, result.heavyCatches]);
   const tokens = settledTokens ?? estimate;
 
   // Credit the wallet and the collection once, when the session ends.
@@ -439,6 +445,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
             reviews: final.reviews,
             critterIds: final.critters.map((critter) => critter.critterId),
             packTickets: final.packTickets,
+            heavyCatches: final.heavyCatches,
           },
           localDayKey(new Date()),
         );

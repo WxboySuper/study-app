@@ -200,8 +200,22 @@ describe('the fishing machine', () => {
     expect(state.session.log).toHaveLength(1);
   });
 
-  it('keeps a pack ticket that was landed', () => {
-    let state = createState({ rng: sequenceRng([0.97, 0.99]) });
+  it('counts a heavy catch and reports it for the payout', () => {
+    let state = createState({ rng: sequenceRng([0.94, 0.0, 0.5]) });
+    state = toHooked(state);
+
+    expect(state.onTheLine?.kind).toBe('heavy');
+
+    state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW });
+    state = apply(state, { type: 'reel_finished' });
+
+    expect(state.session.byTier.heavy).toBe(1);
+    expect(toSessionResult(state).heavyCatches).toBe(1);
+    // A heavy catch is heavier than every critter catch.
+    expect(state.session.haulLbs).toBeGreaterThan(2_500_000);
+  });
+
+  it('keeps a pack ticket that was landed', () => {    let state = createState({ rng: sequenceRng([0.97, 0.99]) });
     state = toHooked(state);
     expect(state.onTheLine?.kind).toBe('pack_ticket');
 

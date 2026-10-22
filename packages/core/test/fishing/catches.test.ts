@@ -19,6 +19,7 @@ import {
 import { CRITTERS } from '../../src/content/critters';
 import { JUNK } from '../../src/content/junk';
 import { FISHES } from '../../src/content/fish';
+import { HEAVY } from '../../src/content/heavy';
 
 /** Oct 21 2026: inside the window of the seasonal pack. */
 const INSIDE_THE_WINDOW = Date.UTC(2026, 9, 21, 12, 0, 0);
@@ -26,9 +27,18 @@ const INSIDE_THE_WINDOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 const OUTSIDE_THE_WINDOW = Date.UTC(2026, 11, 24, 12, 0, 0);
 
 describe('the catch tiers (§6)', () => {
-  it('has the seven tiers of the design doc', () => {
-    expect(CATCH_TIER_ORDER).toEqual(['trash', 'easy', 'great', 'rare', 'epic', 'cotd', 'legend']);
-    expect(CATCH_TIERS).toHaveLength(7);
+  it('has the eight tiers of the design doc', () => {
+    expect(CATCH_TIER_ORDER).toEqual([
+      'trash',
+      'easy',
+      'great',
+      'rare',
+      'epic',
+      'cotd',
+      'legend',
+      'heavy',
+    ]);
+    expect(CATCH_TIERS).toHaveLength(8);
   });
 
   it('uses the documented names, colours and weight ranges', () => {
@@ -40,6 +50,7 @@ describe('the catch tiers (§6)', () => {
       'Epic Grab',
       'Catch of the Day',
       "Angler's Legend",
+      'Heavy Catch',
     ]);
 
     expect(tierDefinition('trash')).toEqual({
@@ -51,6 +62,15 @@ describe('the catch tiers (§6)', () => {
     });
     expect(tierDefinition('legend').color).toBe('#8e24aa');
     expect(tierDefinition('legend').maxLbs).toBe(2_500_000);
+  });
+
+  it('gives the heavy tier a haul of its own', () => {
+    const heavy = tierDefinition('heavy');
+    const legend = tierDefinition('legend');
+
+    expect(heavy.name).toBe('Heavy Catch');
+    expect(heavy.minLbs).toBeGreaterThanOrEqual(legend.maxLbs);
+    expect(heavy.maxLbs).toBeGreaterThan(legend.maxLbs);
   });
 
   it('grows the weight ladder about 10x per tier', () => {
@@ -127,7 +147,7 @@ describe('the catch list (§7)', () => {
   it('builds the catalogue from the registries', () => {
     // A fish of the (empty) fish registry would be a catch of its own, so
     // adding one is a data change.
-    expect(CATCHES).toHaveLength(JUNK.length + FISHES.length + CRITTERS.length);
+    expect(CATCHES).toHaveLength(JUNK.length + FISHES.length + HEAVY.length + CRITTERS.length);
   });
 
   it('fills every rarity tier with the critters of that rarity', () => {
@@ -229,7 +249,7 @@ describe('the critter catches', () => {
   it('has the critter catches in the pools of their tier', () => {
     for (const tier of CATCH_TIER_ORDER) {
       for (const entry of catchesOfTier(tier, { now: INSIDE_THE_WINDOW })) {
-        if (tier === 'trash') {
+        if (tier === 'trash' || tier === 'heavy') {
           expect(entry.critterId).toBeUndefined();
         } else {
           expect(entry.critterId).toBeDefined();
@@ -276,6 +296,47 @@ describe('the critter catches', () => {
   });
 });
 
+describe('the heavy catches', () => {
+  it('fills the heavy tier with the registry', () => {
+    const heavy = catchesOfTier('heavy');
+
+    expect(heavy.map((entry) => entry.name)).toEqual([
+      'Galaxy Fish',
+      'Golden Koi',
+      'Ice Fish',
+      'Skeleton Fish',
+      'Swamp Monster',
+      'Treasure Chest',
+      'Void Fish',
+    ]);
+    for (const entry of heavy) {
+      expect(entry.contentType).toBe('heavy');
+      expect(entry.assetId).toMatch(/^catch_heavy_/);
+      expect(entry.emoji.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('weighs more than any critter tier', () => {
+    const legend = tierDefinition('legend');
+    const heavy = tierDefinition('heavy');
+
+    for (const entry of catchesOfTier('heavy')) {
+      expect(entry.minLbs).toBeGreaterThanOrEqual(heavy.minLbs);
+      expect(entry.maxLbs).toBeLessThanOrEqual(heavy.maxLbs);
+      expect(entry.minLbs).toBeGreaterThan(legend.maxLbs);
+    }
+  });
+
+  it('reads the catches from the heavy registry', () => {
+    for (const heavy of HEAVY) {
+      const catchDef = findCatch(`heavy_${heavy.id}`);
+      expect(catchDef?.name).toBe(heavy.name);
+      expect(catchDef?.assetId).toBe(heavy.assetId);
+      expect(catchDef?.tier).toBe('heavy');
+    }
+  });
+});
+
 describe('the pool of a tier', () => {
   it('falls back to the closest tier when a tier has no catch', () => {
     // The "Catch of the Day" tier has no critter: the pool is the legends.
@@ -288,9 +349,9 @@ describe('the pool of a tier', () => {
     ]);
   });
 
-  it('falls back to the junk when nothing else is there', () => {
+  it('falls back to the heavy catches when no critter is left', () => {
     const pool = catchPool('cotd', { now: INSIDE_THE_WINDOW, includeCritters: false });
-    expect(pool.map((entry) => entry.name)).toContain('Old Sneaker');
+    expect(pool.map((entry) => entry.name)).toContain('Galaxy Fish');
   });
 });
 

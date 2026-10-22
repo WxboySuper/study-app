@@ -14,6 +14,7 @@ export function assetIdOf(landed: RolledCatch): string {
     case 'fish':
     case 'critter':
     case 'junk':
+    case 'heavy':
       return landed.catch.assetId;
     case 'new_lure':
       return 'special_new_lure';
@@ -32,6 +33,7 @@ export function nameOf(landed: RolledCatch): string {
     case 'fish':
     case 'critter':
     case 'junk':
+    case 'heavy':
       return landed.catch.name;
     case 'new_lure':
       return 'New Lure!';
@@ -53,7 +55,7 @@ export function captionOf(landed: RolledCatch): string | undefined {
     const critter = findCritter(landed.critter.id);
     return critter?.vibe;
   }
-  if (landed.kind === 'fish' || landed.kind === 'junk') {
+  if (landed.kind === 'fish' || landed.kind === 'junk' || landed.kind === 'heavy') {
     return landed.catch.joke;
   }
   if (landed.kind === 'pack_ticket') {

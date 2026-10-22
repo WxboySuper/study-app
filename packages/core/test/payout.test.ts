@@ -11,6 +11,7 @@ describe('computePayout', () => {
       tokensPerGraduated: 1,
       tokensPerDueCleared: 0.25,
       modeBonusPerPoint: 0.01,
+      tokensPerHeavyCatch: 15,
       softCap: 500,
       softCapRatio: 0.25,
     });
@@ -99,5 +100,44 @@ describe('computePayout', () => {
     });
 
     expect(payout.softCap).toBe(500);
+  });
+});
+
+describe('the heavy catch bonus', () => {
+  it('pays 15 tokens per heavy catch', () => {
+    const payout = computePayout({ ...zero, heavyCatches: 1 });
+
+    expect(payout.heavyTokens).toBe(15);
+    expect(payout.tokens).toBe(15);
+  });
+
+  it('adds the bonus to the rest of the payout', () => {
+    const plain = computePayout({ ...zero, correct: 10 });
+    const heavy = computePayout({ ...zero, correct: 10, heavyCatches: 2 });
+
+    expect(plain.tokens).toBe(15);
+    expect(heavy.tokens).toBe(plain.tokens + 30);
+    expect(heavy.grossTokens).toBe(plain.grossTokens + 30);
+  });
+
+  it('pays a multiple of 5', () => {
+    for (let count = 0; count <= 5; count += 1) {
+      const payout = computePayout({ ...zero, heavyCatches: count });
+      expect(payout.heavyTokens % 5).toBe(0);
+      expect(payout.tokens % 5).toBe(0);
+    }
+  });
+
+  it('ignores a missing or broken count', () => {
+    expect(computePayout({ ...zero, heavyCatches: -3 }).heavyTokens).toBe(0);
+    expect(computePayout({ ...zero, heavyCatches: Number.NaN }).heavyTokens).toBe(0);
+  });
+
+  it('is capped by the soft daily cap like the rest', () => {
+    const payout = computePayout({ ...zero, heavyCatches: 10, tokensToday: 450 });
+
+    expect(payout.grossTokens).toBe(150);
+    expect(payout.tokens).toBe(50 + Math.floor(100 * 0.25));
+    expect(payout.capped).toBe(true);
   });
 });

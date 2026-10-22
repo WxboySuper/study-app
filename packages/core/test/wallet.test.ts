@@ -86,8 +86,26 @@ describe('settleSession', () => {
     expect(result.wallet).toMatchObject({ balance: 47, tokensToday: 47 });
   });
 
-  it('applies the soft daily cap', () => {
-    const wallet = { ...emptyWallet(TODAY), balance: 10, tokensToday: 490 };
+  it('pays the heavy catch bonus', () => {
+    const plain = settleSession(
+      emptyWallet(TODAY),
+      { correct: 10, reviews: [], critterIds: [], packTickets: 0 },
+      new Map(),
+      TODAY,
+    );
+    const heavy = settleSession(
+      emptyWallet(TODAY),
+      { correct: 10, reviews: [], critterIds: [], packTickets: 0, heavyCatches: 2 },
+      new Map(),
+      TODAY,
+    );
+
+    expect(heavy.payout.heavyTokens).toBe(30);
+    expect(heavy.payout.tokens).toBe(plain.payout.tokens + 30);
+    expect(heavy.wallet.balance).toBe(plain.wallet.balance + 30);
+  });
+
+  it('applies the soft daily cap', () => {    const wallet = { ...emptyWallet(TODAY), balance: 10, tokensToday: 490 };
     const result = settleSession(wallet, { correct: 20, reviews: [], critterIds: [], packTickets: 0 }, new Map(), TODAY);
     // 30 gross, 10 headroom, 20 overflow at 0.25 = 5
     expect(result.payout.tokens).toBe(15);
