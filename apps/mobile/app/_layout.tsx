@@ -98,6 +98,7 @@ export default function RootLayout() {
           name="collection"
           options={{ title: 'Collection', animation: 'slide_from_right' }}
         />
+        <Stack.Screen name="deck" options={{ title: 'Deck', animation: 'slide_from_right' }} />
         <Stack.Screen name="spin" options={{ title: 'Daily Spin', animation: 'slide_from_right' }} />
       </Stack>
       <StatusBar style="light" />

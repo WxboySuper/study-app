@@ -646,6 +646,9 @@ export default function HomeScreen() {
                 play('tap');
                 setPendingDelete(deck);
               }}
+              onOpenDeck={(deck, deckFilter) => {
+                router.push({ pathname: '/deck', params: { id: deck.id, filter: deckFilter } });
+              }}
             />
           </Animated.View>
 

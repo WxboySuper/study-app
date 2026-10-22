@@ -401,3 +401,15 @@ export {
   type WalletSnapshot,
   type WalletSync,
 } from './wallet';
+export {
+  buildQuestionRows,
+  countQuestionFilters,
+  formatDueIn,
+  matchesQuestionFilter,
+  parseQuestionFilter,
+  questionStatus,
+  QUESTION_FILTERS,
+  type QuestionFilter,
+  type QuestionRow,
+  type QuestionStatusKind,
+} from './deckDetail';

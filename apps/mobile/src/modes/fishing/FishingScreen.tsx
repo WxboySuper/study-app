@@ -47,6 +47,7 @@ import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
 import { play } from '@/sound/sfx';
 import { colors, fonts, radius, shadow } from '@/theme';
 import { GameButton, GlassCard, CritterLoader } from '@/ui';
+import { MASTERY_COUNTS_KEY, readMasteryCounts } from '@/study/masteryCounts';
 
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
@@ -195,22 +196,6 @@ function screenReducer(state: FishingState, event: ScreenEvent): FishingState {
     };
   }
   return fishingReducer(state, event);
-}
-
-/** The key/value key of the mastery progress (correct answers by question). */
-const MASTERY_COUNTS_KEY = 'fishing.masteryCounts.v1';
-
-/** Reads the mastery progress of earlier sessions. */
-async function readMasteryCounts(store: {
-  readKv(key: string): Promise<string | null>;
-}): Promise<Record<string, number>> {
-  try {
-    const raw = await store.readKv(MASTERY_COUNTS_KEY);
-    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
-    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
-  } catch {
-    return {};
-  }
 }
 
 /** Saves the mastery progress of a session (merged into the saved counts). */
