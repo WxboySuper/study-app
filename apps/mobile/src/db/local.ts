@@ -255,9 +255,31 @@ export async function listLocalCards(db: SQLite.SQLiteDatabase): Promise<StudyCa
     back: row.back,
     // `choices_json` holds the wrong answers of the card (the options
     // themselves are built when the card is shown).
-    wrong: row.choices_json ? (JSON.parse(row.choices_json) as string[]) : undefined,
+    wrong: readWrongAnswers(row.choices_json),
     answerIndex: row.answer_index ?? undefined,
   }));
+}
+
+/**
+ * Reads the wrong answers of a card.
+ *
+ * Broken data never breaks the app: a card without readable choices is a
+ * self-graded card.
+ */
+function readWrongAnswers(choicesJson: string | null): string[] | undefined {
+  if (choicesJson === null) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(choicesJson) as unknown;
+    if (!Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed.filter((value): value is string => typeof value === 'string');
+  } catch {
+    return undefined;
+  }
 }
 
 /** Reads every locally known set, sorted by title. */
