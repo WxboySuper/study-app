@@ -99,6 +99,13 @@ ${body}
     function send() {
       try {
         var doc = document.documentElement;
+        // Math wider than the tile is scaled down to fit instead of clipped.
+        document.body.style.zoom = '1';
+        var wide = document.body.scrollWidth;
+        var room = window.innerWidth;
+        if (wide > room && room > 0) {
+          document.body.style.zoom = String(Math.max(0.45, room / wide));
+        }
         var box = document.body.getBoundingClientRect();
         var height = Math.ceil(Math.max(doc.scrollHeight, box.height));
         window.ReactNativeWebView.postMessage(JSON.stringify({ height: height }));
@@ -109,6 +116,7 @@ ${body}
     window.addEventListener('load', send);
     setTimeout(send, 20);
     setTimeout(send, 120);
+    window.addEventListener('resize', send);
   })();
 </script>
 </body>

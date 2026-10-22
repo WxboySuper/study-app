@@ -35,6 +35,12 @@ export function MathView({ source, displayMode, color, fontSize }: MathViewProps
       color,
       fontSize: `${fontSize}px`,
       lineHeight: 1.25,
+      // Long math scrolls sideways inside its tile instead of being clipped.
+      display: 'inline-block',
+      maxWidth: '100%',
+      overflowX: 'auto',
+      overflowY: 'hidden',
+      verticalAlign: 'middle',
     },
   });
 }
