@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 
+import { recordQuizAnswers } from "./quizzes";
 import { bearerToken } from "./auth";
 import type { Bindings } from "./types";
 
@@ -388,6 +389,7 @@ export async function pushEvents(
   if (statements.length > 0) {
     const results = await db(c).batch(statements);
     inserted = results.reduce((sum, r) => sum + (r.meta?.changes ?? 0), 0);
+    await recordQuizAnswers(db(c), device, parsed);
   }
   const top = await db(c)
     .prepare(

@@ -48,7 +48,7 @@ Notes:
 - Codes are case-insensitive; spaces and dashes are ignored, `O`→`0`,
   `I`/`L`→`1`. Wrong/expired/used codes all answer 400 `invalid_code`.
 
-## Quizzes (planned)
+## Quizzes
 
 ### `POST /quizzes` (Muse)
 

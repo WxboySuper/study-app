@@ -13,6 +13,7 @@ import {
   revokeDevice,
   startPairing,
 } from './progress';
+import { createQuiz, getQuiz, listQuizzes, quizResults, withdrawQuiz } from './quizzes';
 import { latestRelease, RELEASE_ASSET_URL, RELEASE_USER_AGENT } from './release';
 import type { Bindings } from './types';
 
@@ -168,6 +169,25 @@ app.get('/api/sync/pull', async (c) => {
  * The release is read on GitHub and kept for ten minutes: the feed of
  * GitHub is behind a rate limit, and every device asks the same question.
  */
+/** `true` for the Muse token or a live device token. */
+async function museOrDevice(c: Context<{ Bindings: Bindings }>): Promise<boolean> {
+  return isMuse(c) || (await authDevice(c)) !== null;
+}
+
+app.post('/api/quizzes', async (c) => (isMuse(c) ? createQuiz(c) : c.json({ error: 'unauthorized' }, 401)));
+app.get('/api/quizzes', async (c) =>
+  (await museOrDevice(c)) ? listQuizzes(c) : c.json({ error: 'unauthorized' }, 401),
+);
+app.get('/api/quizzes/:id', async (c) =>
+  (await museOrDevice(c)) ? getQuiz(c, c.req.param('id')) : c.json({ error: 'unauthorized' }, 401),
+);
+app.get('/api/quizzes/:id/results', async (c) =>
+  isMuse(c) ? quizResults(c, c.req.param('id')) : c.json({ error: 'unauthorized' }, 401),
+);
+app.delete('/api/quizzes/:id', async (c) =>
+  isMuse(c) ? withdrawQuiz(c, c.req.param('id')) : c.json({ error: 'unauthorized' }, 401),
+);
+
 app.get('/api/update', async (c) => {
   const release = await latestRelease(c.env?.GH_TOKEN);
 
