@@ -1,5 +1,4 @@
 import {
-  ANSWER_HOLD_MS,
   answerSessionQuestion,
   buildChoices,
   buildDeckClassMap,
@@ -16,6 +15,7 @@ import {
   leadUpOf,
   masteredCount,
   masteryProgress,
+  masteryStatusOf,
   nextSessionQuestion,
   sessionComplete,
   sessionRemaining,
@@ -67,10 +67,12 @@ import { playSfx, prepareSfx } from './sfx';
  */
 
 const CAST_DURATION_MS = 600;
-const BITE_MIN_MS = 800;
-const BITE_MAX_MS = 2_500;
-const HOOKED_AUTO_REEL_MS = 600;
-const GOT_AWAY_MS = 1_500;
+/** The bite comes 0.7 s after the bobber lands: ~1.3 s from the cast tap. */
+const BITE_DELAY_MS = 700;
+/** The "Fish Lost!" bubble stays on the screen for a short moment. */
+const GOT_AWAY_MS = 900;
+/** The demo of the web build taps the answer after this long. */
+const DEMO_CONFIRM_MS = 420;
 
 /** How long the "MASTERED!" celebration stays on the screen. */
 const MASTERED_CELEBRATION_MS = 2_800;
@@ -95,6 +97,12 @@ const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
   'seq-tug': 1,
   'seq-breach': 1,
   'seq-reveal': 1,
+  'ff2-cast': 1,
+  'ff2-hooked': 1,
+  'ff2-question': 10,
+  'ff2-correct': 1,
+  'ff2-wrong': 1,
+  'ff2-reveal': 1,
 };
 
 /**
@@ -119,7 +127,13 @@ export type FishingDemo =
   | 'seq-dip'
   | 'seq-tug'
   | 'seq-breach'
-  | 'seq-reveal';
+  | 'seq-reveal'
+  | 'ff2-cast'
+  | 'ff2-hooked'
+  | 'ff2-question'
+  | 'ff2-correct'
+  | 'ff2-wrong'
+  | 'ff2-reveal';
 
 /**
  * `true` when the demo freezes the game on a frame of the sequence.
@@ -182,7 +196,7 @@ function screenReducer(state: FishingState, event: ScreenEvent): FishingState {
 
 export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
-  const { autoReel, bait } = useSettings();
+  const { bait } = useSettings();
 
   const cardsRef = useRef<StudyCard[]>([]);
   const statesRef = useRef<Map<string, CardState>>(new Map());
@@ -402,7 +416,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         hapticCast();
         // The demo of the cast stays in the air, so the screenshot shows the
         // bobber on its way.
-        if (demo === 'cast') {
+        if (demo === 'cast' || demo === 'ff2-cast') {
           return undefined;
         }
         const timer = setTimeout(() => {
@@ -413,14 +427,13 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         };
       }
       case 'waiting': {
-        const wait = BITE_MIN_MS + Math.random() * (BITE_MAX_MS - BITE_MIN_MS);
         const nibble = setTimeout(() => {
           playSfx('nibble');
-        }, Math.max(120, wait - 320));
+        }, Math.max(120, BITE_DELAY_MS - 260));
         const bite = setTimeout(() => {
           clearTimeout(nibble);
           dispatch({ type: 'bite' });
-        }, wait);
+        }, BITE_DELAY_MS);
         return () => {
           clearTimeout(nibble);
           clearTimeout(bite);
@@ -430,20 +443,11 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         questionStartedAt.current = Date.now();
         return undefined;
       }
-      case 'answered': {
-        // The answer is held on the screen: the right answer turns green,
-        // the wrong one turns red and the player can reread the card. A tap
-        // anywhere goes on before the wait is over.
-        if (isSequenceDemo(demo)) {
-          return undefined;
-        }
-        const timer = setTimeout(() => {
-          dispatch({ type: 'answer_hold_done' });
-        }, ANSWER_HOLD_MS);
-        return () => {
-          clearTimeout(timer);
-        };
-      }
+      case 'answered':
+        // The answer waits for the player. A correct answer goes on at the
+        // first tap; a wrong answer ignores taps until the 3 s lockout is
+        // over, then the next tap makes the fish get away.
+        return undefined;
       case 'reeling': {
         // The lead-up before the reveal card: the bobber dips, the fish
         // pulls on the line and the catch comes out of the water.
@@ -462,15 +466,15 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       case 'reveal': {
         const landed = machine.reveal;
         const tier = landed !== null && isCatchOutcome(landed) ? landed.tier : null;
-        if (tier === 'cotd' || tier === 'legend') {
-          playSfx('legend');
-          play('legendary');
-          hapticLegend();
-        } else if (tier === 'heavy') {
+        if (landed !== null && landed.kind === 'heavy') {
           // A heavy catch gets the fanfare and a heavy haptic of its own.
           playSfx('legend');
           play('legendary');
           hapticHeavy();
+        } else if (tier === 'cotd' || tier === 'legend') {
+          playSfx('legend');
+          play('legendary');
+          hapticLegend();
         } else {
           playSfx('reveal');
           play('reveal');
@@ -524,19 +528,6 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       hapticBite();
     }
   }, [machine.phase]);
-
-  // The auto reel after the banner.
-  useEffect(() => {
-    if (machine.phase !== 'hooked' || !autoReel) {
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      dispatch({ type: 'reel' });
-    }, HOOKED_AUTO_REEL_MS);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [machine.phase, autoReel]);
 
   // Keep the reviews in the local store (and in the outbox).
   useEffect(() => {
@@ -833,13 +824,95 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           now: Date.now(),
         });
       });
-      // The lead-up before the reveal card lasts longer for a critter than
-      // for a junk catch, so the demo waits for the card instead of
-      // guessing how long it takes.
-      later(at + 980 + ANSWER_HOLD_MS, () => {
+      // The demo taps on after the answer, then waits for the lead-up
+      // before the reveal card (it lasts longer for a critter than for a
+      // junk catch, so the demo waits for the card instead of guessing).
+      later(at + 980 + DEMO_CONFIRM_MS, () => {
+        dispatch({ type: 'answer_hold_done', now: Date.now() });
+      });
+      later(at + 980 + DEMO_CONFIRM_MS + 80, () => {
         whenRevealed(0, then);
       });
     };
+
+    /**
+     * The pass-2 demos: the complete flow from the cast to the claim card.
+     *
+     * They are driven with the real timings of the mode (600 ms cast, 700 ms
+     * bite) so the screenshots show the same beat the player sees.
+     */
+    if (demo !== null && demo.startsWith('ff2-')) {
+      later(0, () => {
+        dispatch({ type: 'cast' });
+      });
+
+      if (demo === 'ff2-cast') {
+        return () => {
+          cancelled = true;
+          for (const timer of timers) {
+            clearTimeout(timer);
+          }
+        };
+      }
+
+      later(CAST_DURATION_MS, () => {
+        dispatch({ type: 'cast_landed' });
+      });
+
+      if (demo === 'ff2-hooked') {
+        return () => {
+          cancelled = true;
+          for (const timer of timers) {
+            clearTimeout(timer);
+          }
+        };
+      }
+
+      later(CAST_DURATION_MS + BITE_DELAY_MS, () => {
+        dispatch({ type: 'bite' });
+      });
+      later(CAST_DURATION_MS + BITE_DELAY_MS + 250, () => {
+        dispatch({ type: 'reel' });
+      });
+
+      if (demo === 'ff2-question') {
+        return () => {
+          cancelled = true;
+          for (const timer of timers) {
+            clearTimeout(timer);
+          }
+        };
+      }
+
+      later(CAST_DURATION_MS + BITE_DELAY_MS + 650, () => {
+        const question = machineRef.current.question;
+        if (question === null) {
+          return;
+        }
+        dispatch({
+          type: 'answer',
+          choiceIndex:
+            demo === 'ff2-wrong'
+              ? (question.answerIndex + 1) % Math.max(question.choices.length, 1)
+              : question.answerIndex,
+          durationMs: 1_100,
+          now: Date.now(),
+        });
+      });
+
+      if (demo === 'ff2-reveal') {
+        later(CAST_DURATION_MS + BITE_DELAY_MS + 650 + DEMO_CONFIRM_MS, () => {
+          dispatch({ type: 'answer_hold_done', now: Date.now() });
+        });
+      }
+
+      return () => {
+        cancelled = true;
+        for (const timer of timers) {
+          clearTimeout(timer);
+        }
+      };
+    }
 
     if (demo === 'cast') {
       // The demo of the cast only throws the bobber: the scene freezes it in
@@ -889,8 +962,8 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       });
       if (demo !== 'seq-highlight') {
         // The hold of the answer ends and the lead-up starts.
-        later(980 + ANSWER_HOLD_MS, () => {
-          dispatch({ type: 'answer_hold_done' });
+        later(980 + DEMO_CONFIRM_MS, () => {
+          dispatch({ type: 'answer_hold_done', now: Date.now() });
         });
       }
     }
@@ -985,6 +1058,13 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
   const onTheLine = machine.onTheLine;
   const hintTier = onTheLine !== null && isCatchOutcome(onTheLine) ? onTheLine.tier : null;
+  // The mastery badge of the card that is on the screen: the scheduling
+  // state of the session, then the state the card was pulled with.
+  const currentMastery = masteryStatusOf(
+    machine.question === null
+      ? machine.currentItem?.state
+      : (machine.session.cardStates.get(machine.question.cardId) ?? machine.currentItem?.state),
+  );
   // The queue of the machine holds one question at a time: the scope of the
   // session is what says whether there is something to study.
   const nothingToStudy = !loading && progress.total === 0;
@@ -1021,6 +1101,22 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         return machine.phase === 'reeling' ? 'breach' : null;
       case 'seq-reveal':
         return machine.phase === 'reveal' ? 'reveal' : null;
+      case 'ff2-cast':
+        return machine.phase === 'casting' ? 'ff2-cast' : null;
+      case 'ff2-hooked':
+        return machine.phase === 'hooked' ? 'ff2-hooked' : null;
+      case 'ff2-question':
+        return machine.phase === 'question' ? 'ff2-question' : null;
+      case 'ff2-correct':
+        return machine.phase === 'answered' && machine.feedback?.correct === true
+          ? 'ff2-correct'
+          : null;
+      case 'ff2-wrong':
+        return machine.phase === 'answered' && machine.feedback?.correct === false
+          ? 'ff2-wrong'
+          : null;
+      case 'ff2-reveal':
+        return machine.phase === 'reveal' ? 'ff2-reveal' : null;
       default:
         return null;
     }
@@ -1047,7 +1143,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         frenzy={frenzy}
         reduceMotion={reduceMotion}
         landed={machine.phase === 'reeling' ? machine.onTheLine : machine.reveal}
-        frozen={demo === 'cast'}
+        frozen={demo === 'cast' || demo === 'ff2-cast'}
         leadUpMs={leadUp.durationMs}
         escaped={leadUp.escaped}
         freezeStage={freezeStage}
@@ -1086,6 +1182,8 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
             question={machine.question}
             feedback={machine.feedback}
             locked={machine.phase === 'answered'}
+            lockoutUntil={machine.lockoutUntil}
+            mastery={currentMastery}
             onAnswer={onAnswer}
             onSelfGrade={onSelfGrade}
             reduceMotion={reduceMotion}
@@ -1100,8 +1198,12 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
             <Pressable
               testID="fishing-hold"
               accessibilityRole="button"
-              accessibilityLabel="Continue"
-              accessibilityHint="Tap to continue before the answer is held any longer"
+              accessibilityLabel={machine.feedback?.correct === false ? 'Continue after the wait' : 'Continue'}
+              accessibilityHint={
+                machine.feedback?.correct === false
+                  ? 'A tap before the three seconds are over is ignored'
+                  : 'Tap to reel the catch in'
+              }
               style={StyleSheet.absoluteFill}
               onPress={onSkipHold}
             />
@@ -1123,7 +1225,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       {machine.phase === 'got_away' ? (
         <View style={styles.gotAway} pointerEvents="none">
           <View style={styles.gotAwayCard}>
-            <Text style={styles.gotAwayTitle}>It got away!</Text>
+            <Text style={styles.gotAwayTitle}>Fish Lost!</Text>
             <MathText
               text={
                 machine.question === null

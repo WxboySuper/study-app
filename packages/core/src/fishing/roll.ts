@@ -14,6 +14,8 @@ import {
 import { POWERUPS, type PowerupDef, type PowerupId } from '../content/specials';
 import { crittersByRarity, crittersOfPack, findCritter, findPack, isPackAvailable } from '../critters';
 import {
+  CATCH_TIER_ORDER,
+  LEGEND_MAX_SHARE,
   catchPool,
   catchesOfTier,
   findCritterCatch,
@@ -21,7 +23,13 @@ import {
   type CatchTier,
   type FishingSeason,
 } from './catches';
-import { equippedBaitEffect, MAX_LURE_RANK, type EquippedBaits, type LureRank } from './lures';
+import { equippedBaitEffect, MAX_LURE_RANK, type EquippedBaits } from './lures';
+import {
+  MAX_ROLL_RANK,
+  clampRollRank,
+  wikiTierWeight,
+  wikiTiersForRank,
+} from './wiki';
 
 export { POWERUPS, type PowerupDef, type PowerupId } from '../content/specials';
 
@@ -74,8 +82,8 @@ export function createRandomRng(): Rng {
 
 /** The odds of every tier for one lure rank, in percent. */
 export interface TierOdds {
-  /** The lure rank these odds belong to. */
-  rank: LureRank;
+  /** The lure rank these odds belong to (1-5, 6 for the Frenzy/S+). */
+  rank: number;
   trash: number;
   easy: number;
   great: number;
@@ -83,39 +91,46 @@ export interface TierOdds {
   epic: number;
   cotd: number;
   legend: number;
-  /** The share that goes to the "Heavy Catch" tier (the deep end of the lake). */
-  heavy: number;
   /** The share that goes to the special table (§8). */
   special: number;
 }
 
 /**
- * The tier odds per lure rank (§6). Every row adds up to 100 %.
+ * The share of the special table per lure rank, in percent.
  *
- * The "Heavy Catch" tier takes 2 % of every row out of the bottom of the
- * ladder (the trash tier), so the rare critter tiers keep the odds of the
- * design doc.
+ * The specials grow a little with the lure rank: a better lure finds fewer
+ * powerups and more of the good stuff. Rank 6 is the Frenzy (S+).
  */
-export const TIER_ODDS: readonly TierOdds[] = [
-  { rank: 1, trash: 28, easy: 45, great: 16, rare: 4, epic: 0, cotd: 0, legend: 0, heavy: 2, special: 5 },
-  { rank: 2, trash: 18, easy: 40, great: 22, rare: 10, epic: 2, cotd: 0, legend: 0, heavy: 2, special: 6 },
-  { rank: 3, trash: 10, easy: 30, great: 26, rare: 18, epic: 6, cotd: 1, legend: 0, heavy: 2, special: 7 },
-  { rank: 4, trash: 6, easy: 20, great: 26, rare: 24, epic: 12, cotd: 2.5, legend: 0.5, heavy: 2, special: 7 },
-  { rank: 5, trash: 3, easy: 12, great: 22, rare: 28, epic: 18, cotd: 6, legend: 1, heavy: 2, special: 8 },
-];
+export const SPECIAL_SHARE_BY_RANK: readonly number[] = [5, 6, 7, 7, 8, 8];
 
 /** The base odds of a lure rank. Unknown ranks fall back to rank 1. */
 export function baseTierOdds(rank: number): TierOdds {
-  const odds = TIER_ODDS.find((entry) => entry.rank === rank);
-  return odds ?? TIER_ODDS[0]!;
+  const rollRank = clampRollRank(rank);
+  const special = SPECIAL_SHARE_BY_RANK[rollRank - 1] ?? SPECIAL_SHARE_BY_RANK[0]!;
+  const odds = emptyTierOdds(rollRank);
+  odds.special = special;
+
+  // The tier weights are the sums of the wiki row chances: the table is the
+  // source of truth, so the odds cannot drift away from the catches.
+  const tiers = wikiTiersForRank(rollRank);
+  const weights = tiers.map((tier) => wikiTierWeight(tier));
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const catchShare = 100 - special;
+  const divisor = total > 0 ? total : 1;
+
+  for (let index = 0; index < tiers.length; index += 1) {
+    odds[tiers[index]!] = ((weights[index] ?? 0) / divisor) * catchShare;
+  }
+
+  return capLegend(odds);
 }
 
 /**
  * The odds of a lure rank with the equipped baits applied.
  *
- * The Glow Jig adds 2 percentage points to "Rare Find" and above (the heavy
- * tier included); the points are taken from the three common tiers so the
- * row still adds up to 100 %.
+ * The Glow Jig adds 2 percentage points to every rare tier that the rank can
+ * catch ("Rare Find" and above); the points are taken from the three common
+ * tiers so the row still adds up to 100 %. The Legend cap is applied last.
  */
 export function tierOddsForRank(rank: number, baits: EquippedBaits = baitsWithoutEffect()): TierOdds {
   const base = { ...baseTierOdds(rank) };
@@ -124,28 +139,81 @@ export function tierOddsForRank(rank: number, baits: EquippedBaits = baitsWithou
     return base;
   }
 
-  const donorTotal = base.trash + base.easy + base.great;
+  const boosted = CATCH_TIER_ORDER.filter(
+    (tier) => tier !== 'trash' && tier !== 'easy' && tier !== 'great' && base[tier] > 0,
+  );
+  if (boosted.length === 0) {
+    return base;
+  }
 
-  base.rare += bonus;
-  base.epic += bonus;
-  base.cotd += bonus;
-  base.legend += bonus;
-  base.heavy += bonus;
+  for (const tier of boosted) {
+    base[tier] += bonus;
+  }
 
-  const taken = bonus * 5;
-  // The three common tiers always have odds (5 % at the lowest rank), so the
-  // divisor is never zero.
-  const divisor = Math.max(donorTotal, Number.EPSILON);
-  base.trash -= (taken * base.trash) / divisor;
-  base.easy -= (taken * base.easy) / divisor;
-  base.great -= (taken * base.great) / divisor;
+  const donors = CATCH_TIER_ORDER.filter(
+    (tier) => tier === 'trash' || tier === 'easy' || tier === 'great',
+  ).filter((tier) => base[tier] > 0);
+  const donorTotal = donors.reduce((sum, tier) => sum + base[tier], 0);
+  const taken = bonus * boosted.length;
+  const divisor = donorTotal > 0 ? donorTotal : 1;
 
-  return base;
+  for (const tier of donors) {
+    base[tier] = Math.max(0, base[tier] - (taken * base[tier]) / divisor);
+  }
+
+  return capLegend(base);
+}
+
+/**
+ * Caps the Legend tier at {@link LEGEND_MAX_SHARE} percent of the whole row.
+ *
+ * The wiki's Legend rows are the rarest of the table, but the tier weight
+ * alone would give them ~4.5 % at the best lure. The cap spreads the rest of
+ * the catch share over the other tiers, keeping their relative weights.
+ */
+function capLegend(odds: TierOdds): TierOdds {
+  if (odds.legend <= LEGEND_MAX_SHARE) {
+    return odds;
+  }
+
+  const others = CATCH_TIER_ORDER.filter((tier) => tier !== 'legend');
+  const otherTotal = others.reduce((sum, tier) => sum + odds[tier], 0);
+  const rest = 100 - odds.special - LEGEND_MAX_SHARE;
+  const divisor = otherTotal > 0 ? otherTotal : 1;
+
+  for (const tier of others) {
+    odds[tier] = (odds[tier] / divisor) * rest;
+  }
+  odds.legend = LEGEND_MAX_SHARE;
+
+  return odds;
+}
+
+/** An odds row with every tier at zero. */
+function emptyTierOdds(rank: number): TierOdds {
+  const odds: TierOdds = {
+    rank,
+    trash: 0,
+    easy: 0,
+    great: 0,
+    rare: 0,
+    epic: 0,
+    cotd: 0,
+    legend: 0,
+    special: 0,
+  };
+  return odds;
 }
 
 function baitsWithoutEffect(): EquippedBaits {
   return { shinySpinner: false, glowJig: false, critterChum: false };
 }
+
+/** The odds of every roll rank (1-5 and the Frenzy's rank 6). */
+export const TIER_ODDS: readonly TierOdds[] = Array.from(
+  { length: MAX_ROLL_RANK },
+  (_, index) => baseTierOdds(index + 1),
+);
 
 /* -------------------------------------------------------------------------
  * The special table (§8)
@@ -351,17 +419,7 @@ export function specialOddsFor(
  */
 export function rollTier(rng: Rng, rank: number, baits?: EquippedBaits): CatchTier | 'special' {
   const odds = tierOddsForRank(rank, baits);
-  const order: (keyof TierOdds)[] = [
-    'trash',
-    'easy',
-    'great',
-    'rare',
-    'epic',
-    'cotd',
-    'legend',
-    'heavy',
-    'special',
-  ];
+  const order: (keyof TierOdds)[] = [...CATCH_TIER_ORDER, 'special'];
   const roll = rng.next() * 100;
 
   let cumulative = 0;
@@ -432,6 +490,37 @@ export function rollWeight(rng: Rng, catchDef: CatchDef): number {
 }
 
 /**
+ * Picks a catch of a tier, weighted by its wiki chance.
+ *
+ * The rows of a tier are not equally likely: the wiki gives a Jellyfish 15 %
+ * and a Goldfish 10 %. Keeping the chance as the weight of the pick makes the
+ * individual catches follow the table inside their tier.
+ */
+export function pickWeightedCatch(rng: Rng, pool: readonly CatchDef[]): CatchDef | undefined {
+  if (pool.length === 0) {
+    return undefined;
+  }
+
+  const total = pool.reduce((sum, entry) => sum + Math.max(0, entry.chance), 0);
+  if (total <= 0) {
+    return pool[rng.int(0, pool.length - 1)];
+  }
+
+  let roll = rng.next() * total;
+  let fallback = pool[pool.length - 1];
+
+  for (const entry of pool) {
+    fallback = entry;
+    roll -= Math.max(0, entry.chance);
+    if (roll < 0) {
+      return entry;
+    }
+  }
+
+  return fallback;
+}
+
+/**
  * Rolls the next catch of the session.
  *
  * The order of the rolls is:
@@ -452,11 +541,11 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
     baits: { ...state.baits },
   };
 
-  // The lure rank the tier is rolled at. The Frenzy lifts it by 2, bonus
-  // review cards never go above rank 1.
+  // The lure rank the tier is rolled at. The Frenzy lifts it by 2 (as high as
+  // the Frenzy rank, S+), bonus review cards never go above rank 1.
   const frenzyActive = next.frenzyCatchesLeft > 0;
   let rank = next.lureRank + (frenzyActive ? FRENZY_RANK_BONUS : 0);
-  rank = Math.min(MAX_LURE_RANK, Math.max(1, rank));
+  rank = clampRollRank(rank);
   if (bonus) {
     // Bonus review cards roll at rank 1 at best.
     rank = 1;
@@ -505,15 +594,16 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
   }
 
   // 4. The catch of the tier: a critter (or a piece of junk at the bottom of
-  // the ladder). The pool holds the critters of the packs that are on sale.
+  // the ladder). The pool holds the critters of the packs that are on sale;
+  // every catch keeps its wiki chance as a weight inside its tier.
   const pool = catchPool(tier, { season, now });
-  const catchDef = pool[rng.int(0, pool.length - 1)];
+  const catchDef = pickWeightedCatch(rng, pool);
   /* v8 ignore next -- the junk pile always has a catch */
   if (catchDef === undefined) {
     // The pool is empty (only possible when the catalogue is empty), fall
     // back to the junk pile so the game never dead ends.
     const fallbackPool = catchesOfTier('trash', { season, now });
-    const fallback = fallbackPool[rng.int(0, fallbackPool.length - 1)];
+    const fallback = pickWeightedCatch(rng, fallbackPool);
     if (fallback === undefined) {
       throw new Error('The catch catalogue is empty.');
     }

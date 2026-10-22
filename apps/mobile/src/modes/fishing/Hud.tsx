@@ -1,8 +1,7 @@
 import type { CatchTier, FishingSession, MasteryProgress } from '@study-app/core';
-import { CATCH_TIERS, LURE_RANKS, POWERUPS } from '@study-app/core';
-import { useEffect, useMemo } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { useAnimatedProps, useSharedValue, withSpring } from 'react-native-reanimated';
+import { CATCH_TIERS, LURE_RANKS, POWERUPS, formatLbs } from '@study-app/core';
+import { useMemo } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radius } from '@/theme';
 import { GlassCard, TokenCounter } from '@/ui';
@@ -22,8 +21,6 @@ import { Sprite } from './Sprite';
  * question of the deck has.
  */
 
-/** A text input that can be animated (the number roll-up). */
-const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 /**
  * How many questions of the deck get their own dots in the HUD.
@@ -73,24 +70,7 @@ export function Hud({
   biggestTier,
   tokens,
   onEnd,
-  reduceMotion,
 }: HudProps) {
-  const haul = useSharedValue(session.haulLbs);
-
-  useEffect(() => {
-    if (haul.value === session.haulLbs) {
-      return;
-    }
-    haul.value = reduceMotion
-      ? session.haulLbs
-      : withSpring(session.haulLbs, { damping: 16, stiffness: 120, mass: 0.6 });
-  }, [haul, session.haulLbs, reduceMotion]);
-
-  const haulProps = useAnimatedProps(() => ({
-    text: `${Math.round(haul.value).toLocaleString('en-US')} lbs`,
-    defaultValue: `${Math.round(haul.value).toLocaleString('en-US')} lbs`,
-  }));
-
   const powerup = session.roll.powerup === null
     ? null
     : POWERUPS.find((entry) => entry.id === session.roll.powerup) ?? null;
@@ -175,16 +155,15 @@ export function Hud({
       <View style={styles.bottomRow} pointerEvents="none">
         <View style={styles.haulBox}>
           <Text style={styles.haulLabel}>HAUL</Text>
-          <AnimatedTextInput
-            editable={false}
-            animatedProps={haulProps}
-            underlineColorAndroid="transparent"
+          <Text
             style={[
               styles.haulValue,
               biggestTier === null ? null : { color: tierColor(biggestTier) },
             ]}
-            accessibilityLabel={`Haul: ${Math.round(session.haulLbs).toLocaleString('en-US')} lbs`}
-          />
+            accessibilityLabel={`Haul: ${formatLbs(session.haulLbs)}`}
+          >
+            {formatLbs(session.haulLbs)}
+          </Text>
         </View>
 
         <View style={styles.stats}>
@@ -254,7 +233,7 @@ export function Hud({
                 <Text numberOfLines={1} style={styles.logName}>
                   {shortName(entry.name)}
                 </Text>
-                <Text style={styles.logWeight}>{formatShort(entry.lbs)}</Text>
+                <Text style={styles.logWeight}>{formatLbs(entry.lbs)}</Text>
               </View>
             ))}
           </View>
@@ -262,17 +241,6 @@ export function Hud({
       )}
     </View>
   );
-}
-
-/** A short weight for the catch log ("12.3k"). */
-function formatShort(lbs: number): string {
-  if (lbs >= 1_000_000) {
-    return `${(lbs / 1_000_000).toFixed(1)}M`;
-  }
-  if (lbs >= 1_000) {
-    return `${(lbs / 1_000).toFixed(1)}k`;
-  }
-  return `${Math.round(lbs)}`;
 }
 
 /** A short name for the tight row of previous catches. */

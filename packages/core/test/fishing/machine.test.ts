@@ -1,19 +1,23 @@
-import { Rating } from 'ts-fsrs';
+import { Rating, State } from 'ts-fsrs';
 import { describe, expect, it } from 'vitest';
 
 import {
+  FISH_LOST_MS,
   LEAD_UP_FULL_MS,
   LEAD_UP_SHORT_MS,
+  WRONG_LOCKOUT_MS,
   biggestCatch,
   createFishingState,
   fishingReducer,
   leadUpOf,
+  masteryStatusOf,
   remainingCards,
   toSessionResult,
   type FishingEvent,
   type FishingState,
 } from '../../src/fishing/machine';
 import { createSeededRng } from '../../src/fishing/roll';
+import type { CardState } from '../../src/types';
 import { makeQueueItem, sequenceRng } from './helpers';
 
 const NOW = Date.UTC(2026, 9, 21, 12, 0, 0);
@@ -22,6 +26,7 @@ function createState(overrides: Partial<Parameters<typeof createFishingState>[0]
   return createFishingState({
     rng: createSeededRng(1),
     queue: [makeQueueItem('card-1'), makeQueueItem('card-2')],
+    now: NOW,
     ...overrides,
   });
 }
@@ -35,24 +40,45 @@ function toHooked(state: FishingState): FishingState {
   return apply(state, { type: 'cast' }, { type: 'cast_landed' }, { type: 'bite' });
 }
 
-/** Taps an answer: the hold and the lead-up still have to run. */
-function answer(state: FishingState, choiceIndex: number): FishingState {
+/** Taps an answer: the note now waits for the player. */
+function answer(state: FishingState, choiceIndex: number, now = NOW): FishingState {
   return apply(
     state,
     { type: 'reel' },
-    { type: 'answer', choiceIndex, durationMs: 500, now: NOW },
+    { type: 'answer', choiceIndex, durationMs: 500, now },
   );
 }
 
-/** Taps an answer and lets the hold and the lead-up run. */
-function answerAndLand(state: FishingState, choiceIndex: number): FishingState {
+/** Answers correctly and reels the catch in, up to the reveal card. */
+function answerAndReveal(state: FishingState, choiceIndex = 0): FishingState {
   return apply(
     state,
     { type: 'reel' },
     { type: 'answer', choiceIndex, durationMs: 500, now: NOW },
-    { type: 'answer_hold_done' },
+    { type: 'answer_hold_done', now: NOW },
     { type: 'reel_finished' },
   );
+}
+
+/** Answers correctly, reels the catch in and claims it. */
+function answerAndClaim(state: FishingState, choiceIndex = 0): FishingState {
+  return apply(answerAndReveal(state, choiceIndex), { type: 'continue' });
+}
+
+function cardState(overrides: Partial<CardState> = {}): CardState {
+  return {
+    cardId: 'card-1',
+    due: NOW,
+    stability: 1,
+    difficulty: 5,
+    elapsedDays: 0,
+    scheduledDays: 1,
+    reps: 1,
+    lapses: 0,
+    state: State.Review,
+    lastReview: NOW,
+    ...overrides,
+  };
 }
 
 describe('the fishing machine', () => {
@@ -62,6 +88,7 @@ describe('the fishing machine', () => {
     expect(state.session.haulLbs).toBe(0);
     expect(state.session.correct).toBe(0);
     expect(state.ended).toBe(false);
+    expect(state.lockoutUntil).toBeNull();
   });
 
   it('runs the whole loop', () => {
@@ -80,20 +107,32 @@ describe('the fishing machine', () => {
     expect(state.phase).toBe('question');
 
     state = apply(state, { type: 'answer', choiceIndex: 0, durationMs: 1_000, now: NOW });
-    // The answer is held on the screen, so the player can reread it.
+    // The note waits for the player: nothing moves until the tap.
     expect(state.phase).toBe('answered');
+    expect(state.feedback?.correct).toBe(true);
 
-    state = apply(state, { type: 'answer_hold_done' });
+    state = apply(state, { type: 'answer_hold_done', now: NOW });
     expect(state.phase).toBe('reeling');
 
     state = apply(state, { type: 'reel_finished' });
     expect(state.phase).toBe('reveal');
-    expect(state.session.catches).toBe(1);
-    expect(state.session.haulLbs).toBeGreaterThan(0);
+    // The catch is on the card, not in the haul yet.
+    expect(state.session.catches).toBe(0);
+    expect(state.session.haulLbs).toBe(0);
+    expect(state.reveal).not.toBeNull();
 
     state = apply(state, { type: 'continue' });
     expect(state.phase).toBe('idle');
     expect(state.question).toBeNull();
+    expect(state.session.catches).toBe(1);
+    expect(state.session.haulLbs).toBeGreaterThan(0);
+  });
+
+  it('does not advance the correct answer until the player taps', () => {
+    const state = answer(toHooked(createState()), 0);
+    expect(state.phase).toBe('answered');
+
+    expect(fishingReducer(state, { type: 'answer_hold_done', now: NOW }).phase).toBe('reeling');
   });
 
   it('rolls the catch and pulls the card when the fish is hooked', () => {
@@ -109,41 +148,46 @@ describe('the fishing machine', () => {
     expect(state.currentItem?.cardId).toBe('card-1');
   });
 
-  it('asks the next card after every catch', () => {
+  it('asks the next card after every catch is claimed', () => {
     let state = createState();
     state = toHooked(state);
-    state = answerAndLand(state, 0);
-    state = apply(state, { type: 'continue' });
+    state = answerAndClaim(state, 0);
     state = toHooked(state);
 
     expect(state.question?.cardId).toBe('card-2');
   });
 
   it('loses the catch when the answer is wrong', () => {
-    let state = createState();
-    state = toHooked(state);
-    state = apply(state, { type: 'reel' });
+    let state = toHooked(createState());
     state = answer(state, 2);
 
     expect(state.phase).toBe('answered');
     expect(state.feedback?.correct).toBe(false);
     expect(state.feedback?.answerIndex).toBe(0);
+    expect(state.lockoutUntil).toBe(NOW + WRONG_LOCKOUT_MS);
 
-    // The lead-up runs and the line snaps: the catch is gone.
-    state = apply(state, { type: 'answer_hold_done' });
-    expect(state.phase).toBe('reeling');
+    // A tap during the lockout is ignored.
+    expect(fishingReducer(state, { type: 'answer_hold_done', now: NOW + 100 })).toBe(state);
 
-    state = apply(state, { type: 'reel_finished' });
+    // After the three seconds the tap shows the "Fish Lost!" bubble.
+    state = apply(state, { type: 'answer_hold_done', now: NOW + WRONG_LOCKOUT_MS });
     expect(state.phase).toBe('got_away');
+    expect(state.lockoutUntil).toBeNull();
     expect(state.session.catches).toBe(0);
     expect(state.session.haulLbs).toBe(0);
     expect(state.session.streak).toBe(0);
+
+    state = apply(state, { type: 'continue' });
+    expect(state.phase).toBe('idle');
+  });
+
+  it('shows the fish lost bubble for a short moment', () => {
+    expect(FISH_LOST_MS).toBe(900);
   });
 
   it('grades a wrong answer as "Again"', () => {
-    let state = createState();
-    state = toHooked(state);
-    state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 3, durationMs: 500, now: NOW });
+    let state = toHooked(createState());
+    state = answer(state, 3);
 
     const review = state.session.reviews[0];
     expect(review?.rating).toBe(Rating.Again);
@@ -161,14 +205,9 @@ describe('the fishing machine', () => {
 
     for (let round = 0; round < 3; round += 1) {
       state = toHooked(state);
-      state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW });
-      // The answer is held on the screen before the scene takes over.
-      state = apply(state, { type: 'answer_hold_done' });
-      state = apply(state, { type: 'reel_finished' }, { type: 'continue' });
+      state = answerAndClaim(state, 0);
     }
 
-    // The mastery mode asks the same question again and again: FSRS records
-    // every single one of those reviews.
     expect(state.session.reviews).toHaveLength(3);
     expect(state.session.reviews.map((review) => review.cardId)).toEqual([
       'card-1',
@@ -180,13 +219,11 @@ describe('the fishing machine', () => {
 
   it('asks a card with wrong answers as a multiple choice question', () => {
     const state = toHooked(createState());
-
     expect(state.question?.selfGrade).toBe(false);
   });
 
   it('asks a card without wrong answers as a self-graded card', () => {
     const state = toHooked(createState({ queue: [makeQueueItem('self-graded', { wrong: null })] }));
-
     expect(state.question?.selfGrade).toBe(true);
     expect(state.question?.answer).toBe('back of self-graded');
   });
@@ -232,11 +269,9 @@ describe('the fishing machine', () => {
 
     for (let index = 0; index < 4; index += 1) {
       state = toHooked(state);
-      state = answerAndLand(state, 0);
-      state = apply(state, { type: 'continue' });
+      state = answerAndClaim(state, 0);
     }
 
-    // The streak has to be three long before an answer can be an "Easy".
     expect(state.session.reviews.map((review) => review.rating)).toEqual([
       Rating.Good,
       Rating.Good,
@@ -247,10 +282,8 @@ describe('the fishing machine', () => {
   });
 
   it('grades a slow answer as "Hard"', () => {
-    let state = createState();
-    state = toHooked(state);
+    let state = toHooked(createState());
     state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 30_000, now: NOW });
-
     expect(state.session.reviews[0]?.rating).toBe(Rating.Hard);
   });
 
@@ -262,29 +295,27 @@ describe('the fishing machine', () => {
     };
 
     state = toHooked(state);
-    state = apply(state, { type: 'reel' });
     state = answer(state, 1);
 
-    // The hold ends and the player is back on the same card: the answers
-    // are live again.
     expect(state.phase).toBe('answered');
     expect(state.feedback?.retry).toBe(true);
     expect(state.session.roll.powerup).toBeNull();
-    // The miss is logged even though the fish stays on the line.
+    expect(state.lockoutUntil).toBeNull();
     expect(state.session.reviews[0]?.rating).toBe(Rating.Again);
 
-    state = apply(state, { type: 'answer_hold_done' });
+    // The retry is not locked: a tap puts the player back on the same card.
+    state = apply(state, { type: 'answer_hold_done', now: NOW });
     expect(state.phase).toBe('question');
     expect(state.question?.cardId).toBe('card-1');
 
     state = answer(state, 0);
-    state = apply(state, { type: 'answer_hold_done' });
+    state = apply(state, { type: 'answer_hold_done', now: NOW });
     expect(state.phase).toBe('reeling');
     expect(state.session.correct).toBe(1);
   });
 
-  it('lands two catches with the Double Hook', () => {
-    let state = createState();
+  it('lands two catches with the Double Hook, on the claim', () => {
+    let state = createState({ rng: createSeededRng(3) });
     state = {
       ...state,
       session: { ...state.session, roll: { ...state.session.roll, powerup: 'double_hook' } },
@@ -293,35 +324,52 @@ describe('the fishing machine', () => {
     state = toHooked(state);
     state = answer(state, 0);
     expect(state.landing).toHaveLength(2);
+    expect(state.session.catches).toBe(0);
 
-    state = apply(state, { type: 'answer_hold_done' }, { type: 'reel_finished' });
+    state = apply(
+      state,
+      { type: 'answer_hold_done', now: NOW },
+      { type: 'reel_finished' },
+      { type: 'continue' },
+    );
     expect(state.session.catches).toBe(2);
     expect(state.session.roll.powerup).toBeNull();
   });
 
-  it('counts the haul and the tiers of the landed catches', () => {
-    let state = createState();
-    state = toHooked(state);
-    state = answerAndLand(state, 0);
+  it('counts the haul and the tiers only when the catch is claimed', () => {
+    let state = toHooked(createState());
+    state = apply(
+      state,
+      { type: 'reel' },
+      { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW },
+      { type: 'answer_hold_done', now: NOW },
+      { type: 'reel_finished' },
+    );
 
-    const tier = state.onTheLine === null ? 'trash' : state.session.log[0]?.tier;
+    expect(state.phase).toBe('reveal');
+    expect(state.session.log).toHaveLength(0);
+
+    state = apply(state, { type: 'continue' });
+    const tier = state.session.log[0]?.tier;
     expect(state.session.byTier[tier ?? 'trash']).toBe(1);
     expect(biggestCatch(state)).not.toBeNull();
     expect(state.session.log).toHaveLength(1);
   });
 
   it('counts a heavy catch and reports it for the payout', () => {
-    let state = createState({ rng: sequenceRng([0.94, 0.0, 0.5]) });
+    let state = createState({
+      rng: sequenceRng([0.91, 0.91, 0.0]),
+      startRank: 5,
+    });
     state = toHooked(state);
 
     expect(state.onTheLine?.kind).toBe('heavy');
 
-    state = answerAndLand(state, 0);
+    state = answerAndClaim(state, 0);
 
-    expect(state.session.byTier.heavy).toBe(1);
+    expect(state.session.log[0]?.kind).toBe('heavy');
     expect(toSessionResult(state).heavyCatches).toBe(1);
-    // A heavy catch is heavier than every critter catch.
-    expect(state.session.haulLbs).toBeGreaterThanOrEqual(50);
+    expect(state.session.haulLbs).toBeGreaterThanOrEqual(500_000);
   });
 
   it('keeps a pack ticket that was landed', () => {
@@ -329,30 +377,48 @@ describe('the fishing machine', () => {
     state = toHooked(state);
     expect(state.onTheLine?.kind).toBe('pack_ticket');
 
-    state = answerAndLand(state, 0);
+    state = apply(
+      state,
+      { type: 'reel' },
+      { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW },
+      { type: 'answer_hold_done', now: NOW },
+      { type: 'reel_finished' },
+    );
 
+    expect(state.reveal?.kind).toBe('pack_ticket');
+    expect(state.session.packTickets).toBe(0);
+
+    state = apply(state, { type: 'continue' });
     expect(state.session.packTickets).toBe(1);
     expect(toSessionResult(state).packTickets).toBe(1);
-    // The reveal card shows the ticket.
-    expect(state.reveal?.kind).toBe('pack_ticket');
   });
 
   it('reveals the biggest catch of the landing', () => {
-    let state = createState({ rng: sequenceRng([0.1, 0.0, 0.5]) });
+    let state = createState({
+      rng: sequenceRng([0.1, 0.0, 0.0, 0.1, 0.9, 0.9]),
+      startRank: 5,
+      now: NOW,
+    });
     state = {
       ...state,
       session: { ...state.session, roll: { ...state.session.roll, powerup: 'double_hook' } },
     };
 
     state = apply(state, { type: 'cast' }, { type: 'cast_landed' }, { type: 'bite' });
-    state = answerAndLand(state, 0);
+    state = apply(
+      state,
+      { type: 'reel' },
+      { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW },
+      { type: 'answer_hold_done', now: NOW },
+      { type: 'reel_finished' },
+    );
 
     expect(state.landing).toHaveLength(2);
-    expect(state.reveal).not.toBeNull();
-    if (state.reveal?.kind === 'fish') {
-      const weights = state.landing
-        .filter((entry): entry is Extract<typeof entry, { kind: 'fish' }> => entry.kind === 'fish')
-        .map((entry) => entry.lbs);
+    const weights = state.landing
+      .filter((entry) => entry.kind === 'fish' || entry.kind === 'critter' || entry.kind === 'junk' || entry.kind === 'heavy')
+      .map((entry) => entry.lbs);
+    expect(state.reveal?.kind).not.toBeUndefined();
+    if (state.reveal !== null && (state.reveal.kind === 'fish' || state.reveal.kind === 'critter' || state.reveal.kind === 'junk' || state.reveal.kind === 'heavy')) {
       expect(state.reveal.lbs).toBe(Math.max(...weights));
     }
   });
@@ -360,15 +426,21 @@ describe('the fishing machine', () => {
   it('loses a pack ticket when the answer is wrong', () => {
     let state = createState({ rng: sequenceRng([0.97, 0.99]) });
     state = toHooked(state);
-    state = answerAndLand(state, 1);
+    state = apply(
+      state,
+      { type: 'reel' },
+      { type: 'answer', choiceIndex: 1, durationMs: 500, now: NOW },
+      { type: 'answer_hold_done', now: NOW + WRONG_LOCKOUT_MS },
+      { type: 'continue' },
+    );
 
     expect(state.session.packTickets).toBe(0);
-    expect(state.phase).toBe('got_away');
+    expect(state.phase).toBe('idle');
   });
 
   it('rolls a bonus card at rank 1', () => {
     const state = createState({
-      rng: sequenceRng([0.1, 0.0, 0.5]),
+      rng: sequenceRng([0.5, 0.0, 0.0]),
       queue: [makeQueueItem('bonus-1', { bonus: true, kind: 'bonus' })],
       startRank: 5,
     });
@@ -376,7 +448,7 @@ describe('the fishing machine', () => {
     const hooked = toHooked(state);
     expect(hooked.question?.bonus).toBe(true);
     expect(hooked.session.roll.lureRank).toBe(5);
-    if (hooked.onTheLine?.kind === 'fish') {
+    if (hooked.onTheLine?.kind === 'junk') {
       expect(hooked.onTheLine.tier).toBe('trash');
     }
   });
@@ -392,8 +464,7 @@ describe('the fishing machine', () => {
     state = toHooked(state);
     expect(state.question?.cardId).toBe('only-one');
 
-    state = answerAndLand(state, 0);
-    state = apply(state, { type: 'continue' });
+    state = answerAndClaim(state, 0);
     state = toHooked(state);
 
     expect(state.question?.cardId).toBe('refilled');
@@ -458,9 +529,9 @@ describe('the fishing machine', () => {
   });
 
   it('builds the result of the session', () => {
-    let state = createState({ rng: sequenceRng([0.1, 0.0, 0.5]) });
+    let state = createState();
     state = toHooked(state);
-    state = answerAndLand(state, 0);
+    state = answerAndClaim(state, 0);
 
     const result = toSessionResult(state);
     expect(result.mode).toBe('fishing');
@@ -474,10 +545,9 @@ describe('the fishing machine', () => {
   });
 
   it('keeps the critters that were caught, without granting them', () => {
-    // The tier roll lands on "Easy One": the catch is a common critter.
-    let state = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), now: NOW });
+    let state = createState({ rng: sequenceRng([0.2, 0.0, 0.5]), startRank: 2, now: NOW });
     state = toHooked(state);
-    state = answerAndLand(state, 0);
+    state = answerAndClaim(state, 0);
 
     expect(state.session.critters).toHaveLength(1);
     const critter = state.session.critters[0]!;
@@ -485,16 +555,17 @@ describe('the fishing machine', () => {
     expect(critter.rarity).toBe('common');
     expect(critter.tier).toBe('easy');
 
-    // The result of the session carries the critters, so the app can show
-    // them on the payout screen. They are catches: they are never granted to
-    // the collection (only a pack grants a critter).
     const result = toSessionResult(state);
     expect(result.critters.map((entry) => entry.critterId)).toEqual(['nibbles_the_notecard']);
     expect(result.haulLbs).toBeGreaterThan(0);
   });
 
   it('only catches the critters of the packs that are on sale', () => {
-    const closed = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), now: Date.UTC(2026, 11, 24) });
+    const closed = createState({
+      rng: sequenceRng([0.2, 0.0, 0.5]),
+      startRank: 2,
+      now: Date.UTC(2026, 11, 24),
+    });
     const hooked = toHooked(closed);
     expect(hooked.onTheLine?.kind).toBe('critter');
     if (hooked.onTheLine?.kind === 'critter') {
@@ -515,17 +586,17 @@ describe('the fishing machine', () => {
   });
 
   it('keeps the joke of a silly catch', () => {
-    const junk = createState({ rng: sequenceRng([0.1, 0.0, 0.5]) });
+    const junk = createState({ rng: sequenceRng([0.1, 0.0, 0.0]) });
     const hookedJunk = toHooked(junk);
     expect(hookedJunk.onTheLine?.kind).toBe('junk');
 
-    const landedJunk = answerAndLand(hookedJunk, 0);
+    const landedJunk = answerAndClaim(hookedJunk, 0);
     expect(landedJunk.session.log[0]?.joke).toBeDefined();
   });
 
   it('lands a catch without a joke', () => {
-    const state = createState({ rng: sequenceRng([0.5, 0.0, 0.5]) });
-    const landed = answerAndLand(toHooked(state), 0);
+    const state = createState({ rng: sequenceRng([0.2, 0.0, 0.5]), startRank: 2, now: NOW });
+    const landed = answerAndClaim(toHooked(state), 0);
 
     expect(landed.session.log[0]?.name).toBe('Nibbles the Notecard');
     expect(landed.session.log[0]?.joke).toBeUndefined();
@@ -540,18 +611,7 @@ describe('the fishing machine', () => {
   it('starts with the scheduling states of the cards', () => {
     const state = createFishingState({
       rng: createSeededRng(1),
-      cardStates: [['card-1', {
-        cardId: 'card-1',
-        due: 0,
-        stability: 1,
-        difficulty: 5,
-        elapsedDays: 0,
-        scheduledDays: 1,
-        reps: 1,
-        lapses: 0,
-        state: 2,
-        lastReview: null,
-      }]],
+      cardStates: [['card-1', cardState({ state: State.Review })]],
     });
 
     expect(state.session.cardStates.get('card-1')).toBeDefined();
@@ -568,7 +628,6 @@ describe('the fishing machine', () => {
     expect(hooked.question?.answerIndex).toBe(-1);
 
     const answered = apply(hooked, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW });
-    // Without an answer there is nothing to get right.
     expect(answered.phase).toBe('answered');
     expect(answered.feedback?.correct).toBe(false);
   });
@@ -576,16 +635,16 @@ describe('the fishing machine', () => {
   it('lands a special catch', () => {
     // The tier roll lands on the special table and the special is a new lure.
     const state = createState({ rng: sequenceRng([0.97, 0.1]) });
-    const landed = answerAndLand(toHooked(state), 0);
+    const landed = answerAndClaim(toHooked(state), 0);
 
     expect(landed.session.catches).toBe(0);
     expect(landed.session.haulLbs).toBe(0);
     expect(landed.session.roll.lureRank).toBe(2);
   });
 
-  it('lands a second catch with the Double Hook', () => {
+  it('lands a second catch with the Double Hook only when it is a catch', () => {
     // The first roll is a fish, the second (the Double Hook) is a special.
-    const state = createState({ rng: sequenceRng([0.1, 0.0, 0.5, 0.97, 0.1]) });
+    const state = createState({ rng: sequenceRng([0.1, 0.0, 0.0, 0.97, 0.1]) });
     const withHook: FishingState = {
       ...state,
       session: { ...state.session, roll: { ...state.session.roll, powerup: 'double_hook' } },
@@ -610,60 +669,59 @@ describe('the fishing machine', () => {
     expect(state.session.roll.lureRank).toBe(1);
   });
 
-  it('holds the answer on the screen before the scene takes over', () => {
-    let state = createState();
-    state = toHooked(state);
-    state = apply(state, { type: 'reel' });
-    state = answer(state, 0);
-
-    // The hold: the feedback is on the screen and the phase waits.
-    expect(state.phase).toBe('answered');
-    expect(state.feedback).not.toBeNull();
-
-    // The hold only ends once it is told to.
-    expect(fishingReducer(state, { type: 'answer_hold_done' }).phase).toBe('reeling');
-  });
-
   it('gives a critter the full lead-up and a junk catch the short one', () => {
-    // The tier roll lands on "Easy One": the catch is a common critter.
-    const critter = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), now: NOW });
-    const landedCritter = answerAndLand(toHooked(critter), 0);
+    const critter = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), startRank: 2, now: NOW });
+    const landedCritter = answerAndReveal(toHooked(critter), 0);
     expect(leadUpOf(landedCritter).durationMs).toBe(LEAD_UP_FULL_MS);
     expect(leadUpOf(landedCritter).escaped).toBe(false);
 
-    // The tier roll lands on the junk table.
-    const junk = createState({ rng: sequenceRng([0.1, 0.0, 0.5]) });
-    const landedJunk = answerAndLand(toHooked(junk), 0);
+    const junk = createState({ rng: sequenceRng([0.1, 0.0, 0.0]) });
+    const landedJunk = answerAndReveal(toHooked(junk), 0);
     expect(leadUpOf(landedJunk).durationMs).toBe(LEAD_UP_SHORT_MS);
     expect(leadUpOf(landedJunk).escaped).toBe(false);
   });
 
   it('gives a wrong answer the short lead-up', () => {
-    let state = createState();
-    state = toHooked(state);
-    state = apply(state, { type: 'reel' });
+    let state = toHooked(createState());
     state = answer(state, 3);
-    state = apply(state, { type: 'answer_hold_done' });
+    state = apply(state, { type: 'answer_hold_done', now: NOW + WRONG_LOCKOUT_MS });
 
-    expect(state.phase).toBe('reeling');
+    expect(state.phase).toBe('got_away');
     expect(leadUpOf(state).escaped).toBe(true);
     expect(leadUpOf(state).durationMs).toBe(LEAD_UP_SHORT_MS);
   });
 
-  it('holds the answer for a second chance and lets the player retry', () => {
+  it('lets the player retry after a second chance, without a lockout', () => {
     let state = createState();
     state = {
       ...state,
       session: { ...state.session, roll: { ...state.session.roll, powerup: 'second_chance' } },
     };
     state = toHooked(state);
-    state = apply(state, { type: 'reel' });
     state = answer(state, 2);
 
-    // The hold ends and the same card comes back, with its answers live.
-    state = apply(state, { type: 'answer_hold_done' });
+    state = apply(state, { type: 'answer_hold_done', now: NOW });
     expect(state.phase).toBe('question');
     expect(state.question?.cardId).toBe('card-1');
     expect(state.feedback?.retry).toBe(true);
+  });
+});
+
+describe('the mastery badge', () => {
+  it('is unknown without a scheduling state', () => {
+    expect(masteryStatusOf(undefined)).toBe('unknown');
+    expect(masteryStatusOf(null)).toBe('unknown');
+    expect(masteryStatusOf(cardState({ state: State.New, reps: 0 }))).toBe('unknown');
+  });
+
+  it('is familiar for a card that is still being learned', () => {
+    expect(masteryStatusOf(cardState({ state: State.Learning, stability: 2 }))).toBe('familiar');
+    expect(masteryStatusOf(cardState({ state: State.Relearning, stability: 4 }))).toBe('familiar');
+    expect(masteryStatusOf(cardState({ state: State.Review, stability: 5 }))).toBe('familiar');
+  });
+
+  it('is mastered for a long-lived review card', () => {
+    expect(masteryStatusOf(cardState({ state: State.Review, stability: 21 }))).toBe('mastered');
+    expect(masteryStatusOf(cardState({ state: State.Review, stability: 90 }))).toBe('mastered');
   });
 });

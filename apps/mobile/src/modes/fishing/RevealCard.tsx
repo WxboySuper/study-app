@@ -1,11 +1,10 @@
 import type { CatchTier, RolledCatch } from '@study-app/core';
-import { CATCH_TIERS, isCatchOutcome } from '@study-app/core';
+import { CATCH_TIERS, formatLbs, isCatchOutcome } from '@study-app/core';
 import { useEffect, useState } from 'react';
-import { Image, ImageBackground, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
-  useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
   withRepeat,
@@ -16,34 +15,35 @@ import Animated, {
 
 import { artFor } from '@/content/art';
 import { colors, fonts, radius, rarityColors } from '@/theme';
-import { GameButton, GlassCard, Glow, LightRays, Particles } from '@/ui';
+import { GlassCard, Glow, LightRays, Particles } from '@/ui';
 
 import { assetIdOf, captionOf, nameOf } from './catchArt';
 import { tierColor } from './assets';
 import { Sprite } from './Sprite';
 
 /**
- * The reveal card of the fishing mode (docs/design/fishing.md §5).
+ * The claim card of the fishing mode (docs/design/fishing.md §5).
  *
- * The catch springs out of the water onto a card with its rarity ribbon, its
- * weight (counting up) and, for the silly catches, a joke. The special
- * catches (a new lure, the frenzy, a powerup and the pack ticket) get their
- * own card.
+ * After a correct answer the scene dims, the catch flies out of the water and
+ * a centred card shows the category, the name, the art, the tier badge and
+ * the weight. The card waits for a tap: the haul only ticks up when the
+ * player taps **Tap to claim**, so the catch is never counted before the
+ * player has seen it.
  *
- * A catch never grants a critter to the collection (only a pack does), so the
- * card has no "NEW!" stamp: it shows the catch, nothing more.
+ * The special catches (a new lure, the frenzy, a powerup and the pack ticket)
+ * get their own card. A catch never grants a critter to the collection (only
+ * a pack does), so the card has no "NEW!" stamp: it shows the catch, nothing
+ * more.
  *
  * The card is built from the UI art of the mode: the light rays of
  * `ui_reveal_rays` turn slowly behind the catch, the tier name sits on the
  * ribbon of `ui_tier_ribbon` (tinted with the colour of the tier) and the
  * name of the catch hangs on the wooden tag of `ui_tag_wood`.
  *
- * A heavy catch (the "Heavy Catch" tier) gets its own deep sea theme: a
- * gold "HEAVY CATCH!" banner, extra rays, a bigger splash and a heavier
- * haptic.
+ * A heavy catch (a `kind: 'heavy'` catch of the Angler's Legend tier) gets
+ * its own deep sea theme: gold accents, extra rays, a bigger splash and a
+ * heavier haptic.
  */
-
-const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 /** The deep sea colours of a heavy catch. */
 const HEAVY_THEME = {
@@ -60,7 +60,7 @@ export interface RevealCardProps {
   visible: boolean;
   /** The catch that was landed. */
   catch: RolledCatch;
-  /** Called when the player dismisses the card. */
+  /** Called when the player claims the card. */
   onContinue: () => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
@@ -68,23 +68,22 @@ export interface RevealCardProps {
 
 export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }: RevealCardProps) {
   const scale = useSharedValue(0.6);
-  const weight = useSharedValue(0);
   const flash = useSharedValue(0);
   const spin = useSharedValue(0);
   const [burst, setBurst] = useState(0);
 
   const isCatch = isCatchOutcome(landed);
   const tier: CatchTier | null = isCatch ? landed.tier : null;
-  const isHeavy = tier === 'heavy';
-  const tierName = tier === null ? null : (CATCH_TIERS.find((entry) => entry.id === tier)?.name ?? tier);
+  const isHeavy = landed.kind === 'heavy';
+  const tierName =
+    tier === null ? null : (CATCH_TIERS.find((entry) => entry.id === tier)?.name ?? tier);
   const color = tier === null ? '#38bdf8' : tierColor(tier);
   const lbs = isCatch ? landed.lbs : 0;
-  const isCritter = landed.kind === 'critter';
-  const rarityColor = isCritter && landed.kind === 'critter' ? rarityColors[landed.critter.rarity] : color;
+  const rarityColor =
+    landed.kind === 'critter' && isCatch ? rarityColors[landed.critter.rarity] : color;
 
   // The art of the UI pieces of the card.
   const raysArt = artFor('ui_reveal_rays');
-  const ribbonArt = artFor('ui_tier_ribbon');
   const tagArt = artFor('ui_tag_wood');
 
   useEffect(() => {
@@ -94,11 +93,8 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
       return;
     }
 
-    weight.value = 0;
-
     if (reduceMotion) {
       scale.value = 1;
-      weight.value = lbs;
       flash.value = 0;
       spin.value = 0;
       return;
@@ -108,7 +104,6 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
       withTiming(1.06, { duration: 160, easing: Easing.out(Easing.quad) }),
       withSpring(1, { damping: 12, stiffness: 150 }),
     );
-    weight.value = withTiming(lbs, { duration: 900, easing: Easing.out(Easing.cubic) });
     // The rays of the reveal turn slowly behind the catch.
     spin.value = withRepeat(
       withTiming(360, { duration: 26_000, easing: Easing.linear }),
@@ -118,13 +113,13 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
     setBurst((current) => current + 1);
 
     // The big catches flash the whole screen.
-    if (tier === 'cotd' || tier === 'legend' || tier === 'heavy') {
+    if (tier === 'cotd' || tier === 'legend' || isHeavy) {
       flash.value = withSequence(
         withTiming(1, { duration: 90 }),
         withTiming(0, { duration: 520 }),
       );
     }
-  }, [visible, reduceMotion, scale, weight, flash, spin, lbs, tier, setBurst]);
+  }, [visible, reduceMotion, scale, flash, spin, tier, isHeavy, setBurst]);
 
   const cardStyle = useAnimatedStyle(() => ({
     opacity: visible ? 1 : 0,
@@ -137,33 +132,21 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
     transform: [{ rotate: `${spin.value}deg` }],
   }));
 
-  const weightProps = useAnimatedProps(() => ({
-    text: `${Math.round(weight.value).toLocaleString('en-US')} lbs`,
-    defaultValue: `${Math.round(weight.value).toLocaleString('en-US')} lbs`,
-  }));
-
   if (!visible) {
     return null;
   }
 
-  const tagContent = (
-    <>
-      <Text style={styles.name}>{nameOf(landed)}</Text>
-
-      {isCatch ? (
-        <AnimatedTextInput
-          editable={false}
-          animatedProps={weightProps}
-          underlineColorAndroid="transparent"
-          style={[styles.weight, { color: isHeavy ? HEAVY_THEME.gold : '#fff3cf' }]}
-          accessibilityLabel={`${nameOf(landed)} weighs ${Math.round(lbs).toLocaleString('en-US')} lbs`}
-        />
-      ) : null}
-    </>
-  );
-
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`Tap to claim ${nameOf(landed)}`}
+      accessibilityHint="Adds the catch to the haul"
+      onPress={onContinue}
+      style={styles.root}
+    >
+      {/* The scene dims behind the card. */}
+      <View style={styles.dim} pointerEvents="none" />
+
       <Animated.View style={[StyleSheet.absoluteFill, styles.flash, flashStyle]} pointerEvents="none" />
 
       {tier === 'cotd' || tier === 'legend' ? (
@@ -174,37 +157,41 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
         <LightRays color={HEAVY_THEME.rays} count={28} size={860} opacity={0.42} style={styles.rays} />
       ) : null}
 
-      <View style={styles.center} pointerEvents="box-none">
+      <View style={styles.center} pointerEvents="none">
         <Animated.View style={[styles.card, cardStyle]}>
           <GlassCard
             contentStyle={styles.cardContent}
             tint={rarityColor}
-            face={isHeavy ? [`${HEAVY_THEME.deep}dd`, `${HEAVY_THEME.deep}66`] : [`${rarityColor}33`, `${rarityColor}0f`]}
+            face={
+              isHeavy
+                ? [`${HEAVY_THEME.deep}ee`, `${HEAVY_THEME.deep}88`]
+                : [`${rarityColor}33`, `${rarityColor}0f`]
+            }
           >
-            {isHeavy ? (
-              <View style={styles.heavyBanner}>
-                <Text style={styles.heavyBannerText}>HEAVY CATCH!</Text>
-              </View>
-            ) : null}
+            <Text style={[styles.category, isHeavy ? { color: HEAVY_THEME.gold } : null]}>
+              {categoryOf(landed)}
+            </Text>
 
-            {tierName === null ? null : ribbonArt === null ? (
-              <View style={[styles.ribbon, { backgroundColor: color }]}>
+            <Text style={styles.name}>{nameOf(landed)}</Text>
+
+            {tierName === null ? null : (
+              <View
+                style={[
+                  styles.ribbon,
+                  { backgroundColor: color, borderBottomColor: 'rgba(0,0,0,0.32)' },
+                ]}
+              >
                 <Text style={styles.ribbonText}>{tierName}</Text>
               </View>
-            ) : (
-              <ImageBackground
-                source={ribbonArt}
-                resizeMode="cover"
-                style={styles.ribbon}
-                imageStyle={styles.ribbonImage}
-              >
-                <View style={[styles.ribbonTint, { backgroundColor: color }]} pointerEvents="none" />
-                <Text style={styles.ribbonText}>{tierName}</Text>
-              </ImageBackground>
             )}
 
             <View style={styles.art}>
-              <Glow color={isHeavy ? HEAVY_THEME.gold : rarityColor} size={250} opacity={0.65} style={styles.artGlow} />
+              <Glow
+                color={isHeavy ? HEAVY_THEME.gold : rarityColor}
+                size={250}
+                opacity={0.65}
+                style={styles.artGlow}
+              />
               {raysArt === null ? null : (
                 <Animated.View style={[styles.raysSpin, spinStyle]} pointerEvents="none">
                   <Image
@@ -218,26 +205,35 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
               <Sprite assetId={assetIdOf(landed)} size={isHeavy ? 168 : 150} />
             </View>
 
-            {tagArt === null ? (
-              <View style={styles.tagPlain}>{tagContent}</View>
-            ) : (
+            {isCatch ? (
+              <View style={styles.weightRow}>
+                <Text style={styles.weightLabel}>WEIGHT</Text>
+                <Text
+                  style={[
+                    styles.weight,
+                    { color: isHeavy ? HEAVY_THEME.gold : '#fff3cf' },
+                  ]}
+                >
+                  {formatLbs(lbs)}
+                </Text>
+              </View>
+            ) : null}
+
+            {tagArt === null ? null : (
               <ImageBackground
                 source={tagArt}
                 resizeMode="cover"
                 style={styles.tag}
                 imageStyle={styles.tagImage}
               >
-                {tagContent}
+                <Text style={styles.claim}>TAP TO CLAIM</Text>
               </ImageBackground>
             )}
+            {tagArt === null ? <Text style={styles.claimPlain}>TAP TO CLAIM</Text> : null}
 
             {captionOf(landed) === undefined ? null : (
               <Text style={styles.joke}>“{captionOf(landed)}”</Text>
             )}
-
-            <View style={styles.actions}>
-              <GameButton label="CONTINUE" variant="primary" size="lg" onPress={onContinue} />
-            </View>
           </GlassCard>
         </Animated.View>
       </View>
@@ -256,11 +252,34 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
         duration={isHeavy ? 1400 : 1000}
         style={styles.splash}
       />
-    </View>
+    </Pressable>
   );
 }
 
+/** The category line of the card. */
+function categoryOf(landed: RolledCatch): string {
+  switch (landed.kind) {
+    case 'critter':
+      return 'CRITTER CATCH';
+    case 'junk':
+      return 'JUNK CATCH';
+    case 'heavy':
+      return 'HEAVY CATCH';
+    case 'fish':
+      return 'CATCH';
+    default:
+      return 'SPECIAL CATCH';
+  }
+}
+
 const styles = StyleSheet.create({
+  root: {
+    ...StyleSheet.absoluteFill,
+  },
+  dim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(4, 9, 21, 0.62)',
+  },
   flash: {
     backgroundColor: '#ffffff',
   },
@@ -277,47 +296,43 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '86%',
+    maxWidth: 380,
   },
   cardContent: {
-    paddingVertical: 20,
+    paddingVertical: 18,
     paddingHorizontal: 18,
     alignItems: 'center',
   },
-  heavyBanner: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    borderRadius: radius.chip,
-    paddingVertical: 7,
-    marginBottom: 10,
-    backgroundColor: HEAVY_THEME.gold,
-    borderWidth: 2,
-    borderColor: '#0b3b3a',
+  category: {
+    color: colors.textMuted,
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    letterSpacing: 2.2,
+    marginBottom: 2,
   },
-  heavyBannerText: {
-    color: '#0b3b3a',
-    fontSize: 15,
+  name: {
+    color: '#fff8e7',
+    fontSize: 24,
     fontFamily: fonts.title,
-    letterSpacing: 2.4,
+    textAlign: 'center',
+    textShadowColor: 'rgba(30, 16, 4, 0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
   ribbon: {
-    alignSelf: 'stretch',
+    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 62,
-    borderRadius: radius.chip,
-    marginBottom: 12,
-    overflow: 'hidden',
-  },
-  ribbonImage: {
-    borderRadius: radius.chip,
-  },
-  ribbonTint: {
-    ...StyleSheet.absoluteFill,
-    opacity: 0.62,
+    minWidth: 150,
+    height: 40,
+    borderRadius: 999,
+    borderBottomWidth: 4,
+    paddingHorizontal: 26,
+    marginTop: 10,
   },
   ribbonText: {
     color: '#ffffff',
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: fonts.title,
     letterSpacing: 1.6,
     textTransform: 'uppercase',
@@ -343,55 +358,57 @@ const styles = StyleSheet.create({
     width: 260,
     height: 260,
   },
-  tag: {
-    alignSelf: 'stretch',
+  weightRow: {
     alignItems: 'center',
-    justifyContent: 'center',
-    height: 78,
-    marginTop: 8,
-    overflow: 'hidden',
+    marginTop: 2,
   },
-  tagImage: {
-    borderRadius: radius.chip,
-  },
-  tagPlain: {
-    alignSelf: 'stretch',
-    alignItems: 'center',
-    paddingVertical: 8,
-    marginTop: 8,
-  },
-  name: {
-    color: '#fff8e7',
-    fontSize: 22,
-    fontFamily: fonts.title,
-    textAlign: 'center',
-    textShadowColor: 'rgba(30, 16, 4, 0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  weightLabel: {
+    color: colors.textMuted,
+    fontFamily: fonts.titleSemi,
+    fontSize: 8,
+    letterSpacing: 1.8,
   },
   weight: {
-    marginTop: 2,
-    fontSize: 26,
+    marginTop: 1,
+    fontSize: 28,
     fontFamily: fonts.title,
-    padding: 0,
-    minWidth: 140,
     textAlign: 'center',
     textShadowColor: 'rgba(30, 16, 4, 0.6)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
+  tag: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 48,
+    marginTop: 12,
+    overflow: 'hidden',
+  },
+  tagImage: {
+    borderRadius: radius.chip,
+  },
+  claim: {
+    color: '#3a2208',
+    fontFamily: fonts.title,
+    fontSize: 14,
+    letterSpacing: 1.8,
+  },
+  claimPlain: {
+    marginTop: 12,
+    color: colors.gold,
+    fontFamily: fonts.title,
+    fontSize: 14,
+    letterSpacing: 1.8,
+  },
   joke: {
     marginTop: 8,
     color: colors.textMuted,
     fontFamily: fonts.bodySemi,
-    fontSize: 13,
+    fontSize: 12,
     fontStyle: 'italic',
     textAlign: 'center',
-    lineHeight: 18,
-  },
-  actions: {
-    width: '100%',
-    marginTop: 16,
+    lineHeight: 17,
   },
   splash: {
     top: '35%',

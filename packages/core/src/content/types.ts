@@ -21,7 +21,7 @@ export interface AvailabilityWindow {
 export type ContentType = 'critter' | 'junk' | 'special' | 'fish' | 'heavy';
 
 /** The rarity tiers of a catch, from the most common to the rarest. */
-export type CatchTier = 'trash' | 'easy' | 'great' | 'rare' | 'epic' | 'cotd' | 'legend' | 'heavy';
+export type CatchTier = 'trash' | 'easy' | 'great' | 'rare' | 'epic' | 'cotd' | 'legend';
 
 /** The tiers in ladder order. */
 export const CATCH_TIER_ORDER: readonly CatchTier[] = [
@@ -32,7 +32,6 @@ export const CATCH_TIER_ORDER: readonly CatchTier[] = [
   'epic',
   'cotd',
   'legend',
-  'heavy',
 ];
 
 /** The seasons that unlock extra content. */

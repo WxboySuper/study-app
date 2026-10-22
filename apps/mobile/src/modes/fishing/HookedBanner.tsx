@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -88,16 +88,20 @@ export function HookedBanner({ visible, reduceMotion, onReel }: HookedBannerProp
         <Glow color={colors.gold} size={420} opacity={0.9} />
       </Animated.View>
 
-      <View style={styles.banner}>
-        <Text style={styles.text} onPress={onReel}>
-          HOOKED!
-        </Text>
-        <View style={styles.underline} />
-      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Reel in the catch"
+        accessibilityHint="Tap to start the question"
+        onPress={onReel}
+        style={styles.tapTarget}
+      >
+        <View style={styles.banner}>
+          <Text style={styles.text}>HOOKED!</Text>
+          <View style={styles.underline} />
+        </View>
 
-      <Text style={styles.hint} onPress={onReel}>
-        tap to reel in
-      </Text>
+        <Text style={styles.hint}>TAP TO REEL</Text>
+      </Pressable>
 
       <Particles
         trigger={visible ? 1 : 0}
@@ -123,6 +127,11 @@ const styles = StyleSheet.create({
   burst: {
     position: 'absolute',
     top: -110,
+  },
+  tapTarget: {
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
   },
   banner: {
     backgroundColor: 'rgba(18, 12, 30, 0.92)',

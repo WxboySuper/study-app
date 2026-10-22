@@ -256,8 +256,12 @@ export {
   CATCH_TIER_ORDER,
   CATCH_TIERS,
   CRITTER_TIER,
+  LEGEND_MAX_SHARE,
   SPECIAL_COLOR,
+  WIKI_ROW_COUNT,
+  catchOddsForRank,
   catchPool,
+  catchesForRank,
   catchesOfTier,
   findCatch,
   findCritterCatch,
@@ -265,11 +269,29 @@ export {
   isCatchAvailable,
   tierDefinition,
   type CatchDef,
+  type CatchOdds,
   type CatchPoolOptions,
   type CatchTier,
   type CatchTierDef,
   type FishingSeason,
 } from './fishing/catches';
+
+export {
+  HEAVY_WIKI_ROWS,
+  MAX_ROLL_RANK,
+  TIER_LURE_RANKS,
+  WIKI_TABLE,
+  WIKI_TIER_TO_CATCH_TIER,
+  clampRollRank,
+  isTierAvailableAt,
+  wikiRowByName,
+  wikiRowForIndex,
+  wikiRowsOfTier,
+  wikiTierWeight,
+  wikiTiersForRank,
+  type WikiRow,
+  type WikiTier,
+} from './fishing/wiki';
 
 export {
   BAIT_EFFECTS,
@@ -297,6 +319,7 @@ export {
   FRENZY_RANK_BONUS,
   FRENZY_WEIGHT_MULTIPLIER,
   LURE_GUARANTEE_THRESHOLDS,
+  SPECIAL_SHARE_BY_RANK,
   TIER_ODDS,
   baseTierOdds,
   createRandomRng,
@@ -305,6 +328,7 @@ export {
   findPowerup,
   guaranteedLureCount,
   isCatchOutcome,
+  pickWeightedCatch,
   rollCatch,
   rollCritter,
   rollTier,
@@ -324,11 +348,13 @@ export {
 } from './fishing/roll';
 
 export {
-  ANSWER_HOLD_MS,
+  FISH_LOST_MS,
+  WRONG_LOCKOUT_MS,
   biggestCatch,
   createFishingState,
   fishingReducer,
   leadUpOf,
+  masteryStatusOf,
   remainingCards,
   toSessionResult,
   LEAD_UP_FULL_MS,
@@ -345,6 +371,7 @@ export {
   type FishingSession,
   type FishingSessionResult,
   type FishingState,
+  type MasteryStatus,
 } from './fishing/machine';
 
 export type { Card, Grade, ReviewLog, State } from 'ts-fsrs';

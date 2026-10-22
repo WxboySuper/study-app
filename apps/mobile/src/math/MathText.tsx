@@ -74,6 +74,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   text: {
+    // The style of the caller may carry a width (`width: '100%'` of the
+    // question note): a segment is a piece of one line, not a container of
+    // its own, so it must be allowed to share the row with the math.
+    width: 'auto',
     flexShrink: 1,
   },
   inline: {

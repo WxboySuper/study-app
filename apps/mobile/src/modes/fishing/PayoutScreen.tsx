@@ -1,5 +1,5 @@
 import type { FishingSessionResult } from '@study-app/core';
-import { CATCH_TIERS, DEFAULT_PAYOUT_RULES } from '@study-app/core';
+import { CATCH_TIERS, DEFAULT_PAYOUT_RULES, formatLbs } from '@study-app/core';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -95,7 +95,7 @@ export function PayoutScreen({
           </Animated.View>
 
           <View style={styles.statRow}>
-            <Stat label="Haul" value={`${result.haulLbs.toLocaleString('en-US')} lbs`} />
+            <Stat label="Haul" value={formatLbs(result.haulLbs)} />
             <Stat label="Catches" value={`${result.catches}`} />
             <Stat label="Correct" value={`${result.correct}/${result.answered}`} />
           </View>
@@ -108,7 +108,7 @@ export function PayoutScreen({
                 <View style={styles.biggestText}>
                   <Text style={styles.biggestName}>{biggest.name}</Text>
                   <Text style={[styles.biggestWeight, { color: tierColor(biggest.tier) }]}>
-                    {biggest.lbs.toLocaleString('en-US')} lbs
+                    {formatLbs(biggest.lbs)}
                   </Text>
                 </View>
               </View>
