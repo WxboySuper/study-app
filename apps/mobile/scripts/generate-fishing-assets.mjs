@@ -28,7 +28,7 @@ const BEGIN = '// --- BEGIN GENERATED ART ---';
 const END = '// --- END GENERATED ART ---';
 
 /** The folders the art comes from (the placeholders are static). */
-const FOLDERS = ['fishing', 'critters'];
+const FOLDERS = ['fishing', 'critters', 'junk'];
 
 /**
  * Every PNG of the folders, sorted by id.

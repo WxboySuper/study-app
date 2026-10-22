@@ -29,6 +29,8 @@ const PLACEHOLDERS = {
   junk: { fill: [141, 110, 99], outline: [69, 39, 36], eye: [30, 27, 75] },
   special: { fill: [34, 211, 238], outline: [14, 116, 144], eye: [30, 27, 75] },
   fish: { fill: [30, 136, 229], outline: [13, 71, 161], eye: [30, 27, 75] },
+  // The deep end of the lake: a deep sea teal with a gold belly.
+  heavy: { fill: [13, 148, 136], outline: [4, 47, 46], eye: [253, 230, 138] },
 };
 
 /* -------------------------------------------------------------------------
