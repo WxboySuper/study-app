@@ -52,7 +52,7 @@ REELING ─the catch comes out of the water─▶ REVEAL ─tap─▶ IDLE
 REELING ─the line snaps (the answer was wrong)─▶ GOT_AWAY ─tap─▶ IDLE
 any ─End─▶ END_CONFIRM ─▶ PAYOUT
 ```
-- **Card selection:** each HOOKED! pulls the next card from the FSRS queue in `@study-app/core` (due first, then new, then bonus review). The *catch is rolled when the fish is hooked*, before you answer. The silhouette size and the shimmer of the shadow hint at what's on the line (a big shadow, a rarity-coloured glow), so a wrong answer on a hinted Megalodon *hurts*. That's the Blooket tension, without a timer.
+- **Card selection:** each HOOKED! pulls the next card from the **session queue** of `@study-app/core` (`sessionQueue.ts`). The queue is pure: it decides *what* is asked and *in which order*, and it knows two modes. **Endless** (the default) never ends by itself: the questions are picked with a weight (the due ones first, then the ones with a weak memory, then the others) and the same question is never asked twice in a row. **Mastery** lasts until every question of the scope is mastered (three right answers in a row, a miss starts over) and ends with the "MASTERED!" celebration. The scope is the one the player picked on the home screen: **all**, a **class** (a pile of decks), a **topic** or a **deck**. The catch is rolled when the fish is hooked, before you answer. The silhouette size and the shimmer of the shadow hint at what's on the line (a big shadow, a rarity-coloured glow), so a wrong answer on a hinted Megalodon *hurts*. That's the Blooket tension, without a timer. Every answer is still written to FSRS (the reviews of the session), so the scheduler knows the cards for the next time.
 - **IDLE:** your equipped critter sits on the dock with a rod and idle animation. Big **Cast** button.
 - **CASTING (~600ms):** rod swing, a bezier line arc, splash and ripples, *plop*.
 - **WAITING:** the bobber bobs, shadows drift, and the bobber twitches on nibbles. The wait is always short (≤2.5s), since waiting isn't studying.
@@ -68,6 +68,8 @@ any ─End─▶ END_CONFIRM ─▶ PAYOUT
 - The card is the art of the mode: `ui_parchment_note` is stretched behind the prompt and the text is written in dark ink on the parchment.
 - The prompt is large (20sp min, auto-shrinks to 16sp, scrolls if longer).
 - Answers are **2 to 4 wooden lure tags** hanging from a rope at the bottom (a 2×2 grid when there are four), each 56dp+ tall. The wrong answers are the ones the author wrote for that very question: they never come from the other cards of the deck.
+- **Math is drawn with KaTeX.** A prompt or an answer that holds LaTeX (`$...$` or `$$...$$`) is typeset, not printed: the tags show the real fractions, roots and vectors. A dollar sign that is not math is escaped (`\$5`), so a price stays a price.
+- An answer that is too long for its tag gets a tag of its own (one column) and a smaller font, so a whole sentence is never cut off.
 - A card **without wrong answers** is not a multiple choice question: the note shows the question alone, the player taps **"Show the answer"** and then grades itself (**"Got it"** = Good, **"Missed it"** = Again).
 - Feedback: the tag presses in, then turns green with ✓ or red with a shake. Self-graded cards use the same gate with "Tap to flip" and ✓/✗ tags.
 - **The hold (1.8s):** after the answer, the tag the player picked and the right answer keep their colours (the right one green with ✓, the wrong one red with ✗) and the answers are switched off, so the player can reread the question and the answers. A tap anywhere ends the hold early.
@@ -166,6 +168,7 @@ You equip one bait at a time on the pre-session screen. Prices stay below pack p
 - Top-right: **End** (outlined, asks to confirm).
 - Top-center: cards answered, 🔥 streak, due remaining, the art of the current lure with its rank pips (1–5), and the art of any held powerup.
 - A catch log strip shows the last 5 catches.
+- **Mastery mode:** the bottom bar counts the mastered questions (**"3/12 mastered"**) and every question of the scope gets its own dots (one per right answer it still needs, three of them). A miss empties the dots of that question again. A deck that is too big for the screen shows the questions of the moment and hides the rest behind a counter.
 
 ## 10. End and payout
 End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:id/end` → the payout screen: the fisher holds the biggest catch, the haul total, the catches by rarity, the critters that were caught (they are catches: they are listed, never stamped **NEW**), tokens earned (count-up, coin sfx) and a "Open pack" CTA. **The critters are not added to the collection when the session ends: only a pack grants a critter.** The client works offline. The outbox syncs and the server stays the source of truth for tokens.
@@ -269,6 +272,10 @@ Multiplayer, real distractions against other players, timers, an aquarium displa
 - [ ] After an answer, the answer the player picked and the right answer keep their colours for ~1.8s, the answers are switched off during the hold and a tap anywhere ends it early.
 - [ ] The lead-up before the reveal card plays on the water: the bobber dips and jerks, the rod bends, the bobber is pulled towards the boat and the catch comes out of the water with a big splash (2.5s for a critter or a heavy catch, 1s for junk and for a wrong answer).
 - [ ] The haul counter rolls up, and the End confirmation leads to the server payout screen.
+- [ ] The scope of the session is honoured: **all**, a **class** (a pile of decks), a **topic** or a **deck**. The session queue asks the questions of that scope only.
+- [ ] **Mastery mode** ends the session by itself when every question of the scope is mastered (three right answers in a row, a miss starts over) and says it with the "MASTERED!" celebration.
+- [ ] The math of a prompt or of an answer is drawn with KaTeX (`$...$`, `$$...$$`) and an escaped dollar sign stays a price.
+- [ ] A long answer is never cut off: it gets a tag of its own (one column) and a smaller font.
 - [ ] The HOOKED! banner, GOT_AWAY and the in-session lure ranks 1–5 work. Frenzy lasts 5 catches. Powerups, critter catches and the Pack Ticket caps all work.
 - [ ] A critter catch is a catch: it counts for the haul and it is shown on the reveal and on the payout screen, but it **never** enters the collection. Only a pack grants a critter (a duplicate only bumps the count there).
 - [ ] Only the critters of the packs that are on sale swim up.
