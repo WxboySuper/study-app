@@ -35,7 +35,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       # node_modules cache on top of the pnpm store cache from setup-node
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             node_modules
