@@ -14,10 +14,10 @@ import type { LocalStore } from '@/db/types';
  * shows a banner when the release is newer. The API reads the release feed
  * of GitHub for every device, so the app never touches GitHub itself.
  *
- * The check is quiet: it runs once when the app starts and once every six
- * hours when the app comes back from the background. A network that is not
+ * The check runs on every cold start and, at most every fifteen minutes,
+ * when the app comes back to the foreground. A network that is not
  * there, an endpoint that does not answer or a release that is not a version
- * are all silent: the player never sees an error because of a check.
+ * never show an error to the player, but they are logged.
  */
 
 /** The endpoint of the latest release of the game. */
@@ -27,7 +27,7 @@ export const UPDATE_FEED_URL = `${API_BASE_URL}/api/update`;
 export const UPDATE_TIMEOUT_MS = 5000;
 
 /** How long the app waits between two checks. */
-export const UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+export const UPDATE_CHECK_INTERVAL_MS = 15 * 60 * 1000;
 
 /** The key of the last check in the key/value store. */
 export const UPDATE_LAST_CHECK_KEY = 'update:lastCheck';
@@ -52,8 +52,24 @@ export interface UpdateCheckOptions {
   fetchImpl?: typeof fetch;
   /** The time of the check (epoch milliseconds). */
   now?: number;
-  /** The store that remembers the last check and the dismissed versions. */
+  /** The store that remembers the dismissed versions. */
   store?: LocalStore;
+  /** A check the player asked for: no throttle, dismissed versions show too. */
+  force?: boolean;
+}
+
+/** Why the last check failed (`null` when it worked). */
+let lastError: string | null = null;
+
+/** Why the last check failed, for the Settings button. */
+export function lastUpdateError(): string | null {
+  return lastError;
+}
+
+/** Logs a failed check: failures are never silent in the logs. */
+function logFailure(reason: string): void {
+  lastError = reason;
+  console.warn(`[update] check failed: ${reason}`);
 }
 
 /** The version of the app (the `version` of `app.json`). */
@@ -86,17 +102,27 @@ export async function fetchLatestUpdate(
   try {
     const response = await doFetch(UPDATE_FEED_URL, {
       signal: controller.signal,
-      headers: { Accept: 'application/json' },
+      cache: 'no-store',
+      headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
     });
 
     if (!response.ok) {
+      logFailure(`HTTP ${response.status} from ${UPDATE_FEED_URL}`);
       return null;
     }
 
     const payload: unknown = await response.json();
-    return parseRelease(payload);
-  } catch {
-    // No network, no answer, no release: the app says nothing.
+    const release = parseRelease(payload);
+    if (release === null) {
+      logFailure('the feed did not carry a release');
+    } else {
+      lastError = null;
+    }
+    return release;
+  } catch (error) {
+    // The player never sees an error because of a background check, but
+    // the logs (and the Settings button) do.
+    logFailure(error instanceof Error ? error.message : String(error));
     return null;
   } finally {
     clearTimeout(timer);
@@ -122,7 +148,7 @@ export async function checkForUpdate(
     return null;
   }
 
-  if (await isUpdateDismissed(release.version, options)) {
+  if (options.force !== true && (await isUpdateDismissed(release.version, options))) {
     return null;
   }
 
@@ -195,32 +221,30 @@ function publish(update: AvailableUpdate | null): void {
   }
 }
 
+/** When the last check of this run of the app ran (epoch milliseconds). */
+let lastCheckAt = 0;
+
 /**
- * Runs the check, but not more than once every six hours.
+ * Runs the check, but not more than once every fifteen minutes.
  *
- * The moment of the last check is kept in the key/value store, so the app
- * does not ask the feed again when it comes back from the background.
+ * The throttle lives in memory only: every cold start checks. (Up to
+ * v0.1.6 the moment of the last check was saved on the phone, before the
+ * request even ran, and the check then returned nothing for six hours:
+ * a release published in that window stayed invisible, even after a
+ * restart.)
  */
 export async function runUpdateCheck(
   options: UpdateCheckOptions = {},
 ): Promise<AvailableUpdate | null> {
   const now = options.now ?? Date.now();
-
-  try {
-    const store = options.store ?? (await openLocalStore());
-    const last = await store.readKv(UPDATE_LAST_CHECK_KEY);
-    const lastCheck = last === null ? 0 : Number.parseInt(last, 10);
-
-    if (Number.isFinite(lastCheck) && now - lastCheck < UPDATE_CHECK_INTERVAL_MS) {
-      return current;
-    }
-
-    await store.writeKv(UPDATE_LAST_CHECK_KEY, String(now));
-  } catch {
-    // Without a store the check simply runs every time.
+  if (options.force !== true && lastCheckAt !== 0 && now - lastCheckAt < UPDATE_CHECK_INTERVAL_MS) {
+    return current;
   }
 
   const update = await checkForUpdate(options);
+  if (lastError === null) {
+    lastCheckAt = now;
+  }
   publish(update);
   return update;
 }
@@ -228,8 +252,8 @@ export async function runUpdateCheck(
 /**
  * Starts the update checks of the app.
  *
- * The check runs once when the app starts, and again every six hours when
- * the app comes back from the background. The returned function stops the
+ * The check runs once when the app starts, and again (at most every fifteen
+ * minutes) when the app comes back to the foreground. The returned function stops the
  * checks.
  */
 export function startUpdateChecks(): () => void {

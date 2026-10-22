@@ -13,7 +13,7 @@ import {
 } from '@study-app/core';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Modal,
@@ -61,6 +61,8 @@ import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, t
 import {
   appVersion,
   dismissUpdate,
+  lastUpdateError,
+  runUpdateCheck,
   isUpdateDismissed,
   subscribeToUpdate,
   type AvailableUpdate,
@@ -251,7 +253,7 @@ export default function HomeScreen() {
 
   // A release the player already dismissed never shows up again.
   useEffect(() => {
-    if (update === null) {
+    if (update === null || forcedUpdateRef.current === update.version) {
       return;
     }
 
@@ -268,6 +270,32 @@ export default function HomeScreen() {
       cancelled = true;
     };
   }, [update]);
+
+  const forcedUpdateRef = useRef<string | null>(null);
+  const [updateStatus, setUpdateStatus] = useState<string | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const onCheckForUpdates = useCallback(() => {
+    if (checkingUpdate) {
+      return;
+    }
+    play('tap');
+    setCheckingUpdate(true);
+    setUpdateStatus('Checking…');
+    void (async () => {
+      const found = await runUpdateCheck({ force: true });
+      // A version the player asked for shows even if it was dismissed.
+      forcedUpdateRef.current = found?.version ?? null;
+      const error = lastUpdateError();
+      setUpdateStatus(
+        found !== null
+          ? `v${found.version} is ready — see the banner above.`
+          : error !== null
+            ? `Could not check: ${error}`
+            : `You have the latest version (v${appVersion()}).`,
+      );
+      setCheckingUpdate(false);
+    })();
+  }, [checkingUpdate]);
 
   const onDismissUpdate = useCallback((version: string) => {
     setUpdate(null);
@@ -646,6 +674,19 @@ export default function HomeScreen() {
             >
               <Text style={styles.versionLabel}>v{appVersion()}</Text>
             </Pressable>
+            <GameButton
+              label={checkingUpdate ? 'CHECKING…' : 'CHECK FOR UPDATES'}
+              variant="secondary"
+              size="md"
+              disabled={checkingUpdate}
+              onPress={onCheckForUpdates}
+              accessibilityLabel="Check for updates"
+            />
+            {updateStatus === null ? null : (
+              <Text style={styles.versionLabel} accessibilityLiveRegion="polite">
+                {updateStatus}
+              </Text>
+            )}
           </Animated.View>
         </ScrollView>
 
