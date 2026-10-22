@@ -10,3 +10,8 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      # gradle/actions v6 broke Gradle caching in android-release (test run
+      # 39867261491: setup-gradle restored nothing, assembleRelease 30m vs ~19m on v4).
+      - dependency-name: "gradle/actions"
+        update-types: ["version-update:semver-major"]
