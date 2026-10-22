@@ -32,6 +32,19 @@ export const LOCAL_DATABASE_NAME = 'study-app.db';
  */
 export const LOCAL_SCHEMA_VERSION = 2;
 
+/**
+ * The schema of the local database.
+ *
+ * `local_cards.choices_json` holds the **wrong answers of the card** (a JSON
+ * array of strings): the choices of a question belong to the question, they
+ * are never taken from the other cards of the deck. The options that are
+ * shown to the player (the correct answer and the wrong ones, shuffled) are
+ * built when the card is shown, they are not stored.
+ *
+ * The column `answer_index` is kept (the databases of the old versions used
+ * it to point at the right answer inside `choices_json`); the migration
+ * below empties it.
+ */
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS local_topics (
   id    TEXT PRIMARY KEY NOT NULL,
