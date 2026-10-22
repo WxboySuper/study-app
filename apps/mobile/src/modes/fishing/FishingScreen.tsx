@@ -275,7 +275,6 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
     // The route builds a new scope object on every render: depend on its
     // fields, or every re-render of the route rebuilt the session queue and
     // wiped the mastery progress.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scope.kind, 'id' in scope ? scope.id : null]);
 
   /**
