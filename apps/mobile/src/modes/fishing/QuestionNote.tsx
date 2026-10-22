@@ -476,8 +476,10 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     minHeight: 220,
-    paddingLeft: 40,
-    paddingRight: 32,
+    // The parchment art has a transparent, torn border: the inner padding
+    // has to clear it, or the text ends up on the ragged edge of the paper.
+    paddingLeft: 56,
+    paddingRight: 56,
     paddingTop: 40,
     paddingBottom: 30,
     gap: 8,
