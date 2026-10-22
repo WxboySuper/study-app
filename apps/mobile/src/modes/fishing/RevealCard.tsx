@@ -204,7 +204,7 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
             ) : (
               <ImageBackground
                 source={ribbonArt}
-                resizeMode="stretch"
+                resizeMode="cover"
                 style={styles.ribbon}
                 imageStyle={styles.ribbonImage}
               >
@@ -238,7 +238,7 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
             ) : (
               <ImageBackground
                 source={tagArt}
-                resizeMode="stretch"
+                resizeMode="cover"
                 style={styles.tag}
                 imageStyle={styles.tagImage}
               >
@@ -318,8 +318,8 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
+    height: 62,
     borderRadius: radius.chip,
-    paddingVertical: 10,
     marginBottom: 12,
     overflow: 'hidden',
   },
@@ -379,8 +379,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 26,
-    paddingVertical: 10,
+    height: 78,
     marginTop: 8,
     overflow: 'hidden',
   },

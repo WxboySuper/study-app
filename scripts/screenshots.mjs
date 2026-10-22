@@ -139,7 +139,7 @@ const SHOTS = [
   { name: 'spin-result', path: '/spin?demo=spin', waitFor: 'TOKENS', wait: 1600 },
   { name: 'fishing', path: '/fishing', wait: 600 },
   { name: 'fishing-question', path: '/fishing?demo=question', waitFor: 'STUDY NOTE', wait: 900 },
-  { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'CONTINUE', wait: 1200 },
+  { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'CONTINUE', wait: 700, timeout: 60_000 },
   { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'PLAY AGAIN', wait: 1400, timeout: 90_000 },
 ];
 

@@ -230,12 +230,15 @@ const styles = StyleSheet.create({
   noteWrap: {
     position: 'absolute',
     top: '13%',
-    left: 14,
-    right: 14,
+    left: 40,
+    right: 40,
   },
   note: {
-    paddingHorizontal: 22,
-    paddingVertical: 20,
+    height: 300,
+    paddingLeft: 56,
+    paddingRight: 18,
+    paddingTop: 42,
+    paddingBottom: 24,
     gap: 8,
   },
   noteImage: {
@@ -244,8 +247,7 @@ const styles = StyleSheet.create({
   notePlain: {
     borderRadius: 14,
     backgroundColor: '#f4e3b2',
-  },
-  noteHead: {
+  },  noteHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
