@@ -12,9 +12,12 @@ import type { CardState, StudyCard } from './types';
  * The two modes of the game live here:
  *
  * - **mastery**: the session lasts until every question of the scope is
- *   mastered. A question is mastered when it was answered correctly twice
- *   in a row (once, when it was never missed). A missed question comes back
- *   a few questions later, so the player really learns it.
+ *   mastered. Every question needs the same number of right answers
+ *   ({@link MASTERY_REQUIRED_CORRECT}) and a miss throws the streak of the
+ *   question away. The right answers are spread out: a question that was
+ *   just answered is not asked again before {@link MASTERY_MIN_GAP} other
+ *   questions (the gap shrinks with the deck, a deck of a single question
+ *   has no other choice).
  * - **endless**: the session never ends by itself. The questions are picked
  *   with a weight: the ones that are due come first, then the ones with a
  *   weak memory, then the others. The same question is never asked twice in
@@ -36,13 +39,37 @@ export interface SessionQuestion {
 
 /** What the session knows about one question. */
 export interface MasteryRecord {
-  /** How many correct answers in a row the question got. */
+  /**
+   * How many correct answers in a row the question got.
+   *
+   * A miss puts it back to zero: the question has to be learned again
+   * from the start.
+   */
   correctStreak: number;
   /** `true` when the player missed the question at some point. */
   missed: boolean;
   /** `true` when the question is mastered. */
   mastered: boolean;
 }
+
+/**
+ * How many right answers in a row a question needs to be mastered.
+ *
+ * Every question of the scope needs the same number: a missed question is
+ * not harder than the others, it only has to be learned again.
+ */
+export const MASTERY_REQUIRED_CORRECT = 3;
+
+/**
+ * How many questions are asked between two serves of the same question.
+ *
+ * The right answers of a question are spread out: the player reads (and
+ * thinks about) the other questions in between, so a question is not asked
+ * again right after it was answered. The gap is clamped by the size of the
+ * deck: a deck that holds fewer questions than the gap cannot wait that
+ * long.
+ */
+export const MASTERY_MIN_GAP = 3;
 
 /** How the queue is built. */
 export interface SessionQueueOptions {
@@ -62,6 +89,16 @@ export interface SessionQueueOptions {
   correctReinsertMin?: number;
   /** The most questions later a question that is not mastered yet comes back. */
   correctReinsertMax?: number;
+  /**
+   * How many right answers in a row a question needs to be mastered.
+   * Defaults to {@link MASTERY_REQUIRED_CORRECT}.
+   */
+  masteryRequired?: number;
+  /**
+   * How many questions are asked between two serves of the same question.
+   * Defaults to {@link MASTERY_MIN_GAP}.
+   */
+  minGap?: number;
   /** The stability (in days) under which a card counts as weak. */
   weakStabilityThreshold?: number;
 }
@@ -102,6 +139,10 @@ export interface SessionQueueState {
   correctReinsertMin: number;
   /** The most questions later a question that is not mastered yet comes back. */
   correctReinsertMax: number;
+  /** How many right answers in a row a question needs to be mastered. */
+  masteryRequired: number;
+  /** How many questions are asked between two serves of the same question. */
+  minGap: number;
   /** The stability (in days) under which a card counts as weak. */
   weakStabilityThreshold: number;
 }
@@ -115,8 +156,13 @@ export const DEFAULT_REINSERT_MAX = 5;
 /** How many questions later a question that is not mastered yet comes back. */
 export const DEFAULT_CORRECT_REINSERT_MIN = 1;
 
-/** The most questions later a question that is not mastered yet comes back. */
-export const DEFAULT_CORRECT_REINSERT_MAX = 3;
+/**
+ * The most questions later a question that is not mastered yet comes back.
+ *
+ * The gap ({@link MASTERY_MIN_GAP}) is the floor of the distance, so the
+ * real distance is never under it.
+ */
+export const DEFAULT_CORRECT_REINSERT_MAX = 5;
 
 /** The stability (in days) under which a card counts as weak. */
 export const DEFAULT_WEAK_STABILITY = 7;
@@ -164,6 +210,8 @@ export function createSessionQueue(options: SessionQueueOptions): SessionQueueSt
     reinsertMax: options.reinsertMax ?? DEFAULT_REINSERT_MAX,
     correctReinsertMin: options.correctReinsertMin ?? DEFAULT_CORRECT_REINSERT_MIN,
     correctReinsertMax: options.correctReinsertMax ?? DEFAULT_CORRECT_REINSERT_MAX,
+    masteryRequired: toCount(options.masteryRequired, MASTERY_REQUIRED_CORRECT, 1),
+    minGap: toCount(options.minGap, MASTERY_MIN_GAP, 0),
     weakStabilityThreshold: options.weakStabilityThreshold ?? DEFAULT_WEAK_STABILITY,
   };
 }
@@ -184,7 +232,7 @@ export function nextSessionQuestion(state: SessionQueueState): {
   question: SessionQuestion | null;
 } {
   if (state.mode === 'mastery') {
-    const id = state.pending[0];
+    const id = takeNextMastery(state);
     if (id === undefined) {
       return { state, question: null };
     }
@@ -192,7 +240,7 @@ export function nextSessionQuestion(state: SessionQueueState): {
     return {
       state: {
         ...state,
-        pending: state.pending.slice(1),
+        pending: state.pending.filter((entry) => entry !== id),
         lastAskedId: id,
         asked: state.asked + 1,
       },
@@ -224,10 +272,13 @@ export function nextSessionQuestion(state: SessionQueueState): {
 /**
  * Records the answer of the player.
  *
- * In mastery mode a missed question comes back a few questions later (three
- * to five), and a question that was answered correctly but is not mastered
- * yet comes back too (one to three questions later). A question that is
- * mastered leaves the queue for good.
+ * In mastery mode every question needs the same number of right answers
+ * ({@link MASTERY_REQUIRED_CORRECT}) to be mastered, and a miss throws the
+ * streak of the question away. A question that is not mastered yet comes
+ * back a few questions later: a missed one waits three to five questions
+ * (so the player really learns it), a correct one waits at least the gap
+ * ({@link MASTERY_MIN_GAP}) so the right answers are spread out. A question
+ * that is mastered leaves the queue for good.
  *
  * @param state The state of the queue.
  * @param questionId The question that was answered.
@@ -246,10 +297,10 @@ export function answerSessionQuestion(
     ? { ...record, correctStreak: record.correctStreak + 1 }
     : { ...record, correctStreak: 0, missed: true };
 
-  // A question is mastered when it was answered correctly twice in a row
-  // (once, when it was never missed).
-  const needed = nextRecord.missed ? 2 : 1;
-  const mastered = nextRecord.correctStreak >= needed;
+  // Every question needs the same number of right answers in a row: a miss
+  // puts the streak of the question back to zero, so it has to be learned
+  // again from the start.
+  const mastered = nextRecord.correctStreak >= state.masteryRequired;
   const finalRecord: MasteryRecord = { ...nextRecord, mastered };
 
   const records = { ...state.records, [questionId]: finalRecord };
@@ -279,10 +330,12 @@ export function answerSessionQuestion(
   }
 
   // The question comes back: a missed one waits three to five questions
-  // (so the player really learns it), a correct one waits one to three.
+  // (so the player really learns it), a correct one waits at least the gap
+  // (so the right answers of a question are spread out).
+  const gap = gapOf(state);
   const distance = correct
-    ? state.rng.int(state.correctReinsertMin, state.correctReinsertMax)
-    : state.rng.int(state.reinsertMin, state.reinsertMax);
+    ? Math.max(gap, state.rng.int(state.correctReinsertMin, state.correctReinsertMax))
+    : Math.max(gap, state.rng.int(state.reinsertMin, state.reinsertMax));
 
   return {
     ...state,
@@ -334,6 +387,48 @@ export function sessionTotal(state: SessionQueueState): number {
 }
 
 /**
+ * The progress of one question of the scope.
+ *
+ * It is what the mastery view draws: a dot per right answer of the question
+ * and the number of right answers it still needs.
+ */
+export interface MasteryProgress {
+  /** The id of the question. */
+  id: string;
+  /**
+   * How many right answers the question has in a row.
+   *
+   * It is the number of filled dots of the question, and it never goes over
+   * the number of right answers the question needs.
+   */
+  correct: number;
+  /** How many right answers in a row the question needs to be mastered. */
+  required: number;
+  /** `true` when the question is mastered. */
+  mastered: boolean;
+}
+
+/**
+ * The progress of every question of the scope.
+ *
+ * The mastery view shows "3/12 mastered" and one dot per right answer of
+ * every question (the dots of a question that was missed are empty again).
+ */
+export function masteryProgress(state: SessionQueueState): MasteryProgress[] {
+  return state.questions.map((question) => {
+    const record = state.records[question.id];
+    const correct = Math.min(record?.correctStreak ?? 0, state.masteryRequired);
+
+    return {
+      id: question.id,
+      correct,
+      required: state.masteryRequired,
+      mastered: record?.mastered ?? false,
+    };
+  });
+}
+
+/**
  * `true` when the session has nothing left to do.
  *
  * Only the mastery mode can end by itself: the endless mode plays until the
@@ -372,6 +467,43 @@ export function sessionRemaining(state: SessionQueueState): number {
   }
 
   return remaining;
+}
+
+/**
+ * Takes the next question of the mastery queue.
+ *
+ * The question that was asked last is never asked again right away: the
+ * other questions of the queue come first. A queue that holds nothing but
+ * the last question (a deck of a single question) has no other choice.
+ */
+function takeNextMastery(state: SessionQueueState): string | undefined {
+  const first = state.pending[0];
+  if (first === undefined) {
+    return undefined;
+  }
+
+  const alternative = state.pending.find((id) => id !== state.lastAskedId);
+  return alternative ?? first;
+}
+
+/**
+ * The gap between two serves of the same question.
+ *
+ * The gap is clamped by the size of the deck: a deck that holds fewer
+ * questions than the gap cannot wait that long, so the gap shrinks with it.
+ */
+function gapOf(state: SessionQueueState): number {
+  const others = Math.max(0, state.questions.length - 1);
+  return Math.max(0, Math.min(state.minGap, others));
+}
+
+/** A whole number of the options, with a floor and a fallback. */
+function toCount(value: number | undefined, fallback: number, min: number): number {
+  if (value === undefined || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(min, Math.floor(value));
 }
 
 /**

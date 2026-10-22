@@ -15,6 +15,7 @@ import {
   fishingReducer,
   leadUpOf,
   masteredCount,
+  masteryProgress,
   nextSessionQuestion,
   sessionComplete,
   sessionRemaining,
@@ -24,6 +25,7 @@ import {
   type CardState,
   type FishingEvent,
   type FishingState,
+  type MasteryProgress,
   type QueueItem,
   type QueueItemKind,
   type QueueScope,
@@ -198,7 +200,12 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
   /** The tokens of the player (the HUD counts them). */
   const [balance, setBalance] = useState(0);
   /** The progress of the session (the HUD shows it in mastery mode). */
-  const [progress, setProgress] = useState({ mastered: 0, total: 0, left: 0 });
+  const [progress, setProgress] = useState({
+    mastered: 0,
+    total: 0,
+    left: 0,
+    dots: [] as readonly MasteryProgress[],
+  });
   /** `true` while the "MASTERED!" celebration is on the screen. */
   const [celebrating, setCelebrating] = useState(false);
 
@@ -329,7 +336,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         // The session plays the cards of the scope: the order is shuffled
         // and the queue of the core decides what comes next.
         const pool = filterByScope(cardsRef.current, queueScope, deckClassesRef.current);
-        engineRef.current = createSessionQueue({
+        const engine = createSessionQueue({
           questions: pool.map((card) => ({
             id: card.id,
             card,
@@ -339,7 +346,13 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           rng: queueRng,
           now: Date.now(),
         });
-        setProgress({ mastered: 0, total: pool.length, left: pool.length });
+        engineRef.current = engine;
+        setProgress({
+          mastered: 0,
+          total: pool.length,
+          left: pool.length,
+          dots: masteryProgress(engine),
+        });
         dispatch({ type: 'set_queue', queue: [] });
 
         // The wallet knows how many pack tickets were already earned today:
@@ -604,6 +617,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           mastered: masteredCount(next),
           total: sessionTotal(next),
           left: sessionRemaining(next),
+          dots: masteryProgress(next),
         });
 
         if (mastery && sessionComplete(next)) {
@@ -651,6 +665,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           mastered: masteredCount(next),
           total: sessionTotal(next),
           left: sessionRemaining(next),
+          dots: masteryProgress(next),
         });
 
         if (mastery && sessionComplete(next)) {
@@ -1048,6 +1063,8 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         mastery={mastery}
         mastered={progress.mastered}
         total={progress.total}
+        progress={progress.dots}
+        currentQuestionId={machine.question?.cardId ?? null}
         biggestTier={biggestTier}
         tokens={balance}
         onEnd={onRequestEnd}

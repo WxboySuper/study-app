@@ -153,6 +153,31 @@ describe('the fishing machine', () => {
     expect(state.session.correct).toBe(0);
   });
 
+  it('records a review for every answer, even when the card comes back', () => {
+    let state = createState({
+      queue: [makeQueueItem('card-1')],
+      refillQueue: () => [makeQueueItem('card-1')],
+    });
+
+    for (let round = 0; round < 3; round += 1) {
+      state = toHooked(state);
+      state = apply(state, { type: 'reel' }, { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW });
+      // The answer is held on the screen before the scene takes over.
+      state = apply(state, { type: 'answer_hold_done' });
+      state = apply(state, { type: 'reel_finished' }, { type: 'continue' });
+    }
+
+    // The mastery mode asks the same question again and again: FSRS records
+    // every single one of those reviews.
+    expect(state.session.reviews).toHaveLength(3);
+    expect(state.session.reviews.map((review) => review.cardId)).toEqual([
+      'card-1',
+      'card-1',
+      'card-1',
+    ]);
+    expect(state.session.cardStates.get('card-1')?.reps).toBe(3);
+  });
+
   it('asks a card with wrong answers as a multiple choice question', () => {
     const state = toHooked(createState());
 

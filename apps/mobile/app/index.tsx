@@ -6,6 +6,7 @@ import {
   findCritter,
   isPackAvailable,
   localDayKey,
+  MASTERY_REQUIRED_CORRECT,
   PACKS,
   type CardState,
   type StudyCard,
@@ -474,7 +475,7 @@ export default function HomeScreen() {
             <Toggle label="MASTERY MODE" value={mastery} onChange={setMastery} />
             <Text style={styles.masteryHint}>
               {mastery
-                ? 'The session lasts until every question of the deck is mastered.'
+                ? `Every question needs ${MASTERY_REQUIRED_CORRECT} right answers in a row. A miss starts it over.`
                 : 'Endless play: the cards that are due come first.'}
             </Text>
           </Animated.View>
