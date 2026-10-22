@@ -1,6 +1,7 @@
 import {
   applySpinReward,
   buyPack,
+  createInitialState,
   createRandomRng,
   findPackDef,
   rollWalletDay,
@@ -9,12 +10,14 @@ import {
   settleSession,
   spinDailyWheel,
   type CardState,
+  type ImportCard,
   type StudyCard,
   type WalletSnapshot,
 } from '@study-app/core';
 
 import type {
   DailySpin,
+  ImportDeckResult,
   LocalSet,
   LocalStore,
   LocalTopic,
@@ -260,6 +263,8 @@ export async function openLocalStore(): Promise<LocalStore> {
     listCardStates: async () => new Map(demo().cardStates),
     listSets: async () => [...demo().sets],
     listTopics: async () => [...demo().topics],
+    importDeck: async (name, cards) => importDeckOfDemo(name, cards),
+    deleteDeck: async (setId) => deleteDeckOfDemo(setId),
     upsertCardState: async (cardState) => {
       demo().cardStates.set(cardState.cardId, cardState);
     },
@@ -314,6 +319,69 @@ export async function openLocalStore(): Promise<LocalStore> {
     sellAllDuplicates: async () => sellAllDuplicatesOfDemo(),
     spinDailyWheel: async (today, options) => spinOfDemo(today, options),
   };
+}
+
+/**
+ * Imports a deck into the demo store.
+ *
+ * The web build has no transactions, but the rules are the same as the ones
+ * of the SQLite store: a new set, its cards and their fresh scheduling state.
+ */
+async function importDeckOfDemo(
+  name: string,
+  cards: readonly ImportCard[],
+): Promise<ImportDeckResult> {
+  const current = demo();
+  const title = name.trim();
+
+  if (title === '') {
+    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck needs a name.' };
+  }
+
+  if (cards.length === 0) {
+    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck has no cards.' };
+  }
+
+  const setId = `set_import_${Date.now().toString(36)}_${Math.floor(
+    Math.random() * 1_000_000,
+  ).toString(36)}`;
+  const now = Date.now();
+
+  current.sets = [...current.sets, { id: setId, topicId: null, title }];
+
+  for (const [index, card] of cards.entries()) {
+    const cardId = `${setId}_card_${index + 1}`;
+    current.cards = [
+      ...current.cards,
+      {
+        id: cardId,
+        setId,
+        topicId: null,
+        type: 'mc',
+        front: card.front,
+        back: card.back,
+      },
+    ];
+    current.cardStates.set(cardId, createInitialState(cardId, new Date(now)));
+  }
+
+  return { ok: true, setId, topicId: null, cards: cards.length, message: null };
+}
+
+/** Deletes a deck (with its cards, states and pending reviews) in the demo store. */
+async function deleteDeckOfDemo(setId: string): Promise<void> {
+  const current = demo();
+  const cardIds = new Set(
+    current.cards.filter((card) => card.setId === setId).map((card) => card.id),
+  );
+
+  current.sets = current.sets.filter((set) => set.id !== setId);
+  current.cards = current.cards.filter((card) => card.setId !== setId);
+  current.outbox = current.outbox.filter((review) => !cardIds.has(review.cardId));
+
+  for (const cardId of cardIds) {
+    current.cardStates.delete(cardId);
+  }
 }
 
 /** Buys a pack and opens it in the demo store. */

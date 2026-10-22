@@ -69,6 +69,10 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ title: 'CramCritters', animation: 'fade' }} />
         <Stack.Screen
+          name="import"
+          options={{ title: 'Import deck', animation: 'slide_from_right' }}
+        />
+        <Stack.Screen
           name="fishing"
           options={{ title: 'Fishing', animation: 'fade_from_bottom' }}
         />

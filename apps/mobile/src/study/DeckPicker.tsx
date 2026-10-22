@@ -40,6 +40,10 @@ export interface DeckPickerProps {
   totalDue: number;
   /** Called when the player picks a deck (`null` means "All decks"). */
   onSelect: (id: string | null) => void;
+  /** Called when the player wants to import a new deck. */
+  onImport: () => void;
+  /** Called when the player wants to delete a deck. */
+  onDelete: (deck: DeckCard) => void;
 }
 
 /** The critter that waves at the player when there is no deck yet. */
@@ -51,6 +55,8 @@ export function DeckPicker({
   totalCards,
   totalDue,
   onSelect,
+  onImport,
+  onDelete,
 }: DeckPickerProps) {
   return (
     <View style={styles.root} testID="deck-picker">
@@ -69,7 +75,7 @@ export function DeckPicker({
       />
 
       {decks.length === 0 ? (
-        <EmptyDecks />
+        <EmptyDecks onImport={onImport} />
       ) : (
         <ScrollView
           horizontal
@@ -84,10 +90,40 @@ export function DeckPicker({
               onPress={() => {
                 onSelect(deck.id);
               }}
+              onDelete={() => {
+                onDelete(deck);
+              }}
             />
           ))}
+
+          <ImportTile onPress={onImport} />
         </ScrollView>
       )}
+    </View>
+  );
+}
+
+/** The card that opens the import screen. */
+function ImportTile({ onPress }: { onPress: () => void }) {
+  return (
+    <View style={styles.deckWrap}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Import a deck"
+        accessibilityHint="Opens the import screen"
+        onPress={() => {
+          hapticImpact('light');
+          play('tap');
+          onPress();
+        }}
+        style={({ pressed }) => [styles.importPressable, pressed && styles.importPressed]}
+      >
+        <View style={styles.importTile}>
+          <Text style={styles.importEmoji}>➕</Text>
+          <Text style={styles.importTitle}>Import deck</Text>
+          <Text style={styles.importHint}>Paste TSV, JSON or "front :: back" lines</Text>
+        </View>
+      </Pressable>
     </View>
   );
 }
@@ -165,10 +201,12 @@ function DeckTile({
   deck,
   selected,
   onPress,
+  onDelete,
 }: {
   deck: DeckCard;
   selected: boolean;
   onPress: () => void;
+  onDelete: () => void;
 }) {
   const press = useSharedValue(0);
   const selectedValue = useSharedValue(selected ? 1 : 0);
@@ -187,6 +225,7 @@ function DeckTile({
         accessibilityRole="button"
         accessibilityState={{ selected }}
         accessibilityLabel={`${deck.title}. ${deck.cards} cards, ${deck.due} due`}
+        accessibilityHint="Long press to delete the deck"
         onPressIn={() => {
           press.value = withSpring(1, { damping: 18, stiffness: 320, mass: 0.6 });
         }}
@@ -198,6 +237,9 @@ function DeckTile({
           play('tap');
           onPress();
         }}
+        onLongPress={() => {
+          onDelete();
+        }}
       >
         <GlassCard
           style={styles.deck}
@@ -206,6 +248,18 @@ function DeckTile({
           tint={colors.borderStrong}
           elevated={false}
         >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${deck.title}`}
+            onPress={() => {
+              onDelete();
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.trash, pressed && styles.trashPressed]}
+          >
+            <Text style={styles.trashGlyph}>🗑</Text>
+          </Pressable>
+
           <Text style={styles.deckEmoji}>{deck.emoji}</Text>
           <Text style={styles.deckEyebrow}>{deck.kind === 'topic' ? 'TOPIC' : 'SET'}</Text>
           <Text style={styles.deckTitle} numberOfLines={2}>
@@ -240,7 +294,7 @@ function Check() {
 }
 
 /** The empty state: no deck yet, so a critter invites the player to import a set. */
-function EmptyDecks() {
+function EmptyDecks({ onImport }: { onImport: () => void }) {
   const critter = findCritter(EMPTY_CRITTER_ID);
   const art = critter === undefined ? null : critterArt(critter);
 
@@ -257,6 +311,20 @@ function EmptyDecks() {
         <Text style={styles.emptyHint}>
           Import a set to fill your decks — then every card you study lives here.
         </Text>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Import a deck"
+          accessibilityHint="Opens the import screen"
+          onPress={() => {
+            hapticImpact('light');
+            play('tap');
+            onImport();
+          }}
+          style={({ pressed }) => [styles.emptyButton, pressed && styles.emptyButtonPressed]}
+        >
+          <Text style={styles.emptyButtonText}>+ IMPORT DECK</Text>
+        </Pressable>
       </View>
     </GlassCard>
   );
@@ -409,8 +477,7 @@ const styles = StyleSheet.create({
   },
   empty: {
     borderRadius: radius.card,
-  },
-  emptyContent: {
+  },  emptyContent: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -437,5 +504,75 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemi,
     fontSize: 12,
     lineHeight: 16,
+  },
+  emptyButton: {
+    alignSelf: 'flex-start',
+    marginTop: spacing.xs,
+    borderRadius: radius.chip,
+    borderWidth: 1,
+    borderColor: colors.primaryLight,
+    backgroundColor: 'rgba(123, 97, 255, 0.22)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  emptyButtonPressed: {
+    opacity: 0.8,
+  },
+  emptyButtonText: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 11,
+    letterSpacing: 1,
+  },
+  trash: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  trashPressed: {
+    opacity: 0.7,
+  },
+  trashGlyph: {
+    fontSize: 14,
+  },
+  importPressable: {
+    borderRadius: radius.card,
+  },
+  importPressed: {
+    opacity: 0.9,
+    transform: [{ scale: 0.97 }],
+  },
+  importTile: {
+    minHeight: 172,
+    width: 148,
+    borderRadius: radius.card,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.borderStrong,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    padding: spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  importEmoji: {
+    fontSize: 30,
+  },
+  importTitle: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 14,
+  },
+  importHint: {
+    color: colors.textDim,
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
+    textAlign: 'center',
   },
 });
