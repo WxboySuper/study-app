@@ -121,7 +121,7 @@ function ImportTile({ onPress }: { onPress: () => void }) {
         <View style={styles.importTile}>
           <Text style={styles.importEmoji}>➕</Text>
           <Text style={styles.importTitle}>Import deck</Text>
-          <Text style={styles.importHint}>Paste TSV, JSON or "front :: back" lines</Text>
+          <Text style={styles.importHint}>Paste TSV, JSON or "question :: correct :: wrong" lines</Text>
         </View>
       </Pressable>
     </View>

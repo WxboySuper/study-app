@@ -23,6 +23,28 @@ export type { LocalSet, LocalTopic, PendingReview } from './types';
 /** The name of the local (on device) SQLite database. */
 export const LOCAL_DATABASE_NAME = 'study-app.db';
 
+/**
+ * The version of the local schema.
+ *
+ * The version lives in the `user_version` pragma of SQLite: it is bumped by
+ * the migrations below, which run once, in a transaction, when the database
+ * is opened.
+ */
+export const LOCAL_SCHEMA_VERSION = 2;
+
+/**
+ * The schema of the local database.
+ *
+ * `local_cards.choices_json` holds the **wrong answers of the card** (a JSON
+ * array of strings): the choices of a question belong to the question, they
+ * are never taken from the other cards of the deck. The options that are
+ * shown to the player (the correct answer and the wrong ones, shuffled) are
+ * built when the card is shown, they are not stored.
+ *
+ * The column `answer_index` is kept (the databases of the old versions used
+ * it to point at the right answer inside `choices_json`); the migration
+ * below empties it.
+ */
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS local_topics (
   id    TEXT PRIMARY KEY NOT NULL,
@@ -95,10 +117,93 @@ export async function openLocalDatabase(): Promise<SQLite.SQLiteDatabase> {
   if (database === null) {
     database = SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME).then(async (db) => {
       await db.execAsync(SCHEMA);
+      await migrateLocalDatabase(db);
       return db;
     });
   }
   return database;
+}
+
+/**
+ * Brings the local database up to date.
+ *
+ * The migrations run inside a transaction and are idempotent: a database
+ * that is already up to date is left alone, and no user data is ever
+ * deleted.
+ */
+async function migrateLocalDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
+  const version = await readSchemaVersion(db);
+
+  if (version >= LOCAL_SCHEMA_VERSION) {
+    return;
+  }
+
+  await db.withTransactionAsync(async () => {
+    if (version < 2) {
+      await migrateChoicesToWrongAnswers(db);
+    }
+    await db.execAsync(`PRAGMA user_version = ${LOCAL_SCHEMA_VERSION}`);
+  });
+}
+
+/** The version of the local schema. */
+async function readSchemaVersion(db: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ user_version: number | null }>('PRAGMA user_version');
+  return row?.user_version ?? 0;
+}
+
+/**
+ * Migration 2: the choices of a card belong to the card.
+ *
+ * Before this version, `choices_json` held the four options of the question
+ * (the correct one included) and `answer_index` pointed at the right one.
+ * Now `choices_json` holds only the wrong answers the author wrote, and
+ * `answer_index` is not used anymore.
+ *
+ * The cards that had no choices keep their data and become self-graded
+ * cards: nothing is deleted, every card stays in the game.
+ */
+async function migrateChoicesToWrongAnswers(db: SQLite.SQLiteDatabase): Promise<void> {
+  const rows = await db.getAllAsync<{
+    id: string;
+    back: string;
+    choices_json: string | null;
+    answer_index: number | null;
+  }>('SELECT id, back, choices_json, answer_index FROM local_cards');
+
+  for (const row of rows) {
+    if (row.choices_json === null) {
+      // A card without choices: it becomes a self-graded card.
+      continue;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.choices_json);
+    } catch {
+      // Broken data: the card stays as it is (a self-graded card).
+      continue;
+    }
+
+    if (!Array.isArray(parsed)) {
+      continue;
+    }
+
+    const options = parsed.filter((value): value is string => typeof value === 'string');
+    const index = row.answer_index;
+
+    // The old format: every option, with the index of the right one.
+    const wrong =
+      index !== null && index >= 0 && index < options.length
+        ? options.filter((_, position) => position !== index)
+        : options.filter((option) => option !== row.back);
+
+    await db.runAsync(
+      'UPDATE local_cards SET choices_json = ?, answer_index = NULL WHERE id = ?',
+      JSON.stringify(wrong),
+      row.id,
+    );
+  }
 }
 
 /** The database of the app, opened once. */
@@ -148,9 +253,33 @@ export async function listLocalCards(db: SQLite.SQLiteDatabase): Promise<StudyCa
     type: row.type,
     front: row.front,
     back: row.back,
-    choices: row.choices_json ? (JSON.parse(row.choices_json) as string[]) : undefined,
+    // `choices_json` holds the wrong answers of the card (the options
+    // themselves are built when the card is shown).
+    wrong: readWrongAnswers(row.choices_json),
     answerIndex: row.answer_index ?? undefined,
   }));
+}
+
+/**
+ * Reads the wrong answers of a card.
+ *
+ * Broken data never breaks the app: a card without readable choices is a
+ * self-graded card.
+ */
+function readWrongAnswers(choicesJson: string | null): string[] | undefined {
+  if (choicesJson === null) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(choicesJson) as unknown;
+    if (!Array.isArray(parsed)) {
+      return undefined;
+    }
+    return parsed.filter((value): value is string => typeof value === 'string');
+  } catch {
+    return undefined;
+  }
 }
 
 /** Reads every locally known set, sorted by title. */
@@ -217,9 +346,9 @@ export async function upsertLocalTopic(db: SQLite.SQLiteDatabase, topic: LocalTo
  * Imports a deck: a new set, its cards and their fresh scheduling state.
  *
  * Everything happens in one transaction: the deck is either there with all of
- * its cards, or it is not there at all. The cards are normal multiple choice
- * cards (the distractors come from the other cards of the set, like the
- * cards of the demo decks) and they start as new cards, due right now.
+ * its cards, or it is not there at all. Every card keeps its own wrong
+ * answers (the cards without wrong answers are self-graded ones) and they
+ * start as new cards, due right now.
  */
 export async function importLocalDeck(
   db: SQLite.SQLiteDatabase,
@@ -261,7 +390,7 @@ export async function importLocalDeck(
         'mc',
         card.front,
         card.back,
-        null,
+        card.wrong.length > 0 ? JSON.stringify(card.wrong) : null,
         null,
         now,
         now,
@@ -371,7 +500,9 @@ export async function upsertLocalCard(
     card.type,
     card.front,
     card.back,
-    card.choices ? JSON.stringify(card.choices) : null,
+    // The wrong answers of the card: the options are built when the card is
+    // shown, they are never stored.
+    card.wrong && card.wrong.length > 0 ? JSON.stringify(card.wrong) : null,
     card.answerIndex ?? null,
     now,
     now,

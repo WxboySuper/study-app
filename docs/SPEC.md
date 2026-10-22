@@ -32,7 +32,7 @@ A solo, **untimed** Blooket-style game that uses spaced repetition to pick your 
 | Scope | Study **All / Topic(tag) / Set** | Custom filters (due only, leeches, new only) |
 | SRS | ts-fsrs, 4-button grade auto-derived (wrong=Again, slow=Hard, correct=Good, fast streak=Easy); per-card state | Parameter optimization from review logs, desired retention slider |
 | Rewards | Tokens = f(correct, new learned, due cleared); End payout screen; buy **packs** → random critter (rarity tiers) | Collection book, more seasonal packs (Thanksgiving, Winter), cosmetics for modes, streak shields |
-| Question types | **Multiple choice only** (4 choices, distractors from the same set) | Short answer (fuzzy match), math (KaTeX rendering + numeric/expression answers), cloze |
+| Question types | **Multiple choice only** (2 to 4 choices, the wrong answers are written by the author for every question) | Short answer (fuzzy match), math (KaTeX rendering + numeric/expression answers), cloze |
 | Import | Paste/CSV/TSV (Quizlet export format), JSON | Anki .apkg, image cards, cloze |
 | MCP | — (Phase 2) | `create_set`, `add_cards`, `import_set`, `list_sets`, `search_cards`, `get_stats` |
 | Engagement | — | Push notifications via expo-notifications (Phase 2): daily "due count" nudge, streak-at-risk, new seasonal pack; quiet hours. Home screen widget (Phase 4, via Expo config plugins / native targets) |
@@ -124,7 +124,7 @@ Pack shop shows packs where `now` is inside `[available_from, available_until)` 
 1. Set import (paste/CSV/JSON) → D1.
 2. Scope picker: All / Topic / Set.
 3. FSRS queue + grading (`packages/core`, unit-tested).
-4. **Cast** mode (the fish-style one): question → 4 choices (distractors drawn from the same set), catch animation, a number-go-up counter.
+4. **Cast** mode (the fish-style one): question → 2 to 4 choices (the wrong answers the author wrote for that question), catch animation, a number-go-up counter.
 5. **End** button → `POST /sessions/:id/end` → server payout → reward screen with tokens and one pack open.
 6. Offline outbox + sync.
 7. Pack system with seasonal availability windows; seed Starter pack + Halloween 2026 pack (ship before Nov 2).
@@ -144,7 +144,7 @@ Pack shop shows packs where `now` is inside `[available_from, available_until)` 
 | 4 | Set CRUD API + import (paste/CSV/TSV/JSON) w/ validation | 1 | api |
 | 5 | Web: set list, import screen, scope picker (All/Topic/Set) | 1 | web |
 | 6 | Session API: start / review batch / end (idempotent) | 1 | api |
-| 7 | Cast game mode (MC questions, distractors, catch anim, counter) | 1 | game |
+| 7 | Cast game mode (MC questions, own choices, catch anim, counter) | 1 | game |
 | 8 | Payout calc + wallet/ledger + pack opening (server-authoritative) | 1 | rewards |
 | 9 | End screen UI w/ reward reveal | 1 | web |
 | 10 | Offline outbox (expo-sqlite) + `/sync` | 1 | mobile, api |

@@ -14,9 +14,19 @@ export interface StudyCard {
   type: string;
   front: string;
   back: string;
-  /** Multiple choice options. MVP only. */
+  /**
+   * The wrong answers the author wrote for this very card (0 to 3).
+   *
+   * They are stored as they are: the choices of a question belong to the
+   * question, never to the other cards of the deck.
+   */
+  wrong?: string[];
+  /**
+   * The options shown to the player (the correct answer and the wrong ones,
+   * shuffled). They are built at display time, not stored.
+   */
   choices?: string[];
-  /** Index of the correct choice in `choices`. MVP only. */
+  /** Index of the correct choice in `choices`. Built at display time. */
   answerIndex?: number;
 }
 
