@@ -44,6 +44,9 @@
     ],
     "experiments": {
       "typedRoutes": true
+    },
+    "extra": {
+      "apiBaseUrl": "https://cramcritters-api.alex-miller-6464.workers.dev"
     }
   }
 }

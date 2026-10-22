@@ -1,5 +1,6 @@
 import {
   applySpinReward,
+  applyTokenAdminAction,
   buyPack,
   createInitialState,
   createRandomRng,
@@ -11,7 +12,9 @@ import {
   spinDailyWheel,
   type CardState,
   type ImportCard,
+  type LocalSyncState,
   type StudyCard,
+  type SyncPlan,
   type WalletSnapshot,
 } from '@study-app/core';
 
@@ -52,6 +55,8 @@ interface DemoState {
   wallet: WalletSnapshot;
   collection: Map<string, number>;
   cards: StudyCard[];
+  /** The remote id of every card that came from the server. */
+  cardRemoteIds: Map<string, string>;
   cardStates: Map<string, CardState>;
   sets: LocalSet[];
   topics: LocalTopic[];
@@ -342,6 +347,7 @@ function createDemoState(): DemoState {
     },
     collection: new Map(Object.entries(DEMO_COLLECTION)),
     cards: DEMO_CARDS,
+    cardRemoteIds: new Map(),
     cardStates: demoCardStates(),
     sets: DEMO_SETS,
     topics: DEMO_TOPICS,
@@ -406,6 +412,8 @@ export async function openLocalStore(): Promise<LocalStore> {
     enqueueReview: async (review) => {
       demo().outbox.push(review);
     },
+    readSyncState: async () => readSyncStateOfDemo(),
+    applySyncPlan: async (plan) => applySyncPlanOfDemo(plan),
     readKv: async (key) => demo().kv.get(key) ?? null,
     writeKv: async (key, value) => {
       demo().kv.set(key, value);
@@ -453,6 +461,20 @@ export async function openLocalStore(): Promise<LocalStore> {
     sellDuplicates: async (critterId, qty) => sellDuplicatesOfDemo(critterId, qty),
     sellAllDuplicates: async () => sellAllDuplicatesOfDemo(),
     spinDailyWheel: async (today, options) => spinOfDemo(today, options),
+    clearCollection: async () => {
+      demo().collection = new Map();
+    },
+    resetTokens: async () => {
+      const current = demo();
+      current.wallet = applyTokenAdminAction(current.wallet, 'reset');
+    },
+    addTokens: async (amount) => {
+      const current = demo();
+      current.wallet = applyTokenAdminAction(current.wallet, 'grant', amount);
+    },
+    resetSpinCooldown: async () => {
+      demo().spins = new Map();
+    },
   };
 }
 
@@ -525,6 +547,127 @@ async function importDeckOfDemo(
   return { ok: true, setId, topicId: null, classId, cards: cards.length, message: null };
 }
 
+/** Reads the state that the merge of the server decks needs. */
+async function readSyncStateOfDemo(): Promise<LocalSyncState> {
+  const current = demo();
+  return {
+    classes: current.classes.map((entry) => ({ id: entry.id, name: entry.name })),
+    decks: current.sets.map((entry) => ({
+      id: entry.id,
+      remoteId: entry.remoteId ?? null,
+      title: entry.title,
+    })),
+    questions: current.cards.map((entry) => ({
+      id: entry.id,
+      remoteId: current.cardRemoteIds.get(entry.id) ?? null,
+      setId: entry.setId,
+    })),
+  };
+}
+
+/**
+ * Applies the plan of a server sync to the demo store.
+ *
+ * The rules are the same as the ones of the SQLite store: the classes are
+ * created first, then the decks and their questions are upserted, and the
+ * rows that left the server are dropped. A question that is already there
+ * keeps its scheduling state.
+ */
+async function applySyncPlanOfDemo(plan: SyncPlan): Promise<void> {
+  const current = demo();
+  const now = Date.now();
+  let sort = current.classes.reduce((highest, entry) => Math.max(highest, entry.sort), 0) + 1;
+
+  for (const entry of plan.classes) {
+    current.classes = [
+      ...current.classes,
+      { id: entry.id, name: entry.name, color: null, sort, createdAt: now },
+    ];
+    sort += 1;
+  }
+
+  for (const deck of plan.decks) {
+    const known = current.sets.some((entry) => entry.id === deck.localId);
+
+    if (known) {
+      current.sets = current.sets.map((entry) =>
+        entry.id === deck.localId
+          ? { ...entry, title: deck.title, classId: deck.classId, remoteId: deck.remoteId }
+          : entry,
+      );
+    } else {
+      current.sets = [
+        ...current.sets,
+        {
+          id: deck.localId,
+          topicId: null,
+          classId: deck.classId,
+          title: deck.title,
+          remoteId: deck.remoteId,
+        },
+      ];
+    }
+
+    for (const question of deck.questions) {
+      current.cardRemoteIds.set(question.localId, question.remoteId);
+
+      if (question.created) {
+        current.cards = [
+          ...current.cards,
+          {
+            id: question.localId,
+            setId: deck.localId,
+            topicId: null,
+            type: 'mc',
+            front: question.question,
+            back: question.correct,
+            wrong: [...question.wrong],
+          },
+        ];
+        current.cardStates.set(
+          question.localId,
+          createInitialState(question.localId, new Date(now)),
+        );
+      } else {
+        current.cards = current.cards.map((card) =>
+          card.id === question.localId
+            ? {
+                ...card,
+                setId: deck.localId,
+                front: question.question,
+                back: question.correct,
+                wrong: [...question.wrong],
+              }
+            : card,
+        );
+      }
+    }
+
+    for (const questionId of deck.removedQuestionIds) {
+      removeCardOfDemo(current, questionId);
+    }
+  }
+
+  for (const deckId of plan.deletedDeckIds) {
+    const cardIds = current.cards
+      .filter((card) => card.setId === deckId)
+      .map((card) => card.id);
+
+    current.sets = current.sets.filter((entry) => entry.id !== deckId);
+    for (const cardId of cardIds) {
+      removeCardOfDemo(current, cardId);
+    }
+  }
+}
+
+/** Removes a card with its state and its pending review from the demo store. */
+function removeCardOfDemo(current: DemoState, cardId: string): void {
+  current.cards = current.cards.filter((card) => card.id !== cardId);
+  current.cardRemoteIds.delete(cardId);
+  current.cardStates.delete(cardId);
+  current.outbox = current.outbox.filter((review) => review.cardId !== cardId);
+}
+
 /** Deletes a deck (with its cards, states and pending reviews) in the demo store. */
 async function deleteDeckOfDemo(setId: string): Promise<void> {
   const current = demo();
@@ -538,6 +681,7 @@ async function deleteDeckOfDemo(setId: string): Promise<void> {
 
   for (const cardId of cardIds) {
     current.cardStates.delete(cardId);
+    current.cardRemoteIds.delete(cardId);
   }
 }
 

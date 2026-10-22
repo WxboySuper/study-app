@@ -25,6 +25,8 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeIn,
+  FadeOut,
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
@@ -33,6 +35,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
+import { AdminPanel } from '@/admin/AdminPanel';
 import {
   openLocalStore,
   type LocalClass,
@@ -53,8 +56,10 @@ import {
 } from '@/study/decks';
 import { DeckPicker } from '@/study/DeckPicker';
 import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
+import { syncDecks } from '@/sync/syncDecks';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
 import {
+  appVersion,
   dismissUpdate,
   isUpdateDismissed,
   subscribeToUpdate,
@@ -84,6 +89,9 @@ import {
 
 /** The critter that floats above the play card. */
 const HERO_CRITTER_ID = 'mnemo_the_memory_jelly';
+
+/** How long the result of a deck sync stays on the screen. */
+const SYNC_TOAST_MS = 2200;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -123,6 +131,12 @@ export default function HomeScreen() {
   const [movingDeck, setMovingDeck] = useState<DeckCard | null>(null);
   /** The release of the game that is newer than the app. */
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
+  /** `true` while the decks are being pulled from the server. */
+  const [syncing, setSyncing] = useState(false);
+  /** The result of the last manual sync (a toast). */
+  const [syncToast, setSyncToast] = useState<string | null>(null);
+  /** `true` while the hidden admin panel is open. */
+  const [adminOpen, setAdminOpen] = useState(false);
 
   const totalCritters = PACKS.reduce((sum, pack) => sum + pack.critters.length, 0);
   const cheapestPack = useMemo(() => {
@@ -134,30 +148,26 @@ export default function HomeScreen() {
   }, []);
 
   // The wallet is re-read whenever Home comes back into focus.
+  const loadWallet = useCallback(async () => {
+    try {
+      const store = await openLocalStore();
+      const today = localDayKey(new Date());
+      const wallet = await store.readWallet(today);
+      const collection = await store.readCollection();
+      const lastSpin = await store.readLastSpin();
+      setBalance(wallet.balance);
+      setPackTickets(wallet.packTickets);
+      setCritterCount(collection.size);
+      setSpinReady(canSpin(lastSpin?.localDate ?? null, today));
+    } catch {
+      // The wallet stays hidden.
+    }
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
-      let cancelled = false;
-      void (async () => {
-        try {
-          const store = await openLocalStore();
-          const today = localDayKey(new Date());
-          const wallet = await store.readWallet(today);
-          const collection = await store.readCollection();
-          const lastSpin = await store.readLastSpin();
-          if (!cancelled) {
-            setBalance(wallet.balance);
-            setPackTickets(wallet.packTickets);
-            setCritterCount(collection.size);
-            setSpinReady(canSpin(lastSpin?.localDate ?? null, today));
-          }
-        } catch {
-          // The wallet stays hidden.
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }, []),
+      void loadWallet();
+    }, [loadWallet]),
   );
 
   // The decks are read whenever Home comes back into focus: a deck that was
@@ -186,6 +196,52 @@ export default function HomeScreen() {
       void loadDecks();
     }, [loadDecks]),
   );
+
+  // The toast of the manual sync goes away by itself.
+  useEffect(() => {
+    if (syncToast === null) {
+      return undefined;
+    }
+
+    const timer = setTimeout(() => {
+      setSyncToast(null);
+    }, SYNC_TOAST_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [syncToast]);
+
+  // The button of the home screen always asks the server: a player who taps
+  // it wants to know *now* what changed. A sync that fails (offline) says
+  // nothing.
+  const onSyncDecks = useCallback(() => {
+    if (syncing) {
+      return;
+    }
+
+    play('tap');
+    setSyncing(true);
+
+    void (async () => {
+      try {
+        const result = await syncDecks({ force: true });
+        if (result !== null) {
+          setSyncToast(result.message);
+          await loadDecks();
+        }
+      } finally {
+        setSyncing(false);
+      }
+    })();
+  }, [loadDecks, syncing]);
+
+  // The hidden admin panel changes the wallet and the collection: Home shows
+  // the new numbers right away.
+  const onAdminChanged = useCallback(() => {
+    void loadWallet();
+    void loadDecks();
+  }, [loadDecks, loadWallet]);
 
   // The banner of the update: the app tells the player when a new release is
   // ready.
@@ -480,6 +536,22 @@ export default function HomeScreen() {
             </Text>
           </Animated.View>
 
+          <Animated.View style={styles.syncCard}>
+            <View style={styles.syncText}>
+              <Text style={styles.syncTitle}>SYNC DECKS</Text>
+              <Text style={styles.syncHint}>Pull the latest questions from your class.</Text>
+            </View>
+            <GameButton
+              label={syncing ? 'SYNCING…' : 'SYNC'}
+              variant="collection"
+              size="md"
+              disabled={syncing}
+              onPress={onSyncDecks}
+              accessibilityLabel="Sync decks"
+              accessibilityHint="Pulls the latest decks from the server"
+            />
+          </Animated.View>
+
           <Animated.View style={styles.tiles}>
             <ModeTile
               title="PACKS"
@@ -563,8 +635,33 @@ export default function HomeScreen() {
                 setReduceMotion(value);
               }}
             />
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Version"
+              accessibilityHint="Long press to open the hidden admin panel"
+              delayLongPress={800}
+              onLongPress={() => {
+                play('tap');
+                setAdminOpen(true);
+              }}
+              style={styles.versionPressable}
+            >
+              <Text style={styles.versionLabel}>v{appVersion()}</Text>
+            </Pressable>
           </Animated.View>
         </ScrollView>
+
+        {syncToast === null ? null : (
+          <Animated.View
+            entering={FadeIn}
+            exiting={FadeOut}
+            style={styles.syncToast}
+            pointerEvents="none"
+          >
+            <Text style={styles.syncToastText}>{syncToast}</Text>
+          </Animated.View>
+        )}
       </SafeAreaView>
 
       {pendingDelete === null ? null : (
@@ -637,6 +734,14 @@ export default function HomeScreen() {
           onPick={onMoveDeck}
         />
       )}
+
+      <AdminPanel
+        visible={adminOpen}
+        onClose={() => {
+          setAdminOpen(false);
+        }}
+        onChanged={onAdminChanged}
+      />
     </GameBackground>
   );
 }
@@ -1044,6 +1149,63 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemi,
     fontSize: 12,
     lineHeight: 16,
+  },
+  syncCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.card,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+  },
+  syncText: {
+    flex: 1,
+    gap: 2,
+  },
+  syncTitle: {
+    color: colors.textDim,
+    fontFamily: fonts.title,
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+  },
+  syncHint: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  syncToast: {
+    position: 'absolute',
+    left: spacing.lg,
+    right: spacing.lg,
+    bottom: spacing.xl,
+    borderRadius: radius.button,
+    backgroundColor: 'rgba(18, 20, 26, 0.96)',
+    borderWidth: 1,
+    borderColor: colors.collection,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  syncToastText: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  versionPressable: {
+    alignSelf: 'center',
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  versionLabel: {
+    color: colors.textDim,
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
+    letterSpacing: 1,
   },
   toggleLabel: {
     color: colors.text,

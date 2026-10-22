@@ -2,26 +2,26 @@ import { isNewerVersion, parseRelease, type ReleaseInfo } from '@study-app/core'
 import Constants from 'expo-constants';
 import { AppState, Linking, type AppStateStatus } from 'react-native';
 
+import { API_BASE_URL } from '@/config';
 import { openLocalStore } from '@/db/local';
 import type { LocalStore } from '@/db/types';
 
 /**
  * The update check of the game.
  *
- * The releases live in a public mirror on GitHub: the app reads the latest
- * release of the feed, compares its version with the version of the app
- * (the `version` of `app.json`) and shows a banner when the release is
- * newer.
+ * The app asks the API for the latest release (`GET /api/update`), compares
+ * its version with the version of the app (the `version` of `app.json`) and
+ * shows a banner when the release is newer. The API reads the release feed
+ * of GitHub for every device, so the app never touches GitHub itself.
  *
  * The check is quiet: it runs once when the app starts and once every six
  * hours when the app comes back from the background. A network that is not
- * there, a feed that does not answer or a release that is not a version are
- * all silent: the player never sees an error because of a check.
+ * there, an endpoint that does not answer or a release that is not a version
+ * are all silent: the player never sees an error because of a check.
  */
 
-/** The feed of the releases of the game. */
-export const UPDATE_FEED_URL =
-  'https://api.github.com/repos/WxboySuper/cramcritters-releases/releases/latest';
+/** The endpoint of the latest release of the game. */
+export const UPDATE_FEED_URL = `${API_BASE_URL}/api/update`;
 
 /** How long the app waits for the feed before it gives up. */
 export const UPDATE_TIMEOUT_MS = 5000;
@@ -86,7 +86,7 @@ export async function fetchLatestUpdate(
   try {
     const response = await doFetch(UPDATE_FEED_URL, {
       signal: controller.signal,
-      headers: { Accept: 'application/vnd.github+json' },
+      headers: { Accept: 'application/json' },
     });
 
     if (!response.ok) {
@@ -248,10 +248,21 @@ export function startUpdateChecks(): () => void {
   };
 }
 
-/** Opens the page of a release in the browser of the phone. */
+/**
+ * Opens the release in the browser of the phone.
+ *
+ * The page of the release is preferred; when the feed only gives the APK,
+ * the download starts instead. A phone without a browser simply keeps
+ * playing.
+ */
 export async function openReleasePage(update: AvailableUpdate): Promise<void> {
+  const target = update.url !== '' ? update.url : update.apkUrl;
+  if (target === null || target === '') {
+    return;
+  }
+
   try {
-    await Linking.openURL(update.url);
+    await Linking.openURL(target);
   } catch {
     // No browser: the player keeps playing.
   }

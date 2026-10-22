@@ -1,9 +1,20 @@
 import * as SQLite from 'expo-sqlite';
 
-import { createInitialState, type CardState, type ImportCard, type State, type StudyCard } from '@study-app/core';
+import {
+  applyTokenAdminAction,
+  createInitialState,
+  localDayKey,
+  type CardState,
+  type ImportCard,
+  type LocalSyncState,
+  type State,
+  type StudyCard,
+  type SyncPlan,
+} from '@study-app/core';
 
 import {
   buyAndOpenPack,
+  ensurePacksSchema,
   readLastSpin,
   sellAllDuplicatesLocal,
   sellDuplicates,
@@ -17,7 +28,7 @@ import type {
   LocalStore,
   PendingReview,
 } from './types';
-import { readCollection, readWallet, settleLocalSession } from './wallet';
+import { readCollection, readWallet, settleLocalSession, writeWallet } from './wallet';
 
 export type { LocalClass, LocalSet, LocalTopic, PendingReview } from './types';
 
@@ -31,7 +42,7 @@ export const LOCAL_DATABASE_NAME = 'study-app.db';
  * the migrations below, which run once, in a transaction, when the database
  * is opened.
  */
-export const LOCAL_SCHEMA_VERSION = 3;
+export const LOCAL_SCHEMA_VERSION = 4;
 
 /**
  * The schema of the local database.
@@ -58,6 +69,7 @@ CREATE TABLE IF NOT EXISTS local_sets (
   topic_id   TEXT,
   class_id   TEXT,
   title      TEXT NOT NULL,
+  remote_id  TEXT,
   updated_at INTEGER NOT NULL
 );
 
@@ -83,6 +95,7 @@ CREATE TABLE IF NOT EXISTS local_cards (
   back         TEXT NOT NULL,
   choices_json TEXT,
   answer_index INTEGER,
+  remote_id    TEXT,
   created_at   INTEGER NOT NULL,
   updated_at   INTEGER NOT NULL
 );
@@ -160,6 +173,9 @@ async function migrateLocalDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     if (version < 3) {
       await migrateClasses(db);
     }
+    if (version < 4) {
+      await migrateRemoteIds(db);
+    }
     await db.execAsync(`PRAGMA user_version = ${LOCAL_SCHEMA_VERSION}`);
   });
 }
@@ -197,6 +213,45 @@ async function migrateClasses(db: SQLite.SQLiteDatabase): Promise<void> {
 
   if (!hasClassColumn) {
     await db.execAsync('ALTER TABLE local_sets ADD COLUMN class_id TEXT');
+  }
+}
+
+/**
+ * Migration 4: the link between the local rows and the server rows.
+ *
+ * A deck or a question that came from the server remembers its remote id, so
+ * the next sync updates the same local row (and keeps the scheduling state of
+ * a question). The decks and the questions that the player imported locally
+ * keep a `NULL` remote id and are never touched by the sync.
+ *
+ * The indexes are unique so two local rows can never point at the same server
+ * row. The migration is idempotent: the columns are added only when they are
+ * missing.
+ */
+async function migrateRemoteIds(db: SQLite.SQLiteDatabase): Promise<void> {
+  await addColumnIfMissing(db, 'local_sets', 'class_id', 'TEXT');
+  await addColumnIfMissing(db, 'local_sets', 'remote_id', 'TEXT');
+  await addColumnIfMissing(db, 'local_cards', 'remote_id', 'TEXT');
+
+  await db.execAsync(`
+    CREATE UNIQUE INDEX IF NOT EXISTS local_sets_remote_id
+      ON local_sets (remote_id) WHERE remote_id IS NOT NULL;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS local_cards_remote_id
+      ON local_cards (remote_id) WHERE remote_id IS NOT NULL;
+  `);
+}
+
+/** Adds a column to a table when it is not there yet. */
+async function addColumnIfMissing(
+  db: SQLite.SQLiteDatabase,
+  table: string,
+  column: string,
+  type: string,
+): Promise<void> {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (!columns.some((entry) => entry.name === column)) {
+    await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
 }
 
@@ -287,6 +342,8 @@ export async function openLocalStore(): Promise<LocalStore> {
     deleteDeck: (setId) => deleteLocalDeck(db, setId),
     upsertCardState: (state) => upsertLocalCardState(db, state),
     enqueueReview: (review) => enqueueReview(db, review),
+    readSyncState: () => readLocalSyncState(db),
+    applySyncPlan: (plan) => applyLocalSyncPlan(db, plan),
     readKv: (key) => readLocalKv(db, key),
     writeKv: (key, value) => writeLocalKv(db, key, value),
     readWallet: (today) => readWallet(db, today),
@@ -298,6 +355,10 @@ export async function openLocalStore(): Promise<LocalStore> {
     sellDuplicates: (critterId, qty, now) => sellDuplicates(db, critterId, qty, now),
     sellAllDuplicates: (now) => sellAllDuplicatesLocal(db, now),
     spinDailyWheel: (today, options) => spinDailyWheelLocal(db, today, options),
+    clearCollection: () => clearLocalCollection(db),
+    resetTokens: () => resetLocalTokens(db),
+    addTokens: (amount) => addLocalTokens(db, amount),
+    resetSpinCooldown: () => resetLocalSpinCooldown(db),
   };
 }
 
@@ -346,7 +407,7 @@ function readWrongAnswers(choicesJson: string | null): string[] | undefined {
 /** Reads every locally known set, sorted by title. */
 export async function listLocalSets(db: SQLite.SQLiteDatabase): Promise<LocalSet[]> {
   const rows = await db.getAllAsync<LocalSetRow>(
-    'SELECT id, topic_id, class_id, title FROM local_sets ORDER BY title ASC, id ASC',
+    'SELECT id, topic_id, class_id, title, remote_id FROM local_sets ORDER BY title ASC, id ASC',
   );
 
   return rows.map((row) => ({
@@ -354,6 +415,7 @@ export async function listLocalSets(db: SQLite.SQLiteDatabase): Promise<LocalSet
     topicId: row.topic_id,
     classId: row.class_id,
     title: row.title,
+    remoteId: row.remote_id,
   }));
 }
 
@@ -588,6 +650,39 @@ export async function importLocalDeck(
 }
 
 /**
+ * Removes every critter from the collection.
+ *
+ * The wallet and the decks are not touched: this is the "start the collection
+ * over" button of the hidden admin panel.
+ */
+export async function clearLocalCollection(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.runAsync('DELETE FROM collection');
+}
+
+/** Sets the token balance to zero. */
+export async function resetLocalTokens(db: SQLite.SQLiteDatabase): Promise<void> {
+  const today = localDayKey(new Date());
+  const wallet = await readWallet(db, today);
+  await writeWallet(db, applyTokenAdminAction(wallet, 'reset'));
+}
+
+/** Adds tokens to the wallet (the developer's gift). */
+export async function addLocalTokens(
+  db: SQLite.SQLiteDatabase,
+  amount: number,
+): Promise<void> {
+  const today = localDayKey(new Date());
+  const wallet = await readWallet(db, today);
+  await writeWallet(db, applyTokenAdminAction(wallet, 'grant', amount));
+}
+
+/** Forgets the daily spins, so the wheel can be spun again. */
+export async function resetLocalSpinCooldown(db: SQLite.SQLiteDatabase): Promise<void> {
+  await ensurePacksSchema(db);
+  await db.runAsync('DELETE FROM daily_spins');
+}
+
+/**
  * Deletes a deck with everything that belongs to it.
  *
  * The cards, their scheduling state and the reviews that still wait for the
@@ -609,6 +704,173 @@ export async function deleteLocalDeck(
     await db.runAsync('DELETE FROM local_cards WHERE set_id = ?', setId);
     await db.runAsync('DELETE FROM local_sets WHERE id = ?', setId);
   });
+}
+
+/**
+ * Reads the part of the local store that the merge of the server decks needs:
+ * the classes, the decks and the questions with their remote ids.
+ */
+export async function readLocalSyncState(db: SQLite.SQLiteDatabase): Promise<LocalSyncState> {
+  const [classes, sets, cards] = await Promise.all([
+    db.getAllAsync<{ id: string; name: string }>('SELECT id, name FROM local_classes'),
+    db.getAllAsync<{ id: string; remote_id: string | null; title: string }>(
+      'SELECT id, remote_id, title FROM local_sets',
+    ),
+    db.getAllAsync<{ id: string; remote_id: string | null; set_id: string }>(
+      'SELECT id, remote_id, set_id FROM local_cards',
+    ),
+  ]);
+
+  return {
+    classes: classes.map((entry) => ({ id: entry.id, name: entry.name })),
+    decks: sets.map((entry) => ({
+      id: entry.id,
+      remoteId: entry.remote_id,
+      title: entry.title,
+    })),
+    questions: cards.map((entry) => ({
+      id: entry.id,
+      remoteId: entry.remote_id,
+      setId: entry.set_id,
+    })),
+  };
+}
+
+/**
+ * Applies the plan of a server sync in one transaction.
+ *
+ * The classes are created first, then the decks and their questions are
+ * upserted, and finally the rows that left the server are dropped. A question
+ * that is already there keeps its scheduling state: only its text and its
+ * answers are refreshed.
+ */
+export async function applyLocalSyncPlan(
+  db: SQLite.SQLiteDatabase,
+  plan: SyncPlan,
+  now: number = Date.now(),
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    let sort = await nextClassSort(db);
+
+    for (const entry of plan.classes) {
+      await db.runAsync(
+        'INSERT INTO local_classes (id, name, color, sort, created_at) VALUES (?, ?, NULL, ?, ?)',
+        entry.id,
+        entry.name,
+        sort,
+        now,
+      );
+      sort += 1;
+    }
+
+    for (const deck of plan.decks) {
+      if (deck.created) {
+        await db.runAsync(
+          `INSERT INTO local_sets (id, topic_id, class_id, title, remote_id, updated_at)
+           VALUES (?, NULL, ?, ?, ?, ?)`,
+          deck.localId,
+          deck.classId,
+          deck.title,
+          deck.remoteId,
+          deck.updatedAt,
+        );
+      } else {
+        await db.runAsync(
+          `UPDATE local_sets
+           SET title = ?, class_id = ?, remote_id = ?, updated_at = ?
+           WHERE id = ?`,
+          deck.title,
+          deck.classId,
+          deck.remoteId,
+          deck.updatedAt,
+          deck.localId,
+        );
+      }
+
+      for (const question of deck.questions) {
+        const choices = question.wrong.length > 0 ? JSON.stringify(question.wrong) : null;
+
+        if (question.created) {
+          await db.runAsync(
+            `INSERT INTO local_cards
+               (id, set_id, topic_id, type, front, back, choices_json, answer_index, remote_id, created_at, updated_at)
+             VALUES (?, ?, NULL, 'mc', ?, ?, ?, NULL, ?, ?, ?)`,
+            question.localId,
+            deck.localId,
+            question.question,
+            question.correct,
+            choices,
+            question.remoteId,
+            now,
+            now,
+          );
+
+          const state = createInitialState(question.localId, new Date(now));
+          await db.runAsync(
+            `INSERT INTO local_card_state
+               (card_id, due, stability, difficulty, elapsed_days, scheduled_days, learning_steps, reps, lapses, state, last_review)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            state.cardId,
+            state.due,
+            state.stability,
+            state.difficulty,
+            state.elapsedDays,
+            state.scheduledDays,
+            state.learningSteps ?? 0,
+            state.reps,
+            state.lapses,
+            state.state,
+            state.lastReview ?? null,
+          );
+        } else {
+          await db.runAsync(
+            `UPDATE local_cards
+             SET set_id = ?, front = ?, back = ?, choices_json = ?, remote_id = ?, updated_at = ?
+             WHERE id = ?`,
+            deck.localId,
+            question.question,
+            question.correct,
+            choices,
+            question.remoteId,
+            now,
+            question.localId,
+          );
+        }
+      }
+
+      for (const questionId of deck.removedQuestionIds) {
+        await deleteLocalQuestion(db, questionId);
+      }
+    }
+
+    for (const deckId of plan.deletedDeckIds) {
+      await db.runAsync(
+        'DELETE FROM outbox WHERE card_id IN (SELECT id FROM local_cards WHERE set_id = ?)',
+        deckId,
+      );
+      await db.runAsync(
+        'DELETE FROM local_card_state WHERE card_id IN (SELECT id FROM local_cards WHERE set_id = ?)',
+        deckId,
+      );
+      await db.runAsync('DELETE FROM local_cards WHERE set_id = ?', deckId);
+      await db.runAsync('DELETE FROM local_sets WHERE id = ?', deckId);
+    }
+  });
+}
+
+/** The sort of the next class that the sync creates. */
+async function nextClassSort(db: SQLite.SQLiteDatabase): Promise<number> {
+  const row = await db.getFirstAsync<{ sort: number | null }>(
+    'SELECT MAX(sort) AS sort FROM local_classes',
+  );
+  return (row?.sort ?? 0) + 1;
+}
+
+/** Deletes one question with its scheduling state and its pending review. */
+async function deleteLocalQuestion(db: SQLite.SQLiteDatabase, questionId: string): Promise<void> {
+  await db.runAsync('DELETE FROM outbox WHERE card_id = ?', questionId);
+  await db.runAsync('DELETE FROM local_card_state WHERE card_id = ?', questionId);
+  await db.runAsync('DELETE FROM local_cards WHERE id = ?', questionId);
 }
 
 /** A unique id for a new set. */
@@ -786,6 +1048,7 @@ interface LocalSetRow {
   topic_id: string | null;
   class_id: string | null;
   title: string;
+  remote_id: string | null;
 }
 
 interface LocalClassRow {
