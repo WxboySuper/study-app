@@ -36,6 +36,7 @@ import { EMPTY_BAITS, type EquippedBaits } from './lures';
 import {
   createRollState,
   isCatchOutcome,
+  applySpecialReward,
   rollCatch,
   type CatchOutcome,
   type Rng,
@@ -278,7 +279,7 @@ export type FishingEvent =
   /** The end sheet is confirmed: the session is over. */
   | { type: 'confirm_end' }
   /** The queue was (re)built by the app. */
-  | { type: 'set_queue'; queue: readonly QueueItem[] };
+  | { type: 'set_queue'; queue: readonly QueueItem[]; lurePace?: number };
 
 /** How a fishing session is created. */
 export interface FishingMachineOptions {
@@ -433,7 +434,15 @@ export function fishingReducer(state: FishingState, event: FishingEvent): Fishin
       }
       return {
         ...state,
-        session: { ...state.session, queue: event.queue, queueIndex: 0 },
+        session: {
+          ...state.session,
+          queue: event.queue,
+          queueIndex: 0,
+          roll:
+            event.lurePace === undefined
+              ? state.session.roll
+              : { ...state.session.roll, lurePace: event.lurePace },
+        },
       };
   }
 }
@@ -647,6 +656,7 @@ function commitLanding(session: FishingSession, landing: readonly RolledCatch[])
   const critters = [...session.critters];
   let packTickets = session.packTickets;
   let biggest = session.biggest;
+  let roll = session.roll;
 
   for (const entry of landing) {
     if (isCatchOutcome(entry)) {
@@ -670,13 +680,19 @@ function commitLanding(session: FishingSession, landing: readonly RolledCatch[])
           assetId: entry.critter.assetId,
         });
       }
-    } else if (entry.kind === 'pack_ticket') {
-      packTickets += 1;
+    } else {
+      // Every special is the reward of the claim, never of the bite: a fish
+      // that got away takes its lure, Frenzy, powerup or ticket with it.
+      if (entry.kind === 'pack_ticket') {
+        packTickets += 1;
+      }
+      roll = applySpecialReward(roll, entry);
     }
   }
 
   return {
     ...session,
+    roll,
     haulLbs,
     catches,
     byTier,

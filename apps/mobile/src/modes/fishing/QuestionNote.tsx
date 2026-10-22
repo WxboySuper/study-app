@@ -68,6 +68,11 @@ export interface QuestionNoteProps {
   lockoutUntil?: number | null;
   /** The mastery state of the card that is on the screen. */
   mastery?: MasteryStatus;
+  /**
+   * The streak of the card toward mastery ("Mastery 2/3"), shown by the dev
+   * pill in mastery mode. `null` hides it.
+   */
+  masteryStreak?: { correct: number; required: number } | null;
   /** Called when the player picks an answer. */
   onAnswer: (choiceIndex: number) => void;
   /** Called when the player grades a self-graded card. */
@@ -89,6 +94,12 @@ const ANSWER_FONT = 16;
 
 /** How much the font shrinks when the answer is long. */
 const FONT_STEP = 2;
+
+/**
+ * The dev pill of mastery mode: the streak of the current question toward
+ * mastery. Flip to `false` (or delete it and the pill) to remove it.
+ */
+export const SHOW_MASTERY_DEV_PILL = true;
 
 /** The Blooket colours of the four tiles, with their darker bottom edge. */
 const TILE_COLORS = [
@@ -115,6 +126,7 @@ export function QuestionNote({
   locked = false,
   lockoutUntil = null,
   mastery = 'unknown',
+  masteryStreak = null,
   onAnswer,
   onSelfGrade,
   reduceMotion,
@@ -199,7 +211,18 @@ export function QuestionNote({
   const secondsLeft =
     lockoutUntil === null ? 0 : Math.max(0, Math.ceil((lockoutUntil - clock) / 1000));
 
-  const badge = <MasteryBadge status={mastery} />;
+  const badge = (
+    <>
+      <MasteryBadge status={mastery} />
+      {SHOW_MASTERY_DEV_PILL && masteryStreak !== null ? (
+        <View testID="mastery-dev-pill" style={styles.devPill}>
+          <Text style={styles.devPillText}>
+            Mastery {masteryStreak.correct}/{masteryStreak.required}
+          </Text>
+        </View>
+      ) : null}
+    </>
+  );
 
   const body = (
     <>
@@ -590,8 +613,9 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     minHeight: 22,
-    alignItems: 'flex-end',
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   masteryBadge: {
     flexDirection: 'row',
@@ -608,6 +632,19 @@ const styles = StyleSheet.create({
     width: 7,
     height: 7,
     borderRadius: 4,
+  },
+  devPill: {
+    marginLeft: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: '#1e293b',
+  },
+  devPillText: {
+    color: '#f8fafc',
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    letterSpacing: 0.6,
   },
   masteryText: {
     fontFamily: fonts.titleSemi,

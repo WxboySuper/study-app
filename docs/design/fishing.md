@@ -111,30 +111,68 @@ Source: [Blooket Fandom — Fishing Frenzy](https://blooket.fandom.com/wiki/Fish
 - **Every catch keeps the exact weight range of its row.** That is why
   `Swamp Monster` is 1,000,000–2,000,000 lbs and the Treasure Chest takes the
   top row (`Tim the Alien`, 1,500,000–2,500,000 lbs).
-- The **tier** of a rank is derived from the wiki as well: the weight of a
-  tier is the sum of the chances of its rows, and the tier odds are those
-  weights renormalized over the tiers the rank can catch. A per-catch roll
-  then uses the wiki chance of the row as its weight inside the tier.
+- The **tier** of a rank comes from `TIER_WEIGHTS_BY_RANK` in `roll.ts`.
+  The wiki chance of a Blook is its chance at the **first** lure that can
+  catch it, so the chances can't be summed per tier: that was the bug of
+  v0.1.8, where Rare Find summed to 43 (28% of the catches at lure D) and
+  Epic Grab to 44 (22% at lure C). The wiki rows still pick the catch
+  inside a tier.
 - A tier is only rolled at the lure ranks of its wiki lures: **F/D/C/B/A/S**
-  are ranks 1–5 and the **Frenzy (S+)** is rank 6. Trash is rank 1–3, Easy
-  2–4, Great/Rare 2–6, Epic 3–6, Catch of the Day 4–6 and Angler's Legend
-  5–6.
-- The Legend tier is capped at **2%** of a rank's catches. Without the cap
-  the wiki Legend rows would take about 5% at the best lure; the cap keeps
-  the heavy catches rare and spreads the rest over the other tiers.
+  are ranks 1–5 (A and S share rank 5) and the **Frenzy (S+)** is rank 6.
+  Trash is rank 1–3, Easy 2–4, Great/Rare 2–6, Epic 3–6 (the wiki's Epic
+  Grab starts at lure **C**; Crimson Octopus only at **B**), Catch of the
+  Day 4–6 and Angler's Legend 5–6. The lure → rank mapping has no
+  off-by-one: Trash F–C is ranks 1–3, Epic C is rank 3.
+- The low lures are dominated by **Trash, Easy One and Great Catch**;
+  Rare Find is a minority until lure B and Epic Grab is rare at lure C.
+- The Legend tier is capped at **2%** of a rank's catches; the cap keeps the
+  heavy catches rare and spreads the rest over the other tiers.
+
+Tier weights (before the special slice and the Legend cap):
+
+| Rank | Trash | Easy | Great | Rare | Epic | CotD | Legend |
+|---|---|---|---|---|---|---|---|
+| 1 (F) | 100 | — | — | — | — | — | — |
+| 2 (D) | 30 | 45 | 18 | 7 | — | — | — |
+| 3 (C) | 15 | 40 | 25 | 15 | 5 | — | — |
+| 4 (B) | — | 25 | 30 | 27 | 13 | 5 | — |
+| 5 (A/S) | — | — | 25 | 35 | 25 | 12 | 3 |
+| 6 (S+, Frenzy) | — | — | 10 | 20 | 30 | 30 | 10 |
+
+10,000-catch simulation per rank (`rollTier`, seeded; the "special" column
+is the §8 table). **Before** (v0.1.8, summed wiki chances):
 
 | Rank | Trash | Easy | Great | Rare | Epic | CotD | Legend | Special |
 |---|---|---|---|---|---|---|---|---|
-| 1 (F) | 95 | — | — | — | — | — | — | 5 |
-| 2 (D) | 16.43 | 36.15 | 13.15 | 28.27 | — | — | — | 6 |
-| 3 (C) | 12.43 | 27.35 | 9.95 | 21.39 | 21.88 | — | — | 7 |
-| 4 (B) | — | 27.95 | 10.16 | 21.85 | 22.36 | 10.67 | — | 7 |
-| 5 (A/S) | — | — | 14.06 | 30.23 | 30.94 | 14.77 | 2 | 8 |
-| 6 (S+, Frenzy) | — | — | 14.06 | 30.23 | 30.94 | 14.77 | 2 | 8 |
+| 1 | 94.8 | 0 | 0 | 0 | 0 | 0 | 0 | 5.2 |
+| 2 | 17.0 | 35.8 | 13.1 | 28.0 | 0 | 0 | 0 | 6.2 |
+| 3 | 12.4 | 28.1 | 10.3 | 20.9 | 21.5 | 0 | 0 | 6.8 |
+| 4 | 0 | 28.0 | 9.9 | 22.4 | 22.6 | 10.3 | 0 | 6.9 |
+| 5 | 0 | 0 | 13.6 | 30.2 | 31.2 | 15.2 | 1.7 | 8.1 |
+| 6 | 0 | 0 | 13.9 | 30.3 | 31.2 | 14.8 | 2.1 | 7.8 |
 
-The **Special** slice is the table of §8. Bonus/repeat cards roll at rank 1
-at best, mirroring the SPEC's lower token rate, so farming an easy deck stays
-boring.
+**After** (v0.1.9):
+
+| Rank | Trash | Easy | Great | Rare | Epic | CotD | Legend | Special |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 94.8 | 0 | 0 | 0 | 0 | 0 | 0 | 5.2 |
+| 2 | 28.7 | 42.0 | 16.9 | 6.3 | 0 | 0 | 0 | 6.2 |
+| 3 | 14.1 | 38.0 | 22.8 | 13.3 | 4.9 | 0 | 0 | 6.8 |
+| 4 | 0 | 23.1 | 27.6 | 26.0 | 11.9 | 4.6 | 0 | 6.9 |
+| 5 | 0 | 0 | 23.0 | 32.1 | 23.6 | 11.4 | 1.7 | 8.1 |
+| 6 | 0 | 0 | 10.3 | 19.1 | 30.5 | 30.3 | 2.1 | 7.8 |
+
+The **Special** slice is the table of §8. Bonus/repeat cards roll at the **current lure rank** (without the
+Frenzy lift) and never roll the critter special or a Pack Ticket; tokens stay
+at the SPEC's lower rate, so farming an easy deck stays boring. (v0.1.8 forced
+them to rank 1, which only holds Trash: in a mastery session most cards are
+repeats, so Alex caught Trash after Trash at lure A.)
+
+**Every special is a reward of the claim.** The special slice is rolled with
+the catch when the fish bites, but New Lure, FRENZY!, the powerup and the
+Pack Ticket only take effect when the catch is claimed on the reveal card;
+a catch that gets away takes its special with it. No special fires on a
+fixed turn: the only schedule is the lure safety net of §7.
 
 ### 6b. Catch mapping (our id → wiki row)
 The chance is the wiki chance at the row's **first** lure; the lbs are the
@@ -185,7 +223,7 @@ The table is checked by `packages/core/test/fishing/catches.test.ts`: every
 catch has to sit inside the range of its row and carry its chance, and every
 rank-1 pool has to add up to 100%.
 
-- **Lure rank rises within a session.** You *reel up* "New Lure!" as a special catch, guaranteed by 5, 12, 22 and 35 correct answers at the latest, as in Blooket. Rank resets each session. The **base lure** you start at is a persistent shop upgrade (§9), so progress carries over.
+- **Lure rank rises within a session.** You *reel up* "New Lure!" as a special catch, from the catch roll, as in Blooket's "New Lure" special ([wiki](https://blooket.fandom.com/wiki/Fishing_Frenzy)), paced per session (see §8, Lure pacing). The upgrade is applied when the catch is **claimed** on the reveal card (a lure that got away is lost), so reaching the Legend Lure takes a long session. Rank resets each session. The **base lure** you start at is a persistent shop upgrade (§9), so progress carries over.
 - **Haul lbs is the score for bests and achievements. Tokens still come only from the SPEC payout formula** (~1.5/correct). Catches never mint tokens directly, apart from the capped specials in §8 and the heavy-catch bonus in §10.
 - **What a tier holds:** the bottom tier holds junk, every other tier holds the **critters of that rarity** of the packs that are on sale (Common → Easy One, Uncommon → Great Catch, Rare → Rare Find, Epic → Epic Grab, Legendary → Catch of the Day). A tier without any catch falls back to the closest tier that has one, so the game never dead ends.
 - **Weights are shown compactly** for the big catches: `3.3k lbs`, `1.2M lbs`. The HUD, the catch log, the claim card and the payout screen all use the same formatter.
@@ -220,12 +258,34 @@ lives in `packages/core/src/fishing/wiki.ts`.
 The "Special" slice in §6 rolls on this table:
 | Special | Share | Effect |
 |---|---|---|
-| **New Lure!** | 30% (plus guarantees) | lure rank +1 for this session (max 5), with a big reel-up and a lure-glow trail |
+| **New Lure!** | its own 1-in-pace roll (§8, Lure pacing) | lure rank +1 for this session (max 5), applied on claim, with a big reel-up and a lure-glow trail |
 | **FRENZY!** | 15% | rainbow sky and water, music tempo up. The **next 5 catches** roll at rank +2 with ×2 weight. Counted in catches, not seconds, so it fits untimed play |
 | **Powerup bottle** | 40% | one of: **Double Hook** (next correct lands 2 catches), **Lucky Charm** (next catch rerolls Trash/Easy once), **Second Chance** (next wrong answer lets the catch stay on, so you can retry the same card once; the SRS still logs the first miss as Again), **Heavy Sinker** (×3 weight on the next catch) |
 | **Critter catch** | 12% | a bonus critter swims up, whatever the tier roll was. Rarity is rolled with the SPEC pack odds. It is a catch like any other (haul, reveal, payout): it does **not** go into the collection |
 | **Pack Ticket** | 3% | one free Brain Buddies pack, max 1 per session and 1 per day. It counts against the SPEC economy, so a ticket ≈ 20 tokens of value inside the daily cap |
 The critter special and the ticket **only roll on due or new cards** (never bonus review) and are validated server-side at End, as tokens are, so they can't be farmed.
+
+### Lure pacing (v0.1.9)
+"New Lure!" is a rolled reward, never a fixed turn. Every catch has a
+1-in-`lurePace` chance of being a New Lure, and the upgrade only counts when
+the catch is claimed. `lurePaceFor` sets the pace:
+
+- **Mastery:** `0.65 × questions × 3 / 4` correct answers per level. That is
+  17.6 for 36 questions, so rank 5 arrives around 70–75 % of the session.
+- **Endless:** a fixed 22 correct answers per level.
+
+A trailing safety net forces an upgrade at 1.5× the pace (for example 26, 53,
+79 and 105 correct answers at a pace of 17.6). It only rescues very unlucky
+runs. When a pace is set, New Lure is removed from the special table.
+
+Expected lure level by answer: mean rank / share of runs already at rank 5.
+The simulation runs 2,000 sessions at 85 % accuracy.
+
+| Answers | 10 | 20 | 30 | 40 | 50 | 60 | 70 | 80 | 90 | 100 | 108 | 150 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Mastery, 36 q (pace 17.6) | 1.47/0% | 1.95/2% | 2.49/6% | 3.10/12% | 3.51/23% | 3.86/36% | 4.22/48% | 4.45/60% | 4.63/71% | 4.81/81% | 4.88/88% | 5.00/100% |
+| Mastery, 12 q (pace 5.9) | 2.46/5% | 3.86/35% | 4.64/72% | 4.94/94% | 5.00/100% | | | | | | | |
+| Endless (pace 22) | 1.38/0% | 1.75/1% | 2.17/3% | 2.67/7% | 3.09/12% | 3.41/21% | 3.70/31% | 4.05/42% | 4.30/52% | 4.47/62% | 4.58/69% | 4.93/93% |
 
 ## 9. Lures and upgrades (shop, persistent)
 | Item | Effect | Price (tokens) |
@@ -368,7 +428,7 @@ Multiplayer, real distractions against other players, timers, an aquarium displa
 > You are implementing the Fishing ("Fish Frenzy") game mode in the `WxboySuper/study-app` monorepo (pnpm workspaces; Expo SDK 58 app in `apps/mobile`, expo-router; shared logic in `packages/core`; React Native 0.88, react-native-reanimated 4.7 + react-native-worklets already installed). Read `docs/SPEC.md` and `docs/design/fishing.md` first. The design doc is the source of truth for look and feel.
 >
 > Build:
-> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and the catch list from §7: the junk of the bottom tier, the critters of the packs that are on sale in the other tiers and the specials), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critter special/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). The content (the critters, the packs, the junk and the specials) lives in the registries of `packages/core/src/content/`: the logic only reads them. Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End. A critter catch never grants a critter to the collection: only a pack does.
+> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and the catch list from §7: the junk of the bottom tier, the critters of the packs that are on sale in the other tiers and the specials), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critter special/tickets) and in-session lure safety nets at 8/25/55/100 correct, applied on claim; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). The content (the critters, the packs, the junk and the specials) lives in the registries of `packages/core/src/content/`: the logic only reads them. Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End. A critter catch never grants a critter to the collection: only a pack does.
 > 2. Add `expo-haptics` and `expo-audio` with `npx expo install`. **Do not add Skia.** Animate with react-native-reanimated (§11).
 > 3. `apps/mobile/src/modes/fishing/`: `FishingScreen.tsx` (wires the machine to the existing FSRS queue from `@study-app/core`), `LakeScene.tsx` (layered Images: background, wave strips, shadow, bobber, line, fisher; Reanimated loops), `HookedBanner.tsx`, `QuestionNote.tsx` (an in-scene parchment note with 2 to 4 wooden-tag answers, at least 56dp each), `RevealCard.tsx`, `Hud.tsx` (haul lbs roll-up, streak, due count, lure pips, End with confirm), `PayoutScreen.tsx` (tokens, haul, catches by tier, critters, tickets; **Play again** with the same mode and set in one tap, and Home), `sfx.ts`, `haptics.ts`, and Reduce Motion support. Add a `app/fishing.tsx` route and a one-tap start from Home: mode → set/topic/All → Go.
 > 4. Assets: the art resolver of the app (`apps/mobile/src/content/art.ts`) maps the art key of every entry to its PNG and falls back to the placeholder of its type, so the game runs with no art. Sound: CC0 SFX only (Kenney audio packs or Freesound CC0), credited in `assets/CREDITS.md`. Stay lean: if you're short on time, ship the core loop first (§3–6, 10) and leave the specials from §8–9 for run 2.

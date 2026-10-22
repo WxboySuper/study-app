@@ -23,6 +23,11 @@ import {
   specialOddsFor,
   tierOddsForRank,
   weightMultiplier,
+  applyLureUpgrade,
+  applySpecialReward,
+  lurePaceFor,
+  ENDLESS_LURE_PACE,
+  TIER_WEIGHTS_BY_RANK,
 } from '../../src/fishing/roll';
 import { catchesOfTier } from '../../src/fishing/catches';
 import { findsCatch, fixedRng, sequenceRng } from './helpers';
@@ -94,12 +99,12 @@ describe('the tier odds table (§6)', () => {
     });
     // The third lure can catch the whole shallow half of the table.
     expect(TIER_ODDS[2]!.easy).toBeGreaterThan(TIER_ODDS[2]!.trash);
-    expect(TIER_ODDS[2]!.rare).toBeGreaterThan(TIER_ODDS[2]!.great);
+    expect(TIER_ODDS[2]!.great).toBeGreaterThan(TIER_ODDS[2]!.rare);
     // The best lure is the first one that can catch every tier.
     expect(TIER_ODDS[4]!.legend).toBeCloseTo(2, 10);
     expect(TIER_ODDS[4]!.special).toBe(8);
-    // The Frenzy (S+) has the same odds as the best lure, at its own rank.
-    expect(TIER_ODDS[5]).toEqual({ ...TIER_ODDS[4]!, rank: 6 });
+    // The Frenzy (S) leans on the deep tiers.
+    expect(TIER_ODDS[5]!.cotd).toBeGreaterThan(TIER_ODDS[4]!.cotd);
   });
 
   it('uses the special share of every rank', () => {
@@ -134,9 +139,9 @@ describe('the tier odds table (§6)', () => {
     expect(rollTier(fixedRng(0.5), 1)).toBe('trash');
     expect(rollTier(fixedRng(0.97), 1)).toBe('special');
     expect(rollTier(fixedRng(0.1), 5)).toBe('great');
-    expect(rollTier(fixedRng(0.2), 5)).toBe('rare');
-    expect(rollTier(fixedRng(0.5), 5)).toBe('epic');
-    expect(rollTier(fixedRng(0.8), 5)).toBe('cotd');
+    expect(rollTier(fixedRng(0.4), 5)).toBe('rare');
+    expect(rollTier(fixedRng(0.7), 5)).toBe('epic');
+    expect(rollTier(fixedRng(0.85), 5)).toBe('cotd');
     expect(rollTier(fixedRng(0.91), 5)).toBe('legend');
     expect(rollTier(fixedRng(0.95), 5)).toBe('special');
   });
@@ -258,38 +263,117 @@ describe('the special table (§8)', () => {
   });
 });
 
+describe('the tier weights of the lures', () => {
+  // A 10k-catch simulation per lure, the same one as in the PR.
+  const simulate = (rank: number) => {
+    const rng = createSeededRng(rank * 7919);
+    const counts: Record<string, number> = {};
+    for (let index = 0; index < 10_000; index += 1) {
+      const tier = rollTier(rng, rank);
+      counts[tier] = (counts[tier] ?? 0) + 1;
+    }
+    return (tier: string) => (counts[tier] ?? 0) / 10_000;
+  };
+
+  it('keeps the low lures on Trash, Easy One and Great Catch', () => {
+    for (const rank of [1, 2, 3]) {
+      const share = simulate(rank);
+      expect(share('trash') + share('easy') + share('great')).toBeGreaterThan(0.7);
+      expect(share('rare')).toBeLessThan(0.16);
+    }
+  });
+
+  it('only rolls Epic Grab from lure C, and rarely there', () => {
+    expect(simulate(1)('epic')).toBe(0);
+    expect(simulate(2)('epic')).toBe(0);
+    expect(simulate(3)('epic')).toBeLessThan(0.07);
+    expect(simulate(4)('epic')).toBeGreaterThan(simulate(3)('epic'));
+  });
+
+  it('has a row for every roll rank', () => {
+    expect(TIER_WEIGHTS_BY_RANK).toHaveLength(6);
+  });
+});
+
+describe('the lure pace', () => {
+  it('scales with the mastery session and is slow and fixed in endless mode', () => {
+    expect(lurePaceFor({ mastery: true, questionCount: 36 })).toBeCloseTo(17.55, 2);
+    expect(lurePaceFor({ mastery: false, questionCount: 36 })).toBe(ENDLESS_LURE_PACE);
+    expect(lurePaceFor({ mastery: true, questionCount: 0 })).toBe(ENDLESS_LURE_PACE);
+    expect(lurePaceFor({ mastery: true, questionCount: 1 })).toBe(3);
+  });
+
+  it('rolls New Lure as its own 1-in-pace chance and not in the special table', () => {
+    const state = createRollState({ lurePace: 20 });
+    expect(rollCatch(sequenceRng([0.01, 0.1, 0.0, 0.0]), state).outcome).toEqual({ kind: 'new_lure' });
+    expect(rollCatch(sequenceRng([0.5, 0.1, 0.0, 0.0]), state).outcome.kind).toBe('junk');
+    expect(specialOddsFor(state).newLure).toBe(0);
+    expect(rollCatch(sequenceRng([0.01, 0.1, 0.0]), createRollState({ lurePace: 20, lureRank: 5 })).outcome.kind).not.toBe('new_lure');
+  });
+
+  it('keeps a trailing safety net at 1.5x the pace', () => {
+    expect(guaranteedLureCount(29, 20)).toBe(0);
+    expect(guaranteedLureCount(30, 20)).toBe(1);
+    expect(guaranteedLureCount(1000, 20)).toBe(4);
+  });
+
+  it('reaches the last lure late in a 36-question mastery session', () => {
+    const pace = lurePaceFor({ mastery: true, questionCount: 36 });
+    const at = (answers: number) => {
+      let total = 0;
+      for (let run = 0; run < 400; run += 1) {
+        const rng = createSeededRng(run + 1);
+        let state = createRollState({ lurePace: pace });
+        for (let index = 0; index < answers; index += 1) {
+          const result = rollCatch(rng, state, { now: 0 });
+          state = result.state;
+          if (rng.next() < 0.85) {
+            state = applySpecialReward({ ...state, correctCount: state.correctCount + 1 }, result.outcome);
+          }
+        }
+        total += state.lureRank;
+      }
+      return total / 400;
+    };
+    expect(at(26)).toBeLessThan(2.8);
+    expect(at(108)).toBeGreaterThan(4.5);
+  });
+});
+
 describe('the lure guarantee', () => {
   it('uses the thresholds of the design doc', () => {
-    expect(LURE_GUARANTEE_THRESHOLDS).toEqual([5, 12, 22, 35]);
+    expect(LURE_GUARANTEE_THRESHOLDS).toEqual([8, 25, 55, 100]);
     expect(guaranteedLureCount(0)).toBe(0);
-    expect(guaranteedLureCount(4)).toBe(0);
-    expect(guaranteedLureCount(5)).toBe(1);
-    expect(guaranteedLureCount(12)).toBe(2);
-    expect(guaranteedLureCount(22)).toBe(3);
-    expect(guaranteedLureCount(35)).toBe(4);
+    expect(guaranteedLureCount(7)).toBe(0);
+    expect(guaranteedLureCount(8)).toBe(1);
+    expect(guaranteedLureCount(25)).toBe(2);
+    expect(guaranteedLureCount(55)).toBe(3);
     expect(guaranteedLureCount(100)).toBe(4);
+    expect(guaranteedLureCount(500)).toBe(4);
   });
 
   it('forces a lure when the guarantee is due', () => {
-    const state = createRollState({ correctCount: 5, luresReeledUp: 0, lureRank: 1 });
+    const state = createRollState({ correctCount: 8, luresReeledUp: 0, lureRank: 1 });
     const result = rollCatch(sequenceRng([0.1, 0.1, 0.1]), state);
 
     expect(result.outcome).toEqual({ kind: 'new_lure' });
-    expect(result.state.lureRank).toBe(2);
-    expect(result.state.luresReeledUp).toBe(1);
+    // The upgrade is applied when the catch is claimed, not when it bites.
+    expect(result.state.lureRank).toBe(1);
+    expect(applyLureUpgrade(result.state)).toMatchObject({ lureRank: 2, luresReeledUp: 1 });
   });
 
   it('does not force a lure before the threshold', () => {
-    const state = createRollState({ correctCount: 4, luresReeledUp: 0, lureRank: 1 });
+    const state = createRollState({ correctCount: 7, luresReeledUp: 0, lureRank: 1 });
     const result = rollCatch(sequenceRng([0.1, 0.0, 0.0]), state);
 
     expect(result.outcome.kind).toBe('junk');
   });
 
   it('never goes above the fifth lure rank', () => {
-    const state = createRollState({ correctCount: 5, luresReeledUp: 0, lureRank: 5 });
-    const result = rollCatch(sequenceRng([0.1]), state);
-    expect(result.state.lureRank).toBe(5);
+    const state = createRollState({ correctCount: 100, luresReeledUp: 0, lureRank: 5 });
+    const result = rollCatch(sequenceRng([0.1, 0.0, 0.0]), state);
+    expect(result.outcome.kind).not.toBe('new_lure');
+    expect(applyLureUpgrade(createRollState({ lureRank: 5 })).lureRank).toBe(5);
   });
 });
 
@@ -307,7 +391,7 @@ describe('rolling a catch', () => {
   it('rolls a critter of the tier', () => {
     // The tier roll lands on "Easy One" at the second lure and the pool holds
     // the common critters of the packs that are on sale.
-    const result = rollCatch(sequenceRng([0.2, 0.0, 0.5]), createRollState({ lureRank: 2 }), {
+    const result = rollCatch(sequenceRng([0.5, 0.0, 0.5]), createRollState({ lureRank: 2 }), {
       now: INSIDE_THE_WINDOW,
     });
     expect(result.outcome.kind).toBe('critter');
@@ -319,7 +403,7 @@ describe('rolling a catch', () => {
   });
 
   it('only rolls the critters of the packs that are on sale', () => {
-    const result = rollCatch(sequenceRng([0.2, 0.0, 0.5]), createRollState({ lureRank: 2 }), {
+    const result = rollCatch(sequenceRng([0.5, 0.0, 0.5]), createRollState({ lureRank: 2 }), {
       now: OUTSIDE_THE_WINDOW,
     });
     expect(result.outcome.kind).toBe('critter');
@@ -331,19 +415,22 @@ describe('rolling a catch', () => {
   it('rolls a new lure', () => {
     const result = rollCatch(sequenceRng([0.97, 0.1]), createRollState());
     expect(result.outcome).toEqual({ kind: 'new_lure' });
-    expect(result.state.lureRank).toBe(2);
+    expect(result.state.lureRank).toBe(1);
   });
 
   it('rolls a frenzy', () => {
     const result = rollCatch(sequenceRng([0.97, 0.35]), createRollState());
     expect(result.outcome).toEqual({ kind: 'frenzy' });
-    expect(result.state.frenzyCatchesLeft).toBe(FRENZY_CATCHES);
+    // The Frenzy only starts when the catch is claimed.
+    expect(result.state.frenzyCatchesLeft).toBe(0);
+    expect(applySpecialReward(result.state, result.outcome).frenzyCatchesLeft).toBe(FRENZY_CATCHES);
   });
 
   it('rolls a powerup', () => {
     const result = rollCatch(sequenceRng([0.97, 0.6, 0.0]), createRollState());
     expect(result.outcome).toEqual({ kind: 'powerup', powerup: 'double_hook' });
-    expect(result.state.powerup).toBe('double_hook');
+    expect(result.state.powerup).toBeNull();
+    expect(applySpecialReward(result.state, result.outcome).powerup).toBe('double_hook');
   });
 
   it('rolls a critter catch on the tier of its rarity', () => {
@@ -361,7 +448,8 @@ describe('rolling a catch', () => {
   it('rolls a pack ticket', () => {
     const result = rollCatch(sequenceRng([0.97, 0.99]), createRollState());
     expect(result.outcome).toEqual({ kind: 'pack_ticket' });
-    expect(result.state.packTicketsThisSession).toBe(1);
+    expect(result.state.packTicketsThisSession).toBe(0);
+    expect(applySpecialReward(result.state, result.outcome).packTicketsThisSession).toBe(1);
   });
 
   it('never rolls a ticket when the session cap is reached', () => {
@@ -376,14 +464,21 @@ describe('rolling a catch', () => {
     expect(result.outcome.kind).not.toBe('pack_ticket');
   });
 
-  it('rolls at rank 1 at best for a bonus card', () => {
+  it('rolls a bonus card at the lure rank (never Trash at lure A)', () => {
     const state = createRollState({ lureRank: 5 });
     const result = rollCatch(sequenceRng([0.5, 0.0, 0.0]), state, { bonus: true });
-
-    expect(result.rank).toBe(1);
-    if (isCatchOutcome(result.outcome)) {
-      expect(result.outcome.tier).toBe('trash');
+    expect(result.rank).toBe(5);
+    for (let seed = 0; seed < 2000; seed += 1) {
+      const rolled = rollCatch(createSeededRng(seed), state, { bonus: true });
+      if (isCatchOutcome(rolled.outcome)) {
+        expect(rolled.outcome.tier).not.toBe('trash');
+      }
     }
+  });
+
+  it('does not lift a bonus card with the Frenzy', () => {
+    const state = createRollState({ lureRank: 3, frenzyCatchesLeft: 2 });
+    expect(rollCatch(sequenceRng([0.5, 0.0, 0.0]), state, { bonus: true }).rank).toBe(3);
   });
 
   it('never rolls a ticket for a bonus card', () => {
@@ -454,7 +549,7 @@ describe('the frenzy', () => {
 describe('the powerups', () => {
   it('rerolls trash and easy with the Lucky Charm', () => {
     const state = createRollState({ powerup: 'lucky_charm', lureRank: 2 });
-    const result = rollCatch(sequenceRng([0.1, 0.6, 0.0, 0.0]), state);
+    const result = rollCatch(sequenceRng([0.1, 0.8, 0.0, 0.0]), state);
 
     expect(result.luckyCharmUsed).toBe(true);
     expect(result.state.powerup).toBeNull();
@@ -465,7 +560,7 @@ describe('the powerups', () => {
 
   it('keeps the Lucky Charm when the catch is already good', () => {
     const state = createRollState({ powerup: 'lucky_charm', lureRank: 2 });
-    const result = rollCatch(sequenceRng([0.6, 0.0, 0.0]), state);
+    const result = rollCatch(sequenceRng([0.8, 0.0, 0.0]), state);
 
     expect(result.luckyCharmUsed).toBe(false);
     expect(result.state.powerup).toBe('lucky_charm');

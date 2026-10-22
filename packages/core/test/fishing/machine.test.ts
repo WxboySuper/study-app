@@ -16,7 +16,7 @@ import {
   type FishingEvent,
   type FishingState,
 } from '../../src/fishing/machine';
-import { createSeededRng } from '../../src/fishing/roll';
+import { createSeededRng, isCatchOutcome } from '../../src/fishing/roll';
 import type { CardState } from '../../src/types';
 import { makeQueueItem, sequenceRng } from './helpers';
 
@@ -545,7 +545,7 @@ describe('the fishing machine', () => {
   });
 
   it('keeps the critters that were caught, without granting them', () => {
-    let state = createState({ rng: sequenceRng([0.2, 0.0, 0.5]), startRank: 2, now: NOW });
+    let state = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), startRank: 2, now: NOW });
     state = toHooked(state);
     state = answerAndClaim(state, 0);
 
@@ -562,7 +562,7 @@ describe('the fishing machine', () => {
 
   it('only catches the critters of the packs that are on sale', () => {
     const closed = createState({
-      rng: sequenceRng([0.2, 0.0, 0.5]),
+      rng: sequenceRng([0.5, 0.0, 0.5]),
       startRank: 2,
       now: Date.UTC(2026, 11, 24),
     });
@@ -594,8 +594,54 @@ describe('the fishing machine', () => {
     expect(landedJunk.session.log[0]?.joke).toBeDefined();
   });
 
+  it('upgrades the lure when the New Lure is claimed, not when it bites', () => {
+    const state = createState({ rng: sequenceRng([0.97, 0.1, 0.5]), now: NOW });
+    const hooked = toHooked(state);
+    expect(hooked.onTheLine).toEqual({ kind: 'new_lure' });
+    expect(hooked.session.roll.lureRank).toBe(1);
+
+    const claimed = answerAndClaim(hooked, 0);
+    expect(claimed.session.roll.lureRank).toBe(2);
+    expect(claimed.session.roll.luresReeledUp).toBe(1);
+  });
+
+  it('rolls the hooked catch at the current lure, for due and bonus cards', () => {
+    for (const startRank of [1, 2, 3, 4, 5]) {
+      for (const bonus of [false, true]) {
+        const tiers = new Set<string>();
+        for (let seed = 0; seed < 300; seed += 1) {
+          const state = createState({
+            rng: createSeededRng(seed),
+            startRank,
+            queue: [makeQueueItem('card-1', { bonus, kind: bonus ? 'bonus' : 'due' })],
+          });
+          const hooked = toHooked(state);
+          expect(hooked.session.roll.lureRank).toBe(startRank);
+          const line = hooked.onTheLine;
+          if (line !== null && isCatchOutcome(line) && line.kind !== 'critter') {
+            tiers.add(line.tier);
+          }
+        }
+        // Trash only swims at lures F, D and C (ranks 1-3).
+        expect(tiers.has('trash')).toBe(startRank <= 3);
+        // Epic Grab starts at lure C.
+        if (startRank <= 2) {
+          expect(tiers.has('epic')).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('starts a Frenzy when it is claimed, not when it bites', () => {
+    const state = createState({ rng: sequenceRng([0.97, 0.35, 0.5]), now: NOW });
+    const hooked = toHooked(state);
+    expect(hooked.onTheLine).toEqual({ kind: 'frenzy' });
+    expect(hooked.session.roll.frenzyCatchesLeft).toBe(0);
+    expect(answerAndClaim(hooked, 0).session.roll.frenzyCatchesLeft).toBeGreaterThan(0);
+  });
+
   it('lands a catch without a joke', () => {
-    const state = createState({ rng: sequenceRng([0.2, 0.0, 0.5]), startRank: 2, now: NOW });
+    const state = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), startRank: 2, now: NOW });
     const landed = answerAndClaim(toHooked(state), 0);
 
     expect(landed.session.log[0]?.name).toBe('Nibbles the Notecard');
