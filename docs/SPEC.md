@@ -1,4 +1,4 @@
-# Study App ("working title: Blookless") — Spec & MVP Plan
+# CramCritters — Spec & MVP Plan (formerly "working title: Blookless")
 _Draft 2026-10-21 · Owner: Alex Miller · Solo dev, phone-first_
 
 ## 1. Pitch

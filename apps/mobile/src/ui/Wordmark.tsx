@@ -21,7 +21,7 @@ export interface WordmarkProps {
 }
 
 /** The logo of the game. */
-export function Wordmark({ text = 'Blookless', size = 42, style }: WordmarkProps) {
+export function Wordmark({ text = 'CramCritters', size = 42, style }: WordmarkProps) {
   const layers = [
     { offset: 5, color: colors.primaryDark },
     { offset: 4, color: '#4a2fc7' },

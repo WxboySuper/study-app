@@ -67,7 +67,7 @@ export default function RootLayout() {
           fullScreenGestureEnabled: true,
         }}
       >
-        <Stack.Screen name="index" options={{ title: 'Blookless', animation: 'fade' }} />
+        <Stack.Screen name="index" options={{ title: 'CramCritters', animation: 'fade' }} />
         <Stack.Screen
           name="fishing"
           options={{ title: 'Fishing', animation: 'fade_from_bottom' }}
