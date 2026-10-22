@@ -66,6 +66,7 @@ const NEW_CARD_CAP = 20;
  */
 const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
   scene: 1,
+  cast: 1,
   question: 1,
   reveal: 1,
   payout: 3,
@@ -78,7 +79,7 @@ const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
  * to reach by hand (a question, a catch, the end of the session), so the
  * route can ask for one of them.
  */
-export type FishingDemo = 'scene' | 'question' | 'reveal' | 'payout';
+export type FishingDemo = 'scene' | 'cast' | 'question' | 'reveal' | 'payout';
 
 export interface FishingScreenProps {
   /** What is being studied. */
@@ -240,6 +241,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         playSfx('cast');
         play('cast');
         hapticCast();
+        // The demo of the cast stays in the air, so the screenshot shows the
+        // bobber on its way.
+        if (demo === 'cast') {
+          return undefined;
+        }
         const timer = setTimeout(() => {
           dispatch({ type: 'cast_landed' });
         }, CAST_DURATION_MS);
@@ -304,7 +310,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       default:
         return undefined;
     }
-  }, [machine.phase, machine.reveal]);
+  }, [demo, machine.phase, machine.reveal]);
 
   // The sound of the catch that is on the line.
   useEffect(() => {
@@ -557,6 +563,14 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       });
     };
 
+    if (demo === 'cast') {
+      // The demo of the cast only throws the bobber: the scene freezes it in
+      // the air, so the screenshot shows the cast in flight.
+      later(0, () => {
+        dispatch({ type: 'cast' });
+      });
+    }
+
     if (demo === 'question') {
       catchAt(0, false);
     }
@@ -662,6 +676,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         frenzy={frenzy}
         reduceMotion={reduceMotion}
         landed={machine.phase === 'reeling' ? machine.onTheLine : machine.reveal}
+        frozen={demo === 'cast'}
       />
 
       <Hud

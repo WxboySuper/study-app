@@ -166,6 +166,15 @@ Every **heavy catch** of the session pays **15 tokens** on top of the payout of 
 - **Later polish (not MVP):** a Skia water shader, a bezier line, particles and caustics.
 - Target 1–2 coding-agent runs: run 1 builds the core logic, the scene and the loop; run 2 adds the shop baits, powerups, critter catches, sound and payout polish.
 
+### 11a. The lake scene as it is drawn today (`LakeScene.tsx`)
+The scene is **drawn with `react-native-svg`**, not assembled from PNGs, so the boat, the fisher and the rod stay crisp on every screen:
+- **Layers, back to front:** sky gradient → sun → far shore and hills → water gradient → glitter of the sun → four wave bands (the parallax) → the boat with the fisher and the rod → the frenzy tint → the shadow of the catch → the ripples → the fishing line → the splash → the bobber → the catch → the overlays (HUD, note, reveal card).
+- **The boat floats in the lake:** the hull is drawn in two halves (the part above the water and the part below it, tinted like the water) and it rocks and bobs with the phase of the waves, so the boat never "sits on" the water.
+- **The line sags:** it is a quadratic curve from the tip of the rod to the bobber; the sag grows with the length of the line and it goes tight when a fish is hooked. The line is drawn piece by piece (each piece is turned along the curve) so it follows the bobber on the UI thread.
+- **The bobber floats on the water** at a distance (on the water line at its own x), it bobs with the waves and it makes rings. During a cast it flies over the water on a parabola, from the tip of the rod to the spot where it lands.
+- **Reduce Motion:** the waves, the bobbing, the rocking and the flight of the cast stop; the scene stays in one pose.
+- **Demo states of the web build:** `/fishing` (idle), `/fishing?demo=cast` (the bobber in the air), `?demo=question`, `?demo=reveal` and `?demo=payout`. `scripts/screenshots.mjs` photographs them.
+
 ## 12. Sound and haptics
 - **Audio:** `expo-audio`. Short SFX are preloaded: cast whoosh, plop, nibble blip, bite splash, reel ratchet (loop), line snap twang, correct ding, wrong thunk, reveal fanfare (3 tiers), coin roll, and an ambient lake loop (water lap and birds, low volume). Mute toggle, ducked when other audio is playing.
 - **Haptics:** `expo-haptics`. Cast is Light, bite is Heavy, correct is Success notification, wrong is Error notification, reel is rhythmic Light every 120ms, and Legendary is Heavy×3. All can be turned off in settings.
