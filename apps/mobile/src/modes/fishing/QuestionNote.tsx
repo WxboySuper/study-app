@@ -438,10 +438,14 @@ const styles = StyleSheet.create({
   noteWrap: {
     position: 'absolute',
     top: '13%',
-    left: 40,
-    right: 40,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 20,
+    alignItems: 'center',
   },
   note: {
+    width: '100%',
+    maxWidth: 560,
     height: 300,
     paddingLeft: 56,
     paddingRight: 18,
