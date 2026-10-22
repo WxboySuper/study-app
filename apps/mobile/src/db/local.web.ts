@@ -4,6 +4,7 @@ import {
   buyPack,
   createInitialState,
   createRandomRng,
+  emptyWallet,
   findPackDef,
   rollWalletDay,
   sellAllDuplicates,
@@ -377,6 +378,24 @@ function demoCardStates(): Map<string, CardState> {
   return states;
 }
 
+/** Creates the state of a new player (the default of the live web app). */
+function createEmptyState(): DemoState {
+  return {
+    wallet: emptyWallet(''),
+    collection: new Map(),
+    cards: [],
+    cardRemoteIds: new Map(),
+    cardStates: new Map(),
+    sets: [],
+    topics: [],
+    classes: [],
+    kv: new Map(),
+    spins: new Map(),
+    outbox: [],
+    settled: new Set(),
+  };
+}
+
 /** Creates the state of the demo player. */
 function createDemoState(layoutDeck = false): DemoState {
   const sets = layoutDeck
@@ -422,11 +441,16 @@ function demo(): DemoState {
     const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
     // The screenshot of the long note asks for the 65 question math deck
     // (`?demo=layout`); every other page gets the small demo player.
-    state = createDemoState(search.includes('demo=layout'));
+    // The demo player only exists when the URL asks for it (`?demo=1`,
+    // `?demo=layout` and the other demos of the screenshots). The live web
+    // app starts empty, like the phone: only the synced decks show up.
+    state = search.includes('demo=')
+      ? createDemoState(search.includes('demo=layout'))
+      : createEmptyState();
 
     // The demo of the web build can also show a player who cannot afford a
     // pack (`?poor=1`): the shop then refuses to open another one.
-    if (search.includes('poor=1')) {
+    if (search.includes('demo=') && search.includes('poor=1')) {
       state.wallet.balance = 5;
       state.wallet.packTickets = 0;
     }
