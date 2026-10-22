@@ -9,6 +9,7 @@ import {
 } from "@study-app/core";
 
 import type { LocalStore } from "@/db/types";
+import { recordHistory } from "@/study/reviewHistory";
 
 /**
  * The outbox of the progress sync (docs/design/sync.md §3-§4).
@@ -150,6 +151,9 @@ export function withOutbox(inner: LocalStore): LocalStore {
     },
     enqueueReview: async (review) => {
       await inner.enqueueReview(review);
+      await recordHistory(inner, [
+        { at: review.review, rating: review.rating },
+      ]);
       await record(inner, [{ type: "review", payload: { ...review } }]);
     },
     writeKv: async (key, value) => {

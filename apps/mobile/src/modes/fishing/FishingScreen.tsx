@@ -40,6 +40,7 @@ import {
   type SessionQuestion,
   type SessionQueueState,
   type StudyCard,
+  sessionStepsFor,
 } from '@study-app/core';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -406,6 +407,16 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           pool = scoped.filter((card) => keep.has(card.id));
           setDoneToday(limited.doneForToday);
         }
+        const stepOptions = await readStudyOptions(store);
+        const classOfSet = new Map(sets.map((set) => [set.id, set.classId]));
+        const steps = sessionStepsFor(
+          stepOptions,
+          pool.map((card) => card.setId),
+          (deckId) => classOfSet.get(deckId),
+        );
+        if (cancelled) {
+          return;
+        }
         const engine = createSessionQueue({
           questions: pool.map((card) => ({
             id: card.id,
@@ -416,6 +427,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           rng: queueRng,
           now: Date.now(),
           masteryCounts: savedCounts,
+          settings: steps,
         });
         engineRef.current = engine;
         setProgress({
@@ -1381,7 +1393,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           <GlassCard contentStyle={styles.sheet} tint={colors.ticket}>
             <Text style={styles.sheetTitle}>Done for today 🎉</Text>
             <Text style={styles.sheetBody}>
-              You reached today&apos;s new-card and review limits for this scope. New cards and due reviews come back
+              You reached today&apos;s new-question and review limits for this scope. New questions and due reviews come back
               tomorrow. Change the limits in Study options, or play Endless mode to keep practicing.
             </Text>
             <View style={styles.sheetActions}>

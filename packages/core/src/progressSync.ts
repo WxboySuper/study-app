@@ -20,7 +20,10 @@ import type { WalletSnapshot } from "./wallet";
  */
 
 /** The kv keys that travel between devices. */
-export const SYNCED_KV_KEYS: readonly string[] = ["fishing.masteryCounts.v1"];
+export const SYNCED_KV_KEYS: readonly string[] = [
+  "fishing.masteryCounts.v1",
+  "study.options.v1",
+];
 
 /** The most events an outbox keeps (the oldest are dropped past it). */
 export const OUTBOX_MAX = 20_000;
@@ -201,6 +204,8 @@ export interface RemoteChanges {
   baseline: BaselinePayload | null;
   /** How many reviews came in (history). */
   reviews: number;
+  /** The answers of the other devices, for the review history. */
+  reviewLog: { at: number; rating: number }[];
 }
 
 /**
@@ -224,6 +229,7 @@ export function foldRemoteEvents(
   let lastSpin: RemoteChanges["lastSpin"] = null;
   let baseline: { payload: BaselinePayload; at: number } | null = null;
   let reviews = 0;
+  const reviewLog: { at: number; rating: number }[] = [];
 
   for (const event of events) {
     if (event.device_id === localDeviceId) continue;
@@ -275,9 +281,16 @@ export function foldRemoteEvents(
         }
         break;
       }
-      case "review":
+      case "review": {
         reviews += 1;
+        const review = event.payload as { rating?: unknown; review?: unknown };
+        const rating = Number(review.rating);
+        if (Number.isInteger(rating) && rating >= 1 && rating <= 4) {
+          const at = Number(review.review);
+          reviewLog.push({ at: Number.isFinite(at) && at > 0 ? at : event.at, rating });
+        }
         break;
+      }
       default:
         break;
     }
@@ -304,6 +317,7 @@ export function foldRemoteEvents(
     lastSpin,
     baseline: baseline?.payload ?? null,
     reviews,
+    reviewLog,
   };
 }
 
