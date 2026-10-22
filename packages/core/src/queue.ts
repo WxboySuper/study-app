@@ -182,12 +182,16 @@ export function countScope(
  * The session queue of the game plays the cards of a scope: the picker of
  * the home screen picks one (a topic or a set) and the mode plays exactly
  * those cards.
+ *
+ * The class scope needs the class of every deck (`deckClasses`): without it
+ * every deck counts as "Unsorted".
  */
 export function filterByScope(
   cards: readonly StudyCard[],
   scope: QueueScope = { kind: 'all' },
+  deckClasses?: DeckClassMap,
 ): StudyCard[] {
-  return cards.filter((card) => matchesScope(card, scope));
+  return cards.filter((card) => matchesScope(card, scope, deckClasses));
 }
 
 /**

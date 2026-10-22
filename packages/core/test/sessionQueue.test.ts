@@ -360,4 +360,107 @@ describe('endless mode', () => {
 
     expect([...queue.pending].sort()).toEqual(['a', 'b', 'c']);
   });
+
+  it('counts the questions the player does not know yet', () => {
+    const questions = ['a', 'b'].map((id) => question(id));
+    let queue = createSessionQueue({
+      questions,
+      mode: 'endless',
+      rng: createSeededRng(12),
+    });
+
+    expect(sessionRemaining(queue)).toBe(2);
+
+    const next = nextSessionQuestion(queue);
+    queue = answerSessionQuestion(next.state, next.question!.id, true);
+
+    expect(sessionRemaining(queue)).toBe(1);
+  });
+
+  it('plays on when the scope holds a single question', () => {
+    const queue = createSessionQueue({
+      questions: [question('only')],
+      mode: 'endless',
+      rng: createSeededRng(13),
+    });
+
+    const next = nextSessionQuestion(queue);
+
+    expect(next.question?.id).toBe('only');
+    expect(next.state.pending).toEqual(['only']);
+  });
+});
+
+describe('the edges of the queue', () => {
+  it('has nothing to ask when the scope is empty', () => {
+    const queue = createSessionQueue({
+      questions: [],
+      mode: 'mastery',
+      rng: createSeededRng(1),
+    });
+
+    const next = nextSessionQuestion(queue);
+
+    expect(next.question).toBeNull();
+    expect(sessionComplete(queue)).toBe(true);
+    expect(sessionTotal(queue)).toBe(0);
+  });
+
+  it('has nothing to ask when the endless pool is empty', () => {
+    const queue = createSessionQueue({
+      questions: [],
+      mode: 'endless',
+      rng: createSeededRng(1),
+    });
+
+    expect(nextSessionQuestion(queue).question).toBeNull();
+  });
+
+  it('takes the state of a review', () => {
+    const queue = createSessionQueue({
+      questions: [question('a')],
+      mode: 'endless',
+      rng: createSeededRng(2),
+    });
+
+    const next = answerSessionQuestion(
+      queue,
+      'a',
+      true,
+      state('a', { due: 123, stability: 4 }),
+    );
+
+    expect(next.states.a?.due).toBe(123);
+    expect(next.states.a?.stability).toBe(4);
+  });
+
+  it('survives an answer about a question it does not know', () => {
+    const queue = createSessionQueue({
+      questions: [question('a')],
+      mode: 'mastery',
+      rng: createSeededRng(3),
+    });
+
+    const next = answerSessionQuestion(queue, 'ghost', false);
+
+    expect(next.records.ghost?.missed).toBe(true);
+    expect(next.pending).toContain('ghost');
+  });
+
+  it('reads the states of a map', () => {
+    const queue = createSessionQueue({
+      questions: [question('a'), question('b')],
+      mode: 'endless',
+      rng: createSeededRng(4),
+    });
+
+    const next = updateSessionStates(
+      queue,
+      new Map([['a', state('a', { due: 7 })]]),
+    );
+
+    expect(next.states.a?.due).toBe(7);
+    // The state of "b" is unknown: the old one stays.
+    expect(next.states.b).toBeUndefined();
+  });
 });

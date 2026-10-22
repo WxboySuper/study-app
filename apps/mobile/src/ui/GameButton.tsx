@@ -72,7 +72,16 @@ const BASE_DEPTH = 6;
 /** The props of the button. */
 export interface GameButtonProps {
   /** The label of the button. */
-  label: string;
+  label?: string;
+  /**
+   * The content of the button.
+   *
+   * It replaces the label: the answer buttons of the game use it to show a
+   * label with math (or a long answer that needs more than one line).
+   */
+  children?: ReactNode;
+  /** `true` when the label may take several lines (a long answer). */
+  wrap?: boolean;
   /** Called when the button is pressed. */
   onPress: () => void;
   /** The kind of button. */
@@ -112,6 +121,8 @@ export interface GameButtonProps {
 /** A chunky 3D button of the game. */
 export function GameButton({
   label,
+  children,
+  wrap = false,
   onPress,
   variant = 'primary',
   size = 'md',
@@ -220,21 +231,30 @@ export function GameButton({
             style={StyleSheet.absoluteFill}
           />
           <View style={styles.highlight} pointerEvents="none" />
-          <View style={[styles.content, { paddingHorizontal: metrics.padding }]}>
+          <View
+            style={[
+              styles.content,
+              wrap === true ? styles.contentWrap : null,
+              { paddingHorizontal: metrics.padding },
+            ]}
+          >
             {icon}
-            <Text
-              style={[
-                styles.label,
-                {
-                  color: spec.text,
-                  fontSize: metrics.font,
-                },
-                textStyle,
-              ]}
-              numberOfLines={labelLines}
-            >
-              {label}
-            </Text>
+            {children ?? (
+              <Text
+                style={[
+                  styles.label,
+                  {
+                    color: spec.text,
+                    fontSize: metrics.font,
+                  },
+                  textStyle,
+                  wrap === true ? styles.labelWrap : null,
+                ]}
+                numberOfLines={wrap === true ? undefined : labelLines}
+              >
+                {label}
+              </Text>
+            )}
           </View>
         </Animated.View>
       </View>
@@ -275,8 +295,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
+  contentWrap: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 4,
+  },
   label: {
     fontFamily: fonts.title,
     letterSpacing: 1,
+  },
+  labelWrap: {
+    flexShrink: 1,
+    textAlign: 'center',
   },
 });

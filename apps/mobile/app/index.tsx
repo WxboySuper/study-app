@@ -95,6 +95,8 @@ export default function HomeScreen() {
     setHaptics,
     autoReel,
     setAutoReel,
+    mastery,
+    setMastery,
     reduceMotion,
     setReduceMotion,
     systemReduceMotion,
@@ -386,10 +388,15 @@ export default function HomeScreen() {
       pathname: '/fishing',
       params:
         scope.kind === 'all'
-          ? { kind: 'all' }
-          : { kind: scope.kind, id: scope.id ?? '', title: scope.title },
+          ? { kind: 'all', mastery: mastery ? '1' : '0' }
+          : {
+              kind: scope.kind,
+              id: scope.id ?? '',
+              title: scope.title,
+              mastery: mastery ? '1' : '0',
+            },
     });
-  }, [router, scope, setScope]);
+  }, [router, scope, setScope, mastery]);
 
   const goImport = useCallback(() => {
     play('tap');
@@ -461,6 +468,15 @@ export default function HomeScreen() {
               status={status}
               loading={loading}
             />
+          </Animated.View>
+
+          <Animated.View style={styles.masteryRow}>
+            <Toggle label="MASTERY MODE" value={mastery} onChange={setMastery} />
+            <Text style={styles.masteryHint}>
+              {mastery
+                ? 'The session lasts until every question of the deck is mastered.'
+                : 'Endless play: the cards that are due come first.'}
+            </Text>
           </Animated.View>
 
           <Animated.View style={styles.tiles}>
@@ -1017,6 +1033,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 42,
+  },
+  masteryRow: {
+    gap: 2,
+    paddingHorizontal: spacing.xs,
+  },
+  masteryHint: {
+    color: colors.textDim,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 16,
   },
   toggleLabel: {
     color: colors.text,

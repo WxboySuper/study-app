@@ -198,6 +198,39 @@ Capital of Italy :: Rome :: Milan :: Venice :: Naples
 - No empty sides, no duplicate cards (the same question and the same correct
   answer), max 2000 cards.
 
+## Math and long answers
+
+Math is written in **LaTeX**, right inside the text of a question or of an
+answer. Nothing else changes: the math is simply part of the line.
+
+| Syntax | What it does | Example |
+| ------ | ------------ | ------- |
+| `$...$` | math **inside** a line (inline) | `What is $\frac{dT}{dt}$?` |
+| `$$...$$` | math **on its own line** (block) | `$$E = mc^2$$` |
+
+- A **literal dollar sign** (a price) is escaped: write `\$5`, it is shown as
+  `$5`.
+- A `$` that is **never closed** is shown as a plain dollar sign, so an
+  unbalanced `$` never breaks a card.
+- The math is rendered **offline**: KaTeX is bundled in the app, so it works
+  on Android, on iOS and on the web, with no connection needed.
+- The **wrong answers may carry math too**, and they should stay close in
+  length to the correct answer.
+- The pipe `|` is a **separator** of the line format: never write a raw `|`
+  inside a math expression. Write `\mid` instead, or use the `::` or the TAB
+  format.
+
+**Long answers are allowed**: the buttons of the game grow to fit the answer,
+so an answer is never cut off. Keep them reasonably concise though (a
+sentence or two): a very long answer slows the game down and is hard to read
+on a phone.
+
+An example (meteorology):
+
+```
+How does the temperature of a fluid change over time? :: $\frac{dT}{dt} = \frac{\partial T}{\partial t} + \vec{V}\cdot\nabla T$ :: $\frac{dT}{dt} = \frac{\partial T}{\partial t}$ :: $\frac{dT}{dt} = \vec{V}\cdot\nabla T$ :: $\frac{dT}{dt} = \frac{\partial T}{\partial t} + \vec{V}\cdot\nabla^2 T$
+```
+
 ## The import preview
 
 Importing a deck is one tap:
@@ -241,6 +274,9 @@ Give it this instruction (it is the short version of this page):
 > Every wrong answer must have a similar length and style to the correct
 > answer.
 > Never write "all of the above" or "none of the above".
+> Write the math in LaTeX: `$...$` for math inside a line, `$$...$$` for math
+> on its own line. Escape a literal dollar sign as `\$`.
+> Long answers are allowed, but keep them concise: a sentence or two.
 > No numbering, no header row, no commentary.
 
 Then copy the answer and press **PASTE FROM CLIPBOARD** in the app, check the
@@ -250,8 +286,8 @@ Example of the expected output:
 
 ```
 Capital of France :: Paris :: Marseille :: Lyon :: Nice
-Capital of Japan :: Tokyo :: Kyoto :: Osaka :: Sapporo
-Capital of Italy :: Rome :: Milan :: Venice :: Naples
+Newton's second law :: $F = ma$ :: $F = mv$ :: $E = mc^2$ :: $p = mv$
+Heat equation :: $\frac{\partial T}{\partial t} = \alpha \nabla^2 T$ :: $\frac{\partial T}{\partial t} = \alpha \nabla T$ :: $\frac{\partial T}{\partial t} = \alpha T$ :: $\frac{\partial T}{\partial t} = \alpha \nabla^2 P$
 ```
 
 ## What the app does with the deck

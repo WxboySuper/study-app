@@ -26,6 +26,12 @@ export interface HudProps {
   session: FishingSession;
   /** How many cards are still to be asked. */
   remaining: number;
+  /** `true` when the session plays in mastery mode. */
+  mastery?: boolean;
+  /** How many questions of the scope are mastered. */
+  mastered?: number;
+  /** How many questions the scope holds. */
+  total?: number;
   /** The tier of the biggest catch, for the colour of the counter. */
   biggestTier: CatchTier | null;
   /** The tokens of the player. */
@@ -39,6 +45,9 @@ export interface HudProps {
 export function Hud({
   session,
   remaining,
+  mastery = false,
+  mastered = 0,
+  total = 0,
   biggestTier,
   tokens,
   onEnd,
@@ -134,7 +143,13 @@ export function Hud({
 
         <View style={styles.stats}>
           <Text style={styles.stat}>{session.answered} answered</Text>
-          <Text style={styles.stat}>{remaining} left</Text>
+          {mastery ? (
+            <Text style={styles.stat}>
+              {mastered}/{total} mastered
+            </Text>
+          ) : (
+            <Text style={styles.stat}>{remaining} left</Text>
+          )}
         </View>
       </View>
 

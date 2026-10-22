@@ -1,9 +1,12 @@
 import {
   ANSWER_HOLD_MS,
+  answerSessionQuestion,
+  buildChoices,
   buildDeckClassMap,
-  buildQueue,
   computePayout,
   countStudyProgress,
+  createSessionQueue,
+  filterByScope,
   isCatchOutcome,
   localDayKey,
   createFishingState,
@@ -11,13 +14,22 @@ import {
   createSeededRng,
   fishingReducer,
   leadUpOf,
-  remainingCards,
+  masteredCount,
+  nextSessionQuestion,
+  sessionComplete,
+  sessionRemaining,
+  sessionTotal,
   toSessionResult,
+  updateSessionStates,
   type CardState,
   type FishingEvent,
   type FishingState,
   type QueueItem,
+  type QueueItemKind,
   type QueueScope,
+  type Rng,
+  type SessionQuestion,
+  type SessionQueueState,
   type StudyCard,
 } from '@study-app/core';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +37,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { openLocalStore } from '@/db/local';
+import { MathText } from '@/math/MathText';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
 import { play } from '@/sound/sfx';
 import { colors, fonts, radius, shadow } from '@/theme';
@@ -56,7 +69,9 @@ const BITE_MIN_MS = 800;
 const BITE_MAX_MS = 2_500;
 const HOOKED_AUTO_REEL_MS = 600;
 const GOT_AWAY_MS = 1_500;
-const NEW_CARD_CAP = 20;
+
+/** How long the "MASTERED!" celebration stays on the screen. */
+const MASTERED_CELEBRATION_MS = 2_800;
 
 /**
  * The seeds of the demos.
@@ -120,6 +135,13 @@ function isSequenceDemo(demo: FishingDemo | null): boolean {
 export interface FishingScreenProps {
   /** What is being studied. */
   scope: ScopeChoice;
+  /**
+   * `true` when the session plays in mastery mode.
+   *
+   * The session then lasts until every question of the scope is mastered,
+   * and it ends by itself (with the "MASTERED!" celebration).
+   */
+  mastery?: boolean;
   /** Called when the player goes home. */
   onHome: () => void;
   /** Called when the player plays the same scope again. */
@@ -153,7 +175,7 @@ function screenReducer(state: FishingState, event: ScreenEvent): FishingState {
   return fishingReducer(state, event);
 }
 
-export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: FishingScreenProps) {
+export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { autoReel, bait } = useSettings();
 
@@ -161,12 +183,23 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   const statesRef = useRef<Map<string, CardState>>(new Map());
   /** The class of every deck (a class scope needs it). */
   const deckClassesRef = useRef<ReadonlyMap<string, string | null>>(new Map());
+  /**
+   * The queue of the session: it decides which question comes next, in
+   * which order, and (in mastery mode) when the session is over.
+   */
+  const engineRef = useRef<SessionQueueState | null>(null);
+  /** The random source of the questions (the catches have their own). */
+  const queueRngRef = useRef<Rng | null>(null);
   const questionStartedAt = useRef(Date.now());
   const persistedRef = useRef(0);
   const sessionIdRef = useRef(`fishing-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [settledTokens, setSettledTokens] = useState<number | null>(null);
   /** The tokens of the player (the HUD counts them). */
   const [balance, setBalance] = useState(0);
+  /** The progress of the session (the HUD shows it in mastery mode). */
+  const [progress, setProgress] = useState({ mastered: 0, total: 0, left: 0 });
+  /** `true` while the "MASTERED!" celebration is on the screen. */
+  const [celebrating, setCelebrating] = useState(false);
 
   const queueScope = useMemo<QueueScope>(() => {
     switch (scope.kind) {
@@ -181,13 +214,75 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     }
   }, [scope]);
 
+  /**
+   * The random source of the questions.
+   *
+   * It shuffles the order of the questions and the answers of every
+   * question. The catches have their own random source, so the demos of the
+   * web build still land the same fish.
+   */
+  if (queueRngRef.current === null) {
+    queueRngRef.current =
+      demo === null ? createRandomRng() : createSeededRng(DEMO_SEEDS[demo] * 7919 + 13);
+  }
+  const queueRng = queueRngRef.current;
+
+  /**
+   * Turns a question of the queue into a card of the machine.
+   *
+   * The answers are shuffled again, every time the question is asked: the
+   * right answer is never always in the same place.
+   */
+  const toQueueItem = useCallback(
+    (question: SessionQuestion): QueueItem => {
+      const built = buildChoices(
+        {
+          question: question.card.front,
+          correct: question.card.back,
+          wrong: question.card.wrong ?? [],
+        },
+        queueRng,
+      );
+
+      const kind: QueueItemKind =
+        question.state === undefined
+          ? 'new'
+          : question.state.due <= Date.now()
+            ? 'due'
+            : 'bonus';
+
+      return {
+        cardId: question.id,
+        card: { ...question.card, choices: built.options, answerIndex: built.answerIndex },
+        kind,
+        bonus: kind === 'bonus',
+        ...(question.state === undefined ? {} : { state: question.state }),
+      };
+    },
+    [queueRng],
+  );
+
+  /**
+   * The next question of the session.
+   *
+   * The queue of the machine is empty: the questions come from the session
+   * queue of the core, one at a time.
+   */
   const buildQueueNow = useCallback((): QueueItem[] => {
-    return buildQueue(cardsRef.current, statesRef.current, Date.now(), {
-      newCap: NEW_CARD_CAP,
-      scope: queueScope,
-      deckClasses: deckClassesRef.current,
-    });
-  }, [queueScope]);
+    const engine = engineRef.current;
+    if (engine === null) {
+      return [];
+    }
+
+    const next = nextSessionQuestion(engine);
+    engineRef.current = next.state;
+
+    if (next.question === null) {
+      return [];
+    }
+
+    return [toQueueItem(next.question)];
+  }, [toQueueItem]);
 
   const [machine, dispatch] = useReducer(
     screenReducer,
@@ -229,7 +324,22 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         cardsRef.current = buildQuestionCards(cards);
         statesRef.current = states;
         deckClassesRef.current = buildDeckClassMap(sets);
-        dispatch({ type: 'set_queue', queue: buildQueueNow() });
+
+        // The session plays the cards of the scope: the order is shuffled
+        // and the queue of the core decides what comes next.
+        const pool = filterByScope(cardsRef.current, queueScope, deckClassesRef.current);
+        engineRef.current = createSessionQueue({
+          questions: pool.map((card) => ({
+            id: card.id,
+            card,
+            ...(states.get(card.id) === undefined ? {} : { state: states.get(card.id) }),
+          })),
+          mode: mastery ? 'mastery' : 'endless',
+          rng: queueRng,
+          now: Date.now(),
+        });
+        setProgress({ mastered: 0, total: pool.length, left: pool.length });
+        dispatch({ type: 'set_queue', queue: [] });
 
         // The wallet knows how many pack tickets were already earned today:
         // the mode must not roll a second one.
@@ -252,7 +362,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     return () => {
       cancelled = true;
     };
-  }, [buildQueueNow]);
+  }, [buildQueueNow, mastery, queueRng, queueScope]);
 
   // The sounds.
   useEffect(() => {
@@ -443,15 +553,72 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     })();
   }, [machine.session.reviews]);
 
-  const onAnswer = useCallback((choiceIndex: number) => {
-    const now = Date.now();
-    dispatch({
-      type: 'answer',
-      choiceIndex,
-      durationMs: Math.max(0, now - questionStartedAt.current),
-      now,
-    });
+  // The scheduling state of a card changes with every review: the endless
+  // mode needs the fresh state to know what is due and what is weak.
+  useEffect(() => {
+    const engine = engineRef.current;
+    if (engine === null) {
+      return;
+    }
+    engineRef.current = updateSessionStates(engine, machine.session.cardStates);
+  }, [machine.session.cardStates]);
+
+  const machineRef = useRef(machine);
+  machineRef.current = machine;
+
+  /**
+   * The celebration of the mastery mode.
+   *
+   * Every question of the scope is mastered: the screen says it with a
+   * banner and the session ends by itself (the payout comes next).
+   */
+  const celebrate = useCallback(() => {
+    setCelebrating(true);
+    play('legendary');
+    hapticLegend();
+
+    const timer = setTimeout(() => {
+      dispatch({ type: 'request_end' });
+      dispatch({ type: 'confirm_end' });
+    }, MASTERED_CELEBRATION_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
   }, []);
+
+  const onAnswer = useCallback(
+    (choiceIndex: number) => {
+      const now = Date.now();
+      const question = machineRef.current.question;
+      const correct = question !== null && choiceIndex === question.answerIndex;
+
+      // The session queue learns from the answer: a missed question comes
+      // back a few questions later, and a mastered one leaves the queue.
+      const engine = engineRef.current;
+      if (engine !== null && question !== null) {
+        const next = answerSessionQuestion(engine, question.cardId, correct);
+        engineRef.current = next;
+        setProgress({
+          mastered: masteredCount(next),
+          total: sessionTotal(next),
+          left: sessionRemaining(next),
+        });
+
+        if (mastery && sessionComplete(next)) {
+          celebrate();
+        }
+      }
+
+      dispatch({
+        type: 'answer',
+        choiceIndex,
+        durationMs: Math.max(0, now - questionStartedAt.current),
+        now,
+      });
+    },
+    [mastery, celebrate],
+  );
 
   const onReel = useCallback(() => {
     dispatch({ type: 'reel' });
@@ -472,6 +639,24 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   const onSelfGrade = useCallback(
     (gotIt: boolean) => {
       const now = Date.now();
+      const question = machineRef.current.question;
+
+      // The session queue learns from the grade of the player too.
+      const engine = engineRef.current;
+      if (engine !== null && question !== null) {
+        const next = answerSessionQuestion(engine, question.cardId, gotIt);
+        engineRef.current = next;
+        setProgress({
+          mastered: masteredCount(next),
+          total: sessionTotal(next),
+          left: sessionRemaining(next),
+        });
+
+        if (mastery && sessionComplete(next)) {
+          celebrate();
+        }
+      }
+
       dispatch({
         type: 'answer',
         choiceIndex: gotIt ? (machine.question?.answerIndex ?? 0) : -1,
@@ -480,7 +665,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         selfGrade: true,
       });
     },
-    [machine.question],
+    [machine.question, mastery, celebrate],
   );
   const onCast = useCallback(() => {
     dispatch({ type: 'cast' });
@@ -566,8 +751,6 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   }, [ended]);
 
   // The demo of the web build plays the mode for the screenshot.
-  const machineRef = useRef(machine);
-  machineRef.current = machine;
   useEffect(() => {
     if (demo === null || demo === 'scene' || loading) {
       return undefined;
@@ -858,7 +1041,10 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
 
       <Hud
         session={machine.session}
-        remaining={remainingCards(machine)}
+        remaining={progress.left}
+        mastery={mastery}
+        mastered={progress.mastered}
+        total={progress.total}
         biggestTier={biggestTier}
         tokens={balance}
         onEnd={onRequestEnd}
@@ -880,10 +1066,27 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         <View style={styles.gotAway} pointerEvents="none">
           <View style={styles.gotAwayCard}>
             <Text style={styles.gotAwayTitle}>It got away!</Text>
-            <Text style={styles.gotAwayAnswer}>
-              {machine.question === null
-                ? ''
-                : (machine.question.choices[machine.feedback?.answerIndex ?? 0] ?? '')}
+            <MathText
+              text={
+                machine.question === null
+                  ? ''
+                  : (machine.question.choices[machine.feedback?.answerIndex ?? 0] ?? '')
+              }
+              style={styles.gotAwayAnswer}
+              color={colors.text}
+              fontSize={16}
+              center
+            />
+          </View>
+        </View>
+      ) : null}
+
+      {celebrating ? (
+        <View style={styles.celebration} pointerEvents="none">
+          <View style={styles.celebrationCard}>
+            <Text style={styles.celebrationTitle}>MASTERED!</Text>
+            <Text style={styles.celebrationBody}>
+              Every question of this deck is mastered. The session is over.
             </Text>
           </View>
         </View>
@@ -1024,6 +1227,35 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: fonts.bodyBold,
     textAlign: 'center',
+  },
+  celebration: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(4, 10, 24, 0.72)',
+  },
+  celebrationCard: {
+    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+    borderRadius: radius.card,
+    paddingHorizontal: 26,
+    paddingVertical: 20,
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: colors.gold,
+  },
+  celebrationTitle: {
+    color: colors.gold,
+    fontSize: 34,
+    fontFamily: fonts.title,
+    letterSpacing: 3,
+  },
+  celebrationBody: {
+    marginTop: 8,
+    color: colors.text,
+    fontSize: 14,
+    fontFamily: fonts.bodySemi,
+    textAlign: 'center',
+    lineHeight: 19,
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFill,

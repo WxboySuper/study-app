@@ -1,4 +1,4 @@
-import type { FishingFeedback, FishingQuestion } from '@study-app/core';
+import { plainText, type FishingFeedback, type FishingQuestion } from '@study-app/core';
 import { useEffect, useState } from 'react';
 import { ImageBackground, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -11,6 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { artFor } from '@/content/art';
+import { MathText } from '@/math/MathText';
 import { colors, fonts, radius } from '@/theme';
 import { GameButton, Particles } from '@/ui';
 
@@ -28,6 +29,10 @@ import { GameButton, Particles } from '@/ui';
  * A card without wrong answers of its own cannot be asked as a multiple
  * choice question: the note shows the question alone, the player taps to
  * reveal the answer and then grades itself ("Got it" / "Missed it").
+ *
+ * The answers are never cut off: a long answer gets a button of its own
+ * width (one column) and a smaller font, and the math of a question is
+ * drawn with KaTeX.
  */
 export interface QuestionNoteProps {
   /** `true` while the question is on the screen. */
@@ -50,6 +55,20 @@ export interface QuestionNoteProps {
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
 }
+
+/**
+ * An answer longer than this makes the buttons a single column.
+ *
+ * The buttons of a 2x2 grid are wide enough for a short answer only: a long
+ * one needs the whole width of the screen.
+ */
+const LONG_ANSWER_CHARS = 24;
+
+/** The font size of the answer buttons. */
+const ANSWER_FONT = 15;
+
+/** How much the font shrinks when the answer is long. */
+const FONT_STEP = 2;
 
 export function QuestionNote({
   visible,
@@ -95,6 +114,10 @@ export function QuestionNote({
 
   const fontSize = question.prompt.length > 140 ? 15 : question.prompt.length > 70 ? 17 : 19;
 
+  // The answers decide the layout of the buttons: a long answer needs the
+  // whole width of the screen and a smaller font.
+  const layout = answerLayout(question.choices);
+
   const body = (
     <>
       <View style={styles.noteHead}>
@@ -103,7 +126,12 @@ export function QuestionNote({
       </View>
 
       <ScrollView style={styles.promptScroll} contentContainerStyle={styles.promptContent}>
-        <Text style={[styles.prompt, { fontSize }]}>{question.prompt}</Text>
+        <MathText
+          text={question.prompt}
+          style={[styles.prompt, { fontSize }]}
+          color="#3b2a12"
+          fontSize={fontSize}
+        />
         {question.bonus ? <Text style={styles.bonus}>bonus review</Text> : null}
       </ScrollView>
     </>
@@ -134,7 +162,18 @@ export function QuestionNote({
         <View style={styles.answers} pointerEvents="box-none">
           {revealed ? (
             <>
-              <Text style={styles.revealAnswer}>{question.answer}</Text>
+              <ScrollView
+                style={styles.revealScroll}
+                contentContainerStyle={styles.revealContent}
+              >
+                <MathText
+                  text={question.answer}
+                  style={styles.revealAnswer}
+                  color="#fff8e7"
+                  fontSize={layout.fontSize + 3}
+                  center
+                />
+              </ScrollView>
               {feedback === null ? (
                 <View style={styles.gradeRow}>
                   <View style={styles.gradeButton}>
@@ -207,6 +246,8 @@ export function QuestionNote({
             index={index}
             feedback={feedback}
             locked={locked}
+            fontSize={layout.fontSize}
+            wide={layout.columns === 1}
             onPress={() => {
               onAnswer(index);
             }}
@@ -217,17 +258,54 @@ export function QuestionNote({
   );
 }
 
+/**
+ * The layout of the answer buttons.
+ *
+ * A short answer gets a 2x2 grid. An answer longer than
+ * {@link LONG_ANSWER_CHARS} characters gets a button of its own (one
+ * column), and the font shrinks a step for every 60 extra characters.
+ */
+function answerLayout(choices: readonly string[]): { columns: 1 | 2; fontSize: number } {
+  let longest = 0;
+
+  for (const choice of choices) {
+    longest = Math.max(longest, plainText(choice).length);
+  }
+
+  let fontSize = ANSWER_FONT;
+  if (longest > 60) {
+    fontSize -= FONT_STEP;
+  }
+  if (longest > 120) {
+    fontSize -= FONT_STEP;
+  }
+
+  return { columns: longest > LONG_ANSWER_CHARS ? 1 : 2, fontSize: Math.max(11, fontSize) };
+}
+
 interface AnswerButtonProps {
   label: string;
   index: number;
   feedback: FishingFeedback | null;
   /** `true` while the answer is held on the screen. */
   locked: boolean;
+  /** The size of the label, in points. */
+  fontSize: number;
+  /** `true` when the button takes the whole width (a long answer). */
+  wide: boolean;
   onPress: () => void;
 }
 
 /** One answer: a chunky button that flashes when it is right or wrong. */
-function AnswerButton({ label, index, feedback, locked, onPress }: AnswerButtonProps) {
+function AnswerButton({
+  label,
+  index,
+  feedback,
+  locked,
+  fontSize,
+  wide,
+  onPress,
+}: AnswerButtonProps) {
   const [burst, setBurst] = useState(0);
   const shake = useSharedValue(0);
   const flash = useSharedValue(0);
@@ -271,17 +349,24 @@ function AnswerButton({ label, index, feedback, locked, onPress }: AnswerButtonP
   }));
 
   return (
-    <Animated.View style={[styles.answer, shakeStyle]}>
+    <Animated.View style={[styles.answer, wide === true ? styles.answerWide : null, shakeStyle]}>
       <GameButton
-        label={label}
         variant={answered ? 'ghost' : 'primary'}
         size="md"
+        wrap
         disabled={locked || (answered && !feedback.retry)}
         onPress={onPress}
-        textStyle={styles.answerLabel}
-        labelLines={0}
+        textStyle={[styles.answerLabel, { fontSize }]}
         accessibilityLabel={label}
-      />
+      >
+        <MathText
+          text={label}
+          style={[styles.answerLabel, { fontSize }]}
+          color="#ffffff"
+          fontSize={fontSize}
+          center
+        />
+      </GameButton>
 
       {/*
         The colour of the answer: it stays on the screen while the answer is
@@ -407,12 +492,24 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: 'center',
   },
+  answerWide: {
+    width: '100%',
+    flexGrow: 0,
+  },
   answerLabel: {
     fontSize: 15,
     textAlign: 'center',
+    flexShrink: 1,
+  },
+  revealScroll: {
+    width: '100%',
+    maxHeight: 130,
+  },
+  revealContent: {
+    alignItems: 'center',
+    paddingVertical: 2,
   },
   revealAnswer: {
-    width: '100%',
     color: '#fff8e7',
     fontFamily: fonts.title,
     fontSize: 20,
