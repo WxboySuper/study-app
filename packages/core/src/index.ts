@@ -247,7 +247,10 @@ export {
   canSpin,
   findSpinSegment,
   spinDailyWheel,
+  spinSegmentAtRotation,
   spinSegmentIndex,
+  spinTargetRotation,
+  SPIN_SEGMENT_DEG,
   type SpinSegment,
 } from './spin';
 

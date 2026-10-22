@@ -97,3 +97,38 @@ export function canSpin(lastSpinDay: string | null | undefined, today: string): 
 export function applySpinReward(wallet: WalletSnapshot, reward: number): WalletSnapshot {
   return { ...wallet, balance: wallet.balance + reward };
 }
+
+/** The angle of one segment of the wheel, in degrees. */
+export const SPIN_SEGMENT_DEG = 360 / SPIN_SEGMENTS.length;
+
+/**
+ * The segment under the pointer at a rotation of the wheel.
+ *
+ * The wedges are drawn clockwise from 12 o'clock (segment 0 spans
+ * `[0, step)`), the pointer sits at 12 o'clock and a positive rotation turns
+ * the wheel clockwise. A rotation `r` puts the angle `-r` of the face under
+ * the pointer.
+ *
+ * Keep in sync with the `segmentAt` worklet of the mobile wheel.
+ */
+export function spinSegmentAtRotation(rotation: number): number {
+  'worklet';
+  const count = SPIN_SEGMENTS.length;
+  const step = 360 / count;
+  const face = (((-rotation) % 360) + 360) % 360;
+  const index = Math.floor(face / step);
+  return ((index % count) + count) % count;
+}
+
+/**
+ * The final rotation that lands the wheel on a segment.
+ *
+ * The wheel turns `turns` full times and stops with the centre of the
+ * segment under the pointer, offset by `jitter` (a fraction of half a
+ * segment in `[-1, 1]`, clamped to keep clear of the edges).
+ */
+export function spinTargetRotation(index: number, turns = 5, jitter = 0): number {
+  const step = SPIN_SEGMENT_DEG;
+  const safe = Math.max(-0.7, Math.min(0.7, jitter));
+  return turns * 360 - (index + 0.5) * step + safe * (step / 2);
+}
