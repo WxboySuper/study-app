@@ -36,12 +36,16 @@ export default function FishingRoute() {
     id?: string;
     title?: string;
     demo?: string;
+    mastery?: string;
   }>();
   const [session, setSession] = useState(0);
 
   const demo: FishingDemo | null = (FishingDemos as readonly string[]).includes(params.demo ?? '')
     ? (params.demo as FishingDemo)
     : null;
+
+  // The mastery mode of the session (the home screen remembers it).
+  const mastery = params.mastery === '1' || params.mastery === 'true';
 
   const scope: ScopeChoice = (() => {
     if (params.kind === 'set' && typeof params.id === 'string') {
@@ -62,6 +66,7 @@ export default function FishingRoute() {
       <FishingScreen
         key={session}
         scope={scope}
+        mastery={mastery}
         demo={demo}
         onHome={() => {
           router.replace('/');

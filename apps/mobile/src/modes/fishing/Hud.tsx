@@ -1,6 +1,6 @@
-import type { CatchTier, FishingSession } from '@study-app/core';
+import type { CatchTier, FishingSession, MasteryProgress } from '@study-app/core';
 import { CATCH_TIERS, LURE_RANKS, POWERUPS } from '@study-app/core';
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { useAnimatedProps, useSharedValue, withSpring } from 'react-native-reanimated';
 
@@ -16,16 +16,42 @@ import { Sprite } from './Sprite';
  * The wallet and the lure sit at the top, the streak burns next to them and
  * the haul counts itself up under the top bar. The log of the last five
  * catches keeps the eyes on the water.
+ *
+ * In mastery mode the bottom bar counts the mastered questions ("3/12
+ * mastered") and the dots under it show how many right answers every
+ * question of the deck has.
  */
 
 /** A text input that can be animated (the number roll-up). */
 const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
+
+/**
+ * How many questions of the deck get their own dots in the HUD.
+ *
+ * A deck of a hundred cards does not fit on the screen, so the dots stop
+ * there (the question that is on the screen always keeps its own).
+ */
+const MAX_MASTERY_DOTS = 24;
 
 export interface HudProps {
   /** The session, for the counters. */
   session: FishingSession;
   /** How many cards are still to be asked. */
   remaining: number;
+  /** `true` when the session plays in mastery mode. */
+  mastery?: boolean;
+  /** How many questions of the scope are mastered. */
+  mastered?: number;
+  /** How many questions the scope holds. */
+  total?: number;
+  /**
+   * The progress of every question of the scope.
+   *
+   * The mastery view draws one dot per right answer of every question.
+   */
+  progress?: readonly MasteryProgress[];
+  /** The question that is on the screen (its dots are the lit ones). */
+  currentQuestionId?: string | null;
   /** The tier of the biggest catch, for the colour of the counter. */
   biggestTier: CatchTier | null;
   /** The tokens of the player. */
@@ -39,6 +65,11 @@ export interface HudProps {
 export function Hud({
   session,
   remaining,
+  mastery = false,
+  mastered = 0,
+  total = 0,
+  progress = [],
+  currentQuestionId = null,
   biggestTier,
   tokens,
   onEnd,
@@ -68,6 +99,27 @@ export function Hud({
   const lure = LURE_RANKS.find((entry) => entry.rank === session.roll.lureRank) ?? LURE_RANKS[0]!;
 
   const log = session.log.slice(-5);
+
+  /**
+   * The dots of the mastery view.
+   *
+   * Every question of the deck has its own dots (one per right answer it
+   * needs), but a huge deck does not fit on the screen: the dots of the
+   * question that is on the screen always show up.
+   */
+  const { dots, hidden } = useMemo(() => {
+    const visible = progress.slice(0, MAX_MASTERY_DOTS);
+    const current = progress.find((entry) => entry.id === currentQuestionId);
+
+    if (current === undefined || visible.some((entry) => entry.id === current.id)) {
+      return { dots: visible, hidden: progress.length - visible.length };
+    }
+
+    return {
+      dots: [...visible.slice(0, MAX_MASTERY_DOTS - 1), current],
+      hidden: progress.length - visible.length,
+    };
+  }, [progress, currentQuestionId]);
 
   return (
     <View style={styles.container} pointerEvents="box-none">
@@ -134,9 +186,41 @@ export function Hud({
 
         <View style={styles.stats}>
           <Text style={styles.stat}>{session.answered} answered</Text>
-          <Text style={styles.stat}>{remaining} left</Text>
+          {mastery ? (
+            <Text style={styles.stat}>
+              {mastered}/{total} mastered
+            </Text>
+          ) : (
+            <Text style={styles.stat}>{remaining} left</Text>
+          )}
         </View>
       </View>
+
+      {mastery && progress.length > 0 ? (
+        <View style={styles.masteryRow} pointerEvents="none">
+          {dots.map((entry) => (
+            <View
+              key={entry.id}
+              style={styles.masteryDots}
+              accessible
+              accessibilityLabel={`${entry.correct} of ${entry.required} right answers`}
+            >
+              {Array.from({ length: entry.required }, (_, index) => (
+                <View
+                  key={`${entry.id}-${index}`}
+                  style={[
+                    styles.masteryDot,
+                    index < entry.correct ? styles.masteryDotOn : styles.masteryDotOff,
+                    entry.id === currentQuestionId ? styles.masteryDotCurrent : null,
+                  ]}
+                />
+              ))}
+            </View>
+          ))}
+
+          {hidden > 0 ? <Text style={styles.masteryMore}>+{hidden}</Text> : null}
+        </View>
+      ) : null}
 
       {log.length === 0 ? null : (
         <View style={styles.log} pointerEvents="none">
@@ -324,6 +408,38 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textShadowColor: 'rgba(6, 12, 28, 0.9)',
     textShadowRadius: 4,
+  },
+  masteryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
+    gap: 6,
+    paddingTop: 2,
+  },
+  masteryDots: {
+    flexDirection: 'row',
+    gap: 3,
+  },
+  masteryDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  masteryDotOn: {
+    backgroundColor: colors.gold,
+  },
+  masteryDotOff: {
+    backgroundColor: 'rgba(248, 250, 252, 0.28)',
+  },
+  masteryDotCurrent: {
+    borderWidth: 1,
+    borderColor: colors.text,
+  },
+  masteryMore: {
+    color: 'rgba(255,255,255,0.72)',
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    alignSelf: 'center',
   },
   log: {
     flexDirection: 'row',

@@ -41,6 +41,13 @@ interface SettingsContextValue {
   sound: boolean;
   haptics: boolean;
   autoReel: boolean;
+  /**
+   * The mastery mode of the sessions.
+   *
+   * When it is on, a session lasts until every question of the scope is
+   * mastered (the HUD counts them: "3/12 mastered").
+   */
+  mastery: boolean;
   /** `null` means "follow the system setting". */
   reduceMotion: boolean | null;
   /** The scope of the last session, so "Play again" is one tap. */
@@ -52,6 +59,7 @@ interface SettingsContextValue {
   setSound: (value: boolean) => void;
   setHaptics: (value: boolean) => void;
   setAutoReel: (value: boolean) => void;
+  setMastery: (value: boolean) => void;
   setReduceMotion: (value: boolean | null) => void;
   setScope: (value: ScopeChoice) => void;
   setBait: (value: BaitId | null) => void;
@@ -63,6 +71,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
   const [sound, setSound] = useState(true);
   const [haptics, setHaptics] = useState(true);
   const [autoReel, setAutoReel] = useState(true);
+  const [mastery, setMastery] = useState(false);
   const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
   const [scope, setScope] = useState<ScopeChoice>({ kind: 'all' });
   const [bait, setBait] = useState<BaitId | null>(null);
@@ -101,6 +110,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       sound,
       haptics,
       autoReel,
+      mastery,
       reduceMotion,
       scope,
       bait,
@@ -108,11 +118,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       setSound,
       setHaptics,
       setAutoReel,
+      setMastery,
       setReduceMotion,
       setScope,
       setBait,
     }),
-    [sound, haptics, autoReel, reduceMotion, scope, bait, systemReduceMotion],
+    [sound, haptics, autoReel, mastery, reduceMotion, scope, bait, systemReduceMotion],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

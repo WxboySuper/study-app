@@ -70,6 +70,7 @@ interface DemoState {
 const DEMO_TOPICS: LocalTopic[] = [
   { id: 'topic_biology', name: 'Biology', color: '#34d399' },
   { id: 'topic_history', name: 'History', color: '#f472b6' },
+  { id: 'topic_physics', name: 'Physics', color: '#38bdf8' },
 ];
 
 /** The classes of the demo player. */
@@ -92,6 +93,12 @@ const DEMO_SETS: LocalSet[] = [
     title: 'Industrial revolution',
     classId: 'class_humanities',
   },
+  {
+    id: 'set_meteorology',
+    topicId: 'topic_physics',
+    title: 'Meteorology',
+    classId: 'class_science',
+  },
 ];
 
 /**
@@ -99,6 +106,13 @@ const DEMO_SETS: LocalSet[] = [
  *
  * Every card carries its own three wrong answers, the way Blooket does it:
  * the questions never borrow the answers of the other cards.
+ *
+ * The last cards of the deck show what the game does with math: the LaTeX
+ * of a question or of an answer (`$...$` and `$$...$$`), the escaped dollar
+ * sign of a price and the long answers, which are never cut off.
+ *
+ * The LaTeX is written with doubled backslashes, because TypeScript would
+ * read a single one as an escape (`\f` is a form feed, `\n` a newline).
  */
 const DEMO_CARDS: StudyCard[] = [
   {
@@ -191,6 +205,63 @@ const DEMO_CARDS: StudyCard[] = [
     back: 'The steam locomotive',
     wrong: ['The steam ship', 'The steam carriage', 'The steam hammer'],
   },
+  {
+    id: 'card_math_1',
+    setId: 'set_meteorology',
+    topicId: 'topic_physics',
+    type: 'mc',
+    front: 'How does the temperature of a fluid change over time?',
+    back: '$\\frac{dT}{dt} = \\frac{\\partial T}{\\partial t} + \\vec{V}\\cdot\\nabla T$',
+    wrong: [
+      '$\\frac{dT}{dt} = \\frac{\\partial T}{\\partial t}$',
+      '$\\frac{dT}{dt} = \\vec{V}\\cdot\\nabla T$',
+      '$\\frac{dT}{dt} = \\frac{\\partial T}{\\partial t} + \\vec{V}\\cdot\\nabla^2 T$',
+    ],
+  },
+  {
+    id: 'card_long_1',
+    setId: 'set_meteorology',
+    topicId: 'topic_physics',
+    type: 'mc',
+    front: 'What does the diffusion term of the heat equation stand for?',
+    back: 'Diffusion term representing molecular heat conduction',
+    wrong: [
+      'Advection term representing the transport of heat by the wind',
+      'Radiation term representing the heat lost to the atmosphere',
+      'Pressure term representing the weight of the overlying air',
+    ],
+  },
+  {
+    id: 'card_math_2',
+    setId: 'set_meteorology',
+    topicId: 'topic_physics',
+    type: 'mc',
+    front: 'What does the symbol $\\nabla$ stand for?',
+    back: 'The nabla operator, also called the gradient or del operator',
+    wrong: [
+      'The Laplacian operator, also called the divergence or curl',
+      'The divergence operator, also called the gradient or curl',
+      'The gradient of a vector field, also called the nabla or curl operator',
+    ],
+  },
+  {
+    id: 'card_math_3',
+    setId: 'set_meteorology',
+    topicId: 'topic_physics',
+    type: 'mc',
+    front: 'Which equation gives the pressure of an ideal gas?',
+    back: '$$PV = nRT$$',
+    wrong: ['$$P = nRTV$$', '$$PV = nRT^2$$', '$$PV^2 = nRT$$'],
+  },
+  {
+    id: 'card_math_4',
+    setId: 'set_meteorology',
+    topicId: 'topic_physics',
+    type: 'mc',
+    front: 'What does the school charge to rent a weather station for a day?',
+    back: 'It costs \\$5 per day',
+    wrong: ['It costs \\$15 per day', 'It costs \\$5 per week', 'It costs \\$50 per day'],
+  },
 ];
 
 /**
@@ -241,7 +312,15 @@ function demoCardStates(): Map<string, CardState> {
     lastReview: now - day,
   });
 
-  for (const id of ['card_cell_1', 'card_cell_3', 'card_cell_5', 'card_rev_1', 'card_rev_3']) {
+  for (const id of [
+    'card_cell_1',
+    'card_cell_3',
+    'card_cell_5',
+    'card_rev_1',
+    'card_rev_3',
+    'card_math_1',
+    'card_math_3',
+  ]) {
     states.set(id, state(id, now - day, 3));
   }
   for (const id of ['card_cell_2', 'card_rev_2', 'card_rev_5']) {

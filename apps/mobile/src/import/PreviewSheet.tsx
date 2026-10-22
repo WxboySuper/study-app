@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import type { LocalClass } from '@/db/local';
+import { MathText } from '@/math/MathText';
 import { colors, fonts, radius, spacing } from '@/theme';
 import { GameButton, GlassCard } from '@/ui';
 
@@ -177,16 +178,26 @@ export function PreviewSheet({
           >
             {shown.map((card, index) => (
               <View key={`${card.front}-${index}`} style={styles.previewCard}>
-                <Text style={styles.previewFront} numberOfLines={2}>
-                  {card.front}
-                </Text>
-                <Text style={styles.previewBack} numberOfLines={2}>
-                  ✓ {card.back}
-                </Text>
+                <MathText
+                  text={card.front}
+                  style={styles.previewFront}
+                  color={colors.text}
+                  fontSize={14}
+                />
+                <MathText
+                  text={`✓ ${card.back}`}
+                  style={styles.previewBack}
+                  color={colors.success}
+                  fontSize={13}
+                />
                 {card.wrong.map((wrong, wrongIndex) => (
-                  <Text key={`${wrong}-${wrongIndex}`} style={styles.previewWrong} numberOfLines={2}>
-                    ✗ {wrong}
-                  </Text>
+                  <MathText
+                    key={`${wrong}-${wrongIndex}`}
+                    text={`✗ ${wrong}`}
+                    style={styles.previewWrong}
+                    color={colors.textMuted}
+                    fontSize={13}
+                  />
                 ))}
               </View>
             ))}
