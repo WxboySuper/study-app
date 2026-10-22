@@ -74,7 +74,12 @@ const DEMO_SETS: LocalSet[] = [
   { id: 'set_revolution', topicId: 'topic_history', title: 'Industrial revolution' },
 ];
 
-/** The study cards of the demo player. */
+/**
+ * The study cards of the demo player.
+ *
+ * Every card carries its own three wrong answers, the way Blooket does it:
+ * the questions never borrow the answers of the other cards.
+ */
 const DEMO_CARDS: StudyCard[] = [
   {
     id: 'card_cell_1',
@@ -83,6 +88,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'Which organelle is the powerhouse of the cell?',
     back: 'The mitochondrion',
+    wrong: ['The ribosome', 'The lysosome', 'The Golgi apparatus'],
   },
   {
     id: 'card_cell_2',
@@ -91,6 +97,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'What is the fluid inside a cell called?',
     back: 'Cytoplasm',
+    wrong: ['Cytosol', 'Nucleoplasm', 'Cerebrospinal fluid'],
   },
   {
     id: 'card_cell_3',
@@ -99,6 +106,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'Which structure gives a plant cell its green colour?',
     back: 'The chloroplast',
+    wrong: ['The cell wall', 'The vacuole', 'The mitochondrion'],
   },
   {
     id: 'card_cell_4',
@@ -107,6 +115,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'What surrounds the nucleus of an animal cell?',
     back: 'The nuclear membrane',
+    wrong: ['The cell membrane', 'The nuclear pore', 'The cytoskeleton'],
   },
   {
     id: 'card_cell_5',
@@ -115,6 +124,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'Which molecule carries the genetic instructions?',
     back: 'DNA',
+    wrong: ['RNA', 'ATP', 'The chromosome'],
   },
   {
     id: 'card_rev_1',
@@ -123,6 +133,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'In which year did the Industrial Revolution begin in Britain?',
     back: 'Around 1760',
+    wrong: ['Around 1820', 'Around 1680', 'Around 1900'],
   },
   {
     id: 'card_rev_2',
@@ -131,6 +142,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'What powered the first factories?',
     back: 'The steam engine',
+    wrong: ['The water wheel', 'The electric motor', 'The diesel engine'],
   },
   {
     id: 'card_rev_3',
@@ -139,6 +151,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'Which industry grew first in the industrial cities?',
     back: 'Textiles',
+    wrong: ['Shipbuilding', 'The steel industry', 'Railways'],
   },
   {
     id: 'card_rev_4',
@@ -147,6 +160,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'Who wrote "The Wealth of Nations"?',
     back: 'Adam Smith',
+    wrong: ['Karl Marx', 'David Ricardo', 'Robert Malthus'],
   },
   {
     id: 'card_rev_5',
@@ -155,6 +169,7 @@ const DEMO_CARDS: StudyCard[] = [
     type: 'mc',
     front: 'What invention moved goods along the new railways?',
     back: 'The steam locomotive',
+    wrong: ['The steam ship', 'The steam carriage', 'The steam hammer'],
   },
 ];
 
@@ -360,6 +375,7 @@ async function importDeckOfDemo(
         type: 'mc',
         front: card.front,
         back: card.back,
+        wrong: [...card.wrong],
       },
     ];
     current.cardStates.set(cardId, createInitialState(cardId, new Date(now)));

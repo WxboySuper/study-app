@@ -20,6 +20,10 @@ import { GameButton, Particles } from '@/ui';
  * The card lives *inside* the scene: a parchment note slides up from the
  * water and the four answers sit below it as chunky buttons. The right
  * answer flashes green with a burst of sparks, the wrong one flashes red.
+ *
+ * A card without wrong answers of its own cannot be asked as a multiple
+ * choice question: the note shows the question alone, the player taps to
+ * reveal the answer and then grades itself ("Got it" / "Missed it").
  */
 export interface QuestionNoteProps {
   /** `true` while the question is on the screen. */
@@ -30,6 +34,8 @@ export interface QuestionNoteProps {
   feedback: FishingFeedback | null;
   /** Called when the player picks an answer. */
   onAnswer: (choiceIndex: number) => void;
+  /** Called when the player grades a self-graded card. */
+  onSelfGrade?: (gotIt: boolean) => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
 }
@@ -39,11 +45,19 @@ export function QuestionNote({
   question,
   feedback,
   onAnswer,
+  onSelfGrade,
   reduceMotion,
 }: QuestionNoteProps) {
   const slide = useSharedValue(0);
+  // The answer of a self-graded card is hidden until the player asks for it.
+  const [revealed, setRevealed] = useState(false);
   // The parchment of the question card (the art of the UI piece).
   const parchment = artFor('ui_parchment_note');
+
+  // Every new question starts hidden again.
+  useEffect(() => {
+    setRevealed(false);
+  }, [question?.cardId]);
 
   useEffect(() => {
     if (reduceMotion) {
@@ -82,6 +96,77 @@ export function QuestionNote({
       </ScrollView>
     </>
   );
+
+  // A card without wrong answers: the player reveals the answer and grades
+  // itself.
+  if (question.selfGrade) {
+    return (
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+        <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
+
+        <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
+          {parchment === null ? (
+            <View style={[styles.note, styles.notePlain]}>{body}</View>
+          ) : (
+            <ImageBackground
+              source={parchment}
+              resizeMode="stretch"
+              style={styles.note}
+              imageStyle={styles.noteImage}
+            >
+              {body}
+            </ImageBackground>
+          )}
+        </Animated.View>
+
+        <View style={styles.answers} pointerEvents="box-none">
+          {revealed ? (
+            <>
+              <Text style={styles.revealAnswer}>{question.answer}</Text>
+              {feedback === null ? (
+                <View style={styles.gradeRow}>
+                  <View style={styles.gradeButton}>
+                    <GameButton
+                      label="GOT IT"
+                      variant="primary"
+                      size="md"
+                      onPress={() => {
+                        onSelfGrade?.(true);
+                      }}
+                      accessibilityLabel="I knew the answer"
+                    />
+                  </View>
+                  <View style={styles.gradeButton}>
+                    <GameButton
+                      label="MISSED IT"
+                      variant="danger"
+                      size="md"
+                      onPress={() => {
+                        onSelfGrade?.(false);
+                      }}
+                      accessibilityLabel="I did not know the answer"
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </>
+          ) : (
+            <View style={styles.gradeButton}>
+              <GameButton
+                label="SHOW THE ANSWER"
+                variant="secondary"
+                size="md"
+                onPress={() => {
+                  setRevealed(true);
+                }}
+                accessibilityLabel="Show the answer"
+              />
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -299,6 +384,25 @@ const styles = StyleSheet.create({
   answerLabel: {
     fontSize: 15,
     textAlign: 'center',
+  },
+  revealAnswer: {
+    width: '100%',
+    color: '#fff8e7',
+    fontFamily: fonts.title,
+    fontSize: 20,
+    textAlign: 'center',
+    textShadowColor: 'rgba(4, 10, 24, 0.7)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
+  gradeRow: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 10,
+  },
+  gradeButton: {
+    flex: 1,
+    justifyContent: 'center',
   },
   flash: {
     ...StyleSheet.absoluteFill,

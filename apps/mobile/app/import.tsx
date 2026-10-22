@@ -22,16 +22,14 @@ import { GameBackground, GameButton, GlassCard, ScreenHeader } from '@/ui';
 /**
  * The import screen.
  *
- * The player pastes a deck (a TSV paste, a list of `front :: back` lines or a
- * JSON file), the screen reads it live and shows what it found, and one tap
- * puts the cards in the game: a new deck in the picker, ready to study.
+ * The player pastes a deck (a TSV paste, a list of `question :: correct ::
+ * wrong` lines or a JSON file), the screen reads it live and shows what it
+ * found, and one tap puts the cards in the game: a new deck in the picker,
+ * ready to study.
  *
  * The rules of the formats live in `docs/DECK-FORMAT.md` (and in
  * `parseDeck` of `@study-app/core`).
  */
-
-/** The fewest cards a deck needs for the multiple choice questions. */
-const MIN_CARDS_FOR_MULTIPLE_CHOICE = 4;
 
 /** How long the success toast stays on the screen. */
 const TOAST_MS = 1100;
@@ -53,7 +51,7 @@ export default function ImportScreen() {
 
   const cardCount = preview.cards.length;
   const canImport = cardCount > 0 && !busy;
-  const tooSmall = cardCount > 0 && cardCount < MIN_CARDS_FOR_MULTIPLE_CHOICE;
+  const selfGradeCount = preview.counts.selfGrade;
 
   const onImport = () => {
     if (!canImport) {
@@ -118,7 +116,7 @@ export default function ImportScreen() {
               <TextInput
                 value={text}
                 onChangeText={setText}
-                placeholder={'front\tback\nfront :: back\nfront | back'}
+                placeholder={'question :: correct :: wrong1 :: wrong2 :: wrong3\nquestion\tcorrect\twrong'}
                 placeholderTextColor={colors.textDim}
                 style={[styles.input, styles.paste]}
                 multiline
@@ -128,7 +126,8 @@ export default function ImportScreen() {
                 accessibilityLabel="The cards of the deck"
               />
               <Text style={styles.hint}>
-                One card per line. A TAB, " :: " or " | " splits the front from the back. Lines
+                One card per line. A TAB, " :: " or " | " splits the question from the answers: the
+                first answer is the right one, the next ones are the wrong ones (up to three). Lines
                 that start with # are comments.
               </Text>
             </GlassCard>
@@ -137,10 +136,28 @@ export default function ImportScreen() {
               <View style={styles.previewHead}>
                 <Text style={styles.label}>PREVIEW</Text>
                 <Text style={styles.count}>
-                  {cardCount} card{cardCount === 1 ? '' : 's'} detected
+                  {cardCount} question{cardCount === 1 ? '' : 's'}
                   {cardCount > 0 ? ` · ${preview.format.toUpperCase()}` : ''}
                 </Text>
               </View>
+
+              {cardCount > 0 ? (
+                <Text style={styles.counts}>
+                  {preview.counts.total} question{preview.counts.total === 1 ? '' : 's'} ·{' '}
+                  {preview.counts.multipleChoice} multiple choice · {preview.counts.selfGrade}{' '}
+                  without wrong answers
+                  {preview.counts.selfGrade === 1 ? '' : 's'}
+                </Text>
+              ) : null}
+
+              {selfGradeCount > 0 ? (
+                <View style={styles.chip}>
+                  <Text style={styles.chipText}>
+                    ⚠ {selfGradeCount} card{selfGradeCount === 1 ? '' : 's'} without wrong answers
+                    will be self-graded
+                  </Text>
+                </View>
+              ) : null}
 
               {preview.cards.slice(0, 3).map((card, index) => (
                 <View key={`${card.front}-${index}`} style={styles.previewCard}>
@@ -148,20 +165,18 @@ export default function ImportScreen() {
                     {card.front}
                   </Text>
                   <Text style={styles.previewBack} numberOfLines={2}>
-                    {card.back}
+                    ✓ {card.back}
                   </Text>
+                  {card.wrong.map((wrong, wrongIndex) => (
+                    <Text key={`${wrong}-${wrongIndex}`} style={styles.previewWrong} numberOfLines={2}>
+                      ✗ {wrong}
+                    </Text>
+                  ))}
                 </View>
               ))}
 
               {cardCount > 3 ? (
                 <Text style={styles.more}>+ {cardCount - 3} more cards</Text>
-              ) : null}
-
-              {tooSmall ? (
-                <Text style={styles.warning}>
-                  ⚠ Multiple choice needs at least {MIN_CARDS_FOR_MULTIPLE_CHOICE} cards: the
-                  distractors come from the other cards of the deck.
-                </Text>
               ) : null}
 
               {preview.errors.slice(0, 4).map((error, index) => (
@@ -278,11 +293,30 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemi,
     fontSize: 11,
   },
-  warning: {
+  counts: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+  },
+  chip: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.chip,
+    backgroundColor: 'rgba(250, 204, 21, 0.16)',
+    borderWidth: 1,
+    borderColor: colors.warning,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  chipText: {
     color: colors.warning,
     fontFamily: fonts.bodySemi,
     fontSize: 11,
     lineHeight: 15,
+  },
+  previewWrong: {
+    color: colors.textDim,
+    fontFamily: fonts.body,
+    fontSize: 12,
   },
   error: {
     color: colors.danger,

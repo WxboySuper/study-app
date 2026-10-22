@@ -391,6 +391,21 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     dispatch({ type: 'reel' });
   }, []);
 
+  // A card without wrong answers is graded by the player itself: "Got it" is
+  // a Good, "Missed it" is an Again.
+  const onSelfGrade = useCallback(
+    (gotIt: boolean) => {
+      const now = Date.now();
+      dispatch({
+        type: 'answer',
+        choiceIndex: gotIt ? (machine.question?.answerIndex ?? 0) : -1,
+        durationMs: Math.max(0, now - questionStartedAt.current),
+        now,
+        selfGrade: true,
+      });
+    },
+    [machine.question],
+  );
   const onCast = useCallback(() => {
     dispatch({ type: 'cast' });
   }, []);
@@ -661,6 +676,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         question={machine.question}
         feedback={machine.feedback}
         onAnswer={onAnswer}
+        onSelfGrade={onSelfGrade}
         reduceMotion={reduceMotion}
       />
 

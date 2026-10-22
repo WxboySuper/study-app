@@ -53,6 +53,15 @@ export interface FishingQuestion {
   choices: readonly string[];
   /** The index of the correct answer. */
   answerIndex: number;
+  /**
+   * `true` when the card has no wrong answers of its own.
+   *
+   * Such a card is not asked as a multiple choice question: the player
+   * reveals the answer and grades itself ("Got it" / "Missed it").
+   */
+  selfGrade: boolean;
+  /** The correct answer of the card (the self-graded cards show it). */
+  answer: string;
   /** `true` for bonus review cards. */
   bonus: boolean;
   /** Why the card is in the queue. */
@@ -194,7 +203,17 @@ export type FishingEvent =
   /** The player taps "Reel". */
   | { type: 'reel' }
   /** The player answered the question. */
-  | { type: 'answer'; choiceIndex: number; durationMs: number; now: number }
+  | {
+      type: 'answer';
+      choiceIndex: number;
+      durationMs: number;
+      now: number;
+      /**
+       * `true` when the player graded itself (a card without wrong answers):
+       * the rating is `Good` or `Again`, never the automatic one.
+       */
+      selfGrade?: boolean;
+    }
   /** The fish was dragged out of the water. */
   | { type: 'reel_finished' }
   /** The reveal (or the "it got away" bubble) is dismissed. */
@@ -393,11 +412,19 @@ function handleAnswer(
 
   const answerIndex = item.card.answerIndex ?? -1;
   const correct = event.choiceIndex === answerIndex;
-  const rating = autoRating({
-    correct,
-    durationMs: event.durationMs,
-    streak: state.session.streak,
-  });
+  // A card without wrong answers is graded by the player itself: "Got it" is
+  // `Good`, "Missed it" is `Again`. Every other card is graded by the
+  // automatic grader.
+  const rating =
+    event.selfGrade === true
+      ? correct
+        ? Rating.Good
+        : Rating.Again
+      : autoRating({
+          correct,
+          durationMs: event.durationMs,
+          streak: state.session.streak,
+        });
   // `autoRating` never grades "Manual", but the FSRS API only accepts the
   // four real grades.
   /* v8 ignore next -- `autoRating` never returns "Manual" */
@@ -582,11 +609,15 @@ function pullNextItem(state: FishingState): { item: QueueItem | null; session: F
 /** Turns a queue item into the question the scene shows. */
 function toQuestion(item: QueueItem): FishingQuestion {
   const choices = item.card.choices ?? [];
+  const wrong = item.card.wrong ?? [];
   return {
     cardId: item.cardId,
     prompt: item.card.front,
     choices,
     answerIndex: item.card.answerIndex ?? -1,
+    // A card without wrong answers of its own is a self-graded card.
+    selfGrade: wrong.length === 0,
+    answer: item.card.back.trim(),
     bonus: item.bonus,
     kind: item.kind,
   };

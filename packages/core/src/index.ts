@@ -46,10 +46,23 @@ export {
 export {
   MAX_IMPORT_CARDS,
   parseDeck,
+  type DeckCounts,
   type DeckFormat,
   type ImportCard,
   type ParsedDeck,
 } from './import';
+
+export {
+  MAX_OPTIONS,
+  MAX_WRONG_ANSWERS,
+  MIN_OPTIONS,
+  buildChoices,
+  buildQuestionCards,
+  isPlayable,
+  normalizeWrongAnswers,
+  type BuiltChoices,
+  type ChoiceCard,
+} from './choices';
 
 export {
   CRITTER_PACKS,

@@ -121,6 +121,53 @@ describe('the fishing machine', () => {
     expect(state.session.correct).toBe(0);
   });
 
+  it('asks a card with wrong answers as a multiple choice question', () => {
+    const state = toHooked(createState());
+
+    expect(state.question?.selfGrade).toBe(false);
+  });
+
+  it('asks a card without wrong answers as a self-graded card', () => {
+    const state = toHooked(createState({ queue: [makeQueueItem('self-graded', { wrong: null })] }));
+
+    expect(state.question?.selfGrade).toBe(true);
+    expect(state.question?.answer).toBe('back of self-graded');
+  });
+
+  it('grades a self-graded card "Got it" as "Good"', () => {
+    let state = createState({ queue: [makeQueueItem('self-graded', { wrong: null })] });
+    state = toHooked(state);
+    state = apply(state, { type: 'reel' });
+    state = apply(state, {
+      type: 'answer',
+      choiceIndex: 0,
+      durationMs: 60_000,
+      now: NOW,
+      selfGrade: true,
+    });
+
+    expect(state.phase).toBe('reeling');
+    expect(state.session.reviews[0]?.rating).toBe(Rating.Good);
+    expect(state.session.correct).toBe(1);
+  });
+
+  it('grades a self-graded card "Missed it" as "Again"', () => {
+    let state = createState({ queue: [makeQueueItem('self-graded', { wrong: null })] });
+    state = toHooked(state);
+    state = apply(state, { type: 'reel' });
+    state = apply(state, {
+      type: 'answer',
+      choiceIndex: -1,
+      durationMs: 1_000,
+      now: NOW,
+      selfGrade: true,
+    });
+
+    expect(state.phase).toBe('got_away');
+    expect(state.session.reviews[0]?.rating).toBe(Rating.Again);
+    expect(state.session.correct).toBe(0);
+  });
+
   it('grades a fast streak as "Easy"', () => {
     let state = createState({
       queue: [makeQueueItem('a'), makeQueueItem('b'), makeQueueItem('c'), makeQueueItem('d')],

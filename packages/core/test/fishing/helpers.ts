@@ -36,11 +36,14 @@ export function makeQueueItem(
     choices?: string[] | null;
     /** `null` builds a card without choices, `null` on the answer as well. */
     answerIndex?: number | null;
+    /** The wrong answers of the card (they belong to the card). */
+    wrong?: string[] | null;
     setId?: string;
   } = {},
 ): QueueItem {
   const choices = options.choices === null ? undefined : (options.choices ?? ['alpha', 'beta', 'gamma', 'delta']);
   const answerIndex = options.answerIndex === null ? undefined : (options.answerIndex ?? 0);
+  const wrong = options.wrong === null ? undefined : (options.wrong ?? ['beta', 'gamma', 'delta']);
   const card: StudyCard = {
     id,
     setId: options.setId ?? 'set-1',
@@ -49,6 +52,7 @@ export function makeQueueItem(
     back: `back of ${id}`,
     ...(choices === undefined ? {} : { choices }),
     ...(answerIndex === undefined ? {} : { answerIndex }),
+    ...(wrong === undefined ? {} : { wrong }),
   };
 
   return {
