@@ -123,9 +123,9 @@ async function settle(page) {
  * after it.
  */
 const SHOTS = [
-  { name: 'home', path: '/' },
-  { name: 'home-decks', path: '/', scrollTo: 'deck-picker', wait: 900 },
-  { name: 'packs', path: '/packs' },
+  { name: 'home', path: '/?demo=1' },
+  { name: 'home-decks', path: '/?demo=1', scrollTo: 'deck-picker', wait: 900 },
+  { name: 'packs', path: '/packs?demo=1' },
   { name: 'pack-reveal', path: '/packs?demo=reveal', waitFor: 'CONTINUE', wait: 2600 },
   {
     name: 'pack-open-another',
@@ -134,12 +134,12 @@ const SHOTS = [
     actions: [{ click: 'OPEN ANOTHER' }],
     wait: 2800,
   },
-  { name: 'collection', path: '/collection' },
+  { name: 'collection', path: '/collection?demo=1' },
   { name: 'collection-sheet', path: '/collection?demo=sheet', waitFor: 'SELL', wait: 1200 },
-  { name: 'spin', path: '/spin' },
+  { name: 'spin', path: '/spin?demo=1' },
   { name: 'spin-spinning', path: '/spin?demo=spin', wait: 1800 },
   { name: 'spin-result', path: '/spin?demo=spin', waitFor: 'TOKENS', wait: 1600 },
-  { name: 'fishing', path: '/fishing', wait: 600 },
+  { name: 'fishing', path: '/fishing?demo=1', wait: 600 },
   { name: 'fishing-cast', path: '/fishing?demo=cast', wait: 700 },
   { name: 'fishing-question', path: '/fishing?demo=question', waitFor: 'STUDY NOTE', wait: 900 },
   // The layout of the question note on a 390x844 phone: a 65 question deck
