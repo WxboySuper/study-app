@@ -26,7 +26,23 @@ export const SYNCED_KV_KEYS: readonly string[] = ["fishing.masteryCounts.v1"];
 export const OUTBOX_MAX = 20_000;
 
 export type ProgressEventType =
-  "card_state" | "review" | "wallet_delta" | "kv" | "spin" | "baseline";
+  | "card_state"
+  | "review"
+  | "wallet_delta"
+  | "kv"
+  | "spin"
+  | "baseline"
+  | "quiz_answer";
+
+/** One answer of a Muse quiz (stored server side in `quiz_answers`). */
+export interface QuizAnswerPayload {
+  quizId: string;
+  cardId: string;
+  chosen: string;
+  correct: boolean;
+  timeMs: number;
+  answeredAt: number;
+}
 
 export interface WalletDeltaPayload {
   /** Why the wallet moved (`session`, `pack`, `sell`, `spin`, `admin`...). */
@@ -50,6 +66,7 @@ export interface ProgressPayloads {
   kv: { key: string; value: string };
   spin: { localDate: string; reward: number };
   baseline: BaselinePayload;
+  quiz_answer: QuizAnswerPayload;
 }
 
 /** An event as it is kept in the outbox and pushed. */
