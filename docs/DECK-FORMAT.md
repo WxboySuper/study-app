@@ -1,7 +1,8 @@
 # Deck format
 
-The app can import a deck that is **pasted as text**. This page is the spec:
-follow it and the deck lands in the game as a normal deck of cards.
+The app can import a deck that is **pasted as text** or **opened as a file**.
+This page is the spec: follow it and the deck lands in the game as a normal
+deck of cards.
 
 Two formats are supported: **JSON** and **line based** (TSV, `::` or `|`).
 
@@ -199,17 +200,34 @@ Capital of Italy :: Rome :: Milan :: Venice :: Naples
 
 ## The import preview
 
-The import screen reads the deck live and shows what it found:
+Importing a deck is one tap:
+
+1. **PASTE FROM CLIPBOARD** reads the clipboard, parses it and shows the
+   preview sheet.
+2. **OPEN FILE** does the same with a deck file (a JSON or a plain text one).
+3. The preview sheet shows what was found, and **IMPORT** puts the cards in
+   the game. **CANCEL** throws the deck away.
+
+The preview sheet shows:
 
 ```
-N questions · M multiple choice · K without wrong answers (will be self-graded)
+N questions · M multiple choice · K self-graded
 ```
 
+- The **name of the deck**: the name of the JSON deck, else the name of the
+  file without its extension, else "Imported deck". The sheet carries a
+  small **rename** field, so the player can change it.
 - When `K > 0` a **yellow warning chip** is shown: those cards will be
   self-graded, not multiple choice.
 - The **first 3 questions** are shown with their choices, so a bad paste is
   visible before the import.
 - The lines that could not be read are listed with their line number.
+
+An empty clipboard and a deck that cannot be read never break the screen:
+they show a friendly message instead.
+
+The **Paste manually** box is the last fallback: it is closed by default,
+and it is only there for the decks that cannot be copied.
 
 ## Instruction for an AI assistant
 
@@ -225,7 +243,8 @@ Give it this instruction (it is the short version of this page):
 > Never write "all of the above" or "none of the above".
 > No numbering, no header row, no commentary.
 
-Then paste the answer in the app, name the deck and press **IMPORT DECK**.
+Then copy the answer and press **PASTE FROM CLIPBOARD** in the app, check the
+preview and press **IMPORT**.
 
 Example of the expected output:
 
