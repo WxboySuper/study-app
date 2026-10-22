@@ -680,7 +680,6 @@ export default function HomeScreen() {
             </Pressable>
             <GameButton
               label="STUDY OPTIONS"
-              label="STATS"
               variant="secondary"
               size="md"
               onPress={() => {
@@ -688,6 +687,13 @@ export default function HomeScreen() {
                 router.push('/study-options');
               }}
               accessibilityLabel="Study options"
+            />
+            <GameButton
+              label="STATS"
+              variant="secondary"
+              size="md"
+              onPress={() => {
+                play('tap');
                 router.push('/stats');
               }}
               accessibilityLabel="Stats"
