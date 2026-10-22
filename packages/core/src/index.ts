@@ -9,10 +9,12 @@ export {
   DEFAULT_BONUS_LIMIT,
   DEFAULT_BONUS_STABILITY_THRESHOLD,
   buildQueue,
+  countScope,
   type QueueItem,
   type QueueItemKind,
   type QueueOptions,
   type QueueScope,
+  type ScopeCount,
   type StateLookup,
 } from './queue';
 
@@ -83,10 +85,13 @@ export {
 export {
   PACKS,
   buyPack,
+  canOpenPack,
   findPackDef,
   openPack,
   packRarityOdds,
   type BuyPackOptions,
+  type CanOpenPackOptions,
+  type PackAffordability,
   type PackDef,
   type PackPurchaseError,
   type PackPurchaseFailure,

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { State } from 'ts-fsrs';
 
-import { buildQueue, type QueueItem } from '../src/queue';
+import { buildQueue, countScope, type QueueItem } from '../src/queue';
 import type { CardState, StudyCard } from '../src/types';
 
 const NOW = new Date('2026-10-21T12:00:00.000Z').getTime();
@@ -234,5 +234,38 @@ describe('buildQueue', () => {
 
   it('returns an empty queue when there is nothing to study', () => {
     expect(buildQueue([], new Map(), NOW, { newCap: 10 })).toEqual([]);
+  });
+});
+
+describe('countScope', () => {
+  it('counts every card of the scope and the ones that are due', () => {
+    const cards = [card('c1', 's1', 't1'), card('c2', 's1', 't1'), card('c3', 's2', 't2')];
+    const states = new Map<string, CardState>([
+      ['c1', state('c1', NOW - 10)],
+      ['c2', state('c2', NOW + 10)],
+    ]);
+
+    expect(countScope(cards, states, NOW)).toEqual({ total: 3, due: 1 });
+    expect(countScope(cards, states, NOW, { kind: 'set', setId: 's1' })).toEqual({
+      total: 2,
+      due: 1,
+    });
+    expect(countScope(cards, states, NOW, { kind: 'topic', topicId: 't2' })).toEqual({
+      total: 1,
+      due: 0,
+    });
+  });
+
+  it('does not count a new card as due', () => {
+    const cards = [card('c1', 's1')];
+    const states = new Map<string, CardState>([
+      ['c1', state('c1', NOW - 10, { state: State.New })],
+    ]);
+
+    expect(countScope(cards, states, NOW)).toEqual({ total: 1, due: 0 });
+  });
+
+  it('counts a card without a state as new, not as due', () => {
+    expect(countScope([card('c1', 's1')], new Map(), NOW)).toEqual({ total: 1, due: 0 });
   });
 });

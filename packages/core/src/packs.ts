@@ -149,6 +149,103 @@ export interface BuyPackOptions {
 }
 
 /**
+ * The options of {@link canOpenPack}.
+ */
+export interface CanOpenPackOptions {
+  /** The player wants to use a pack ticket (the switch of the shop). */
+  useTicket?: boolean;
+  /**
+   * `true` (the default) to fall back on a pack ticket when the tokens are
+   * not enough: the ticket opens any available pack for free.
+   */
+  ticketFallback?: boolean;
+}
+
+/**
+ * The answer of {@link canOpenPack}: can the player open this pack right now?
+ */
+export type PackAffordability =
+  | {
+      ok: true;
+      /** How much the pack costs in tokens. */
+      priceTokens: number;
+      /** `true` when a pack ticket opens the pack for free. */
+      useTicket: boolean;
+    }
+  | {
+      ok: false;
+      /** The reason of the refusal. */
+      error: PackPurchaseError;
+      /** A message for the player. */
+      message: string;
+      /** How much the pack costs in tokens. */
+      priceTokens: number;
+    };
+
+/**
+ * Checks whether a pack can be opened with the wallet of the player.
+ *
+ * This is the check the shop does before it shows "Open another": the balance
+ * and the pack tickets are read again, so a pack that cannot be paid for is
+ * never started. It follows exactly the same rules as {@link buyPack}, so
+ * the answer and the purchase never disagree.
+ */
+export function canOpenPack(
+  wallet: WalletSnapshot,
+  pack: PackDef,
+  now: number,
+  options: CanOpenPackOptions = {},
+): PackAffordability {
+  const priceTokens = pack.priceTokens;
+
+  if (!isPackAvailable(pack, now)) {
+    return {
+      ok: false,
+      error: 'pack_unavailable',
+      message: 'This pack is not available right now.',
+      priceTokens,
+    };
+  }
+
+  if (pack.critters.length === 0) {
+    return {
+      ok: false,
+      error: 'empty_pack',
+      message: 'This pack is empty.',
+      priceTokens,
+    };
+  }
+
+  if (options.useTicket === true) {
+    if (wallet.packTickets < 1) {
+      return {
+        ok: false,
+        error: 'no_ticket',
+        message: 'You do not have a pack ticket.',
+        priceTokens,
+      };
+    }
+    return { ok: true, priceTokens, useTicket: true };
+  }
+
+  if (wallet.balance >= priceTokens) {
+    return { ok: true, priceTokens, useTicket: false };
+  }
+
+  // The tokens are not enough: a pack ticket opens the pack for free.
+  if (options.ticketFallback !== false && wallet.packTickets >= 1) {
+    return { ok: true, priceTokens, useTicket: true };
+  }
+
+  return {
+    ok: false,
+    error: 'insufficient_tokens',
+    message: 'You do not have enough tokens for this pack.',
+    priceTokens,
+  };
+}
+
+/**
  * Buys a pack and opens it.
  *
  * The pack has to be on sale at `now` and the player has to be able to pay:

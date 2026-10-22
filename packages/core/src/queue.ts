@@ -110,6 +110,53 @@ export function buildQueue(
 }
 
 /**
+ * The number of cards of a scope, and how many of them are due.
+ *
+ * The deck picker of the home screen shows these two numbers on every deck:
+ * how big the deck is and how much of it has to be reviewed today.
+ */
+export interface ScopeCount {
+  /** Every card of the scope. */
+  total: number;
+  /** The cards of the scope that are due (they have a state, it is not "new" and it is due). */
+  due: number;
+}
+
+/**
+ * Counts the cards of a scope and how many of them are due.
+ *
+ * A card that was never reviewed is *new*, not *due*: it is counted in the
+ * total, but it does not ask for a review yet.
+ */
+export function countScope(
+  cards: readonly StudyCard[],
+  states: StateLookup,
+  now: Date | number,
+  scope: QueueScope = { kind: 'all' },
+): ScopeCount {
+  const nowMs = now instanceof Date ? now.getTime() : now;
+  let total = 0;
+  let due = 0;
+
+  for (const card of cards) {
+    if (!matchesScope(card, scope)) {
+      continue;
+    }
+    total += 1;
+
+    const state = lookupState(states, card.id);
+    if (state === undefined || state.state === State.New) {
+      continue;
+    }
+    if (state.due <= nowMs) {
+      due += 1;
+    }
+  }
+
+  return { total, due };
+}
+
+/**
  * Orders new cards so that sets alternate: one card from set A, one from set
  * B, one from set A again, ... Sets are visited in a stable order and cards
  * inside a set are ordered by id, so the queue is deterministic.
