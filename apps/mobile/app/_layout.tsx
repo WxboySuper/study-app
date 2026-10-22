@@ -16,6 +16,7 @@ import { Platform, View } from 'react-native';
 import { SafeAreaInsetsContext, SafeAreaProvider, type EdgeInsets } from 'react-native-safe-area-context';
 
 import { SettingsProvider } from '@/settings';
+import { startProgressSync } from '@/sync/progressSync';
 import { startDeckSync } from '@/sync/syncDecks';
 import { colors } from '@/theme';
 import { startUpdateChecks } from '@/update/checkForUpdate';
@@ -60,7 +61,12 @@ export default function RootLayout() {
   // The decks of the server are pulled when the app starts, and again when it
   // comes back from the background (at most once every ten minutes).
   useEffect(() => {
-    return startDeckSync();
+    const stopDecks = startDeckSync();
+    const stopProgress = startProgressSync();
+    return () => {
+      stopDecks();
+      stopProgress();
+    };
   }, []);
 
   if (!loaded && error === null) {
