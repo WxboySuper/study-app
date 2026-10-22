@@ -689,6 +689,16 @@ export default function HomeScreen() {
               accessibilityLabel="Study options"
             />
             <GameButton
+              label="STATS"
+              variant="secondary"
+              size="md"
+              onPress={() => {
+                play('tap');
+                router.push('/stats');
+              }}
+              accessibilityLabel="Stats"
+            />
+            <GameButton
               label="QUIZZES"
               variant="secondary"
               size="md"

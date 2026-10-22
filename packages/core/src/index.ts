@@ -1,3 +1,4 @@
+export { computeStudyStats, type StudyStats } from './stats';
 export {
   DEFAULT_AUTO_RATING_THRESHOLDS,
   autoRating,
