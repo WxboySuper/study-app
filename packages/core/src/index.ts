@@ -463,3 +463,4 @@ export {
   isStaleSchedulingEvent,
   needsMasteryReset,
 } from './progressSync';
+export * from './reviewHistory';

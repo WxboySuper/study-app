@@ -559,7 +559,7 @@ export default function HomeScreen() {
             <Text style={styles.masteryHint}>
               {mastery
                 ? `Every question needs ${MASTERY_REQUIRED_CORRECT} right answers in a row. A miss starts it over.`
-                : 'Endless play: the cards that are due come first.'}
+                : 'Endless play: the questions that are due come first.'}
             </Text>
           </Animated.View>
 

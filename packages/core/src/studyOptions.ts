@@ -19,6 +19,10 @@ export interface StudyPreset {
   newPerDay: number;
   reviewsPerDay: number;
   leechThreshold: number;
+  /** Learning steps of new questions, in minutes. */
+  learnStepsMinutes: readonly number[];
+  /** Relearning steps of missed questions, in minutes. */
+  relearnStepsMinutes: readonly number[];
 }
 
 /** The built-in presets. The first one is the default. */
@@ -29,6 +33,8 @@ export const BUILT_IN_PRESETS: readonly StudyPreset[] = [
     newPerDay: 20,
     reviewsPerDay: 200,
     leechThreshold: DEFAULT_LEECH_THRESHOLD,
+    learnStepsMinutes: [1, 10],
+    relearnStepsMinutes: [1],
   },
   {
     id: "light",
@@ -36,6 +42,8 @@ export const BUILT_IN_PRESETS: readonly StudyPreset[] = [
     newPerDay: 5,
     reviewsPerDay: 50,
     leechThreshold: DEFAULT_LEECH_THRESHOLD,
+    learnStepsMinutes: [10, 1440],
+    relearnStepsMinutes: [10],
   },
   {
     id: "cram",
@@ -43,6 +51,8 @@ export const BUILT_IN_PRESETS: readonly StudyPreset[] = [
     newPerDay: 100,
     reviewsPerDay: 9999,
     leechThreshold: 12,
+    learnStepsMinutes: [1, 5],
+    relearnStepsMinutes: [1],
   },
 ];
 
@@ -323,5 +333,33 @@ export function limitSessionPool<
     doneForToday: questions.length > 0 && kept.length === 0,
     newLeft: sum(newLeft),
     reviewsLeft: sum(reviewsLeft),
+  };
+}
+
+/** Formats learning steps (minutes) like Anki: `1m 10m 1d`. */
+export function formatSteps(steps: readonly number[]): string {
+  return steps
+    .map((m) => {
+      if (m >= 1440 && m % 1440 === 0) return `${m / 1440}d`;
+      if (m >= 60) return `${Math.floor(m / 60)}h${m % 60 === 0 ? "" : `${m % 60}m`}`;
+      return `${m}m`;
+    })
+    .join(" ");
+}
+
+/**
+ * The learning steps of a session: those of the preset its decks share, or
+ * the default preset's when the decks use different presets.
+ */
+export function sessionStepsFor(
+  options: StudyOptions,
+  deckIds: readonly string[],
+  classOf: (deckId: string) => string | null | undefined,
+): { learnStepsMinutes: readonly number[]; relearnStepsMinutes: readonly number[] } {
+  const ids = new Set(deckIds.map((deckId) => presetForDeck(options, deckId, classOf(deckId)).id));
+  const preset = ids.size === 1 ? presetById([...ids][0]) : presetById(undefined);
+  return {
+    learnStepsMinutes: preset.learnStepsMinutes,
+    relearnStepsMinutes: preset.relearnStepsMinutes,
   };
 }

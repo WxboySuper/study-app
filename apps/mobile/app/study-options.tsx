@@ -1,5 +1,6 @@
 import {
   BUILT_IN_PRESETS,
+  formatSteps,
   isHidden,
   localDayKey,
   presetForDeck,
@@ -50,7 +51,7 @@ function nextPresetId(
 function presetSummary(id: string | undefined): string {
   const preset =
     BUILT_IN_PRESETS.find((p) => p.id === id) ?? BUILT_IN_PRESETS[0]!;
-  return `${preset.name} · ${preset.newPerDay} new / ${preset.reviewsPerDay} reviews a day`;
+  return `${preset.name} · ${preset.newPerDay} new / ${preset.reviewsPerDay} reviews a day · steps ${formatSteps(preset.learnStepsMinutes)}`;
 }
 
 function Chip({
@@ -192,7 +193,7 @@ export default function StudyOptionsRoute() {
                 testID="options-search"
                 value={query}
                 onChangeText={setQuery}
-                placeholder="Search cards"
+                placeholder="Search questions"
                 placeholderTextColor={colors.textMuted}
                 style={styles.search}
               />
@@ -245,10 +246,10 @@ export default function StudyOptionsRoute() {
                 );
               })}
               {rows.length === MAX_ROWS ? (
-                <Text style={styles.muted}>Search to see more cards.</Text>
+                <Text style={styles.muted}>Search to see more questions.</Text>
               ) : null}
               <Text style={styles.muted}>
-                Buried cards come back on {tomorrow}.
+                Buried questions come back on {tomorrow}.
               </Text>
             </>
           ) : null}

@@ -25,6 +25,12 @@ import {
   serialized,
   type SyncIdentity,
 } from "./outbox";
+import {
+  deleteDeviceToken,
+  readDeviceToken,
+  saveDeviceToken,
+} from "./deviceToken";
+import { recordHistory } from "@/study/reviewHistory";
 
 /**
  * The drain of the progress outbox (docs/design/sync.md §4).
@@ -101,7 +107,30 @@ async function api(
 export async function readIdentity(
   store: LocalStore,
 ): Promise<SyncIdentity | null> {
-  return parseIdentity(await store.readKv(IDENTITY_KEY));
+  const identity = parseIdentity(await store.readKv(IDENTITY_KEY));
+  if (identity === null) return null;
+  if (identity.deviceToken !== "") {
+    // A token from before 0.1.16 (or the web): move it to the keystore.
+    if (await saveDeviceToken(identity.deviceToken)) {
+      await serialized(() =>
+        store.writeKv(
+          IDENTITY_KEY,
+          JSON.stringify({ ...identity, deviceToken: "" }),
+        ),
+      );
+    }
+    return identity;
+  }
+  const token = await readDeviceToken();
+  return token === null || token === ""
+    ? null
+    : { ...identity, deviceToken: token };
+}
+
+/** The identity as saved: the token lives in the keystore when there is one. */
+async function identityRecord(identity: SyncIdentity): Promise<string> {
+  const secure = await saveDeviceToken(identity.deviceToken);
+  return JSON.stringify(secure ? { ...identity, deviceToken: "" } : identity);
 }
 
 /** The phone's whole progress as events (first upload, or a repair). */
@@ -168,7 +197,8 @@ async function ensurePhoneIdentity(
     deviceToken: body.device_token,
     kind: "phone",
   };
-  await serialized(() => store.writeKv(IDENTITY_KEY, JSON.stringify(identity)));
+  const saved = await identityRecord(identity);
+  await serialized(() => store.writeKv(IDENTITY_KEY, saved));
   await recordBaseline(store);
   return identity;
 }
@@ -191,6 +221,7 @@ function parseParked(raw: string | null): CardState[] {
 async function forgetIdentity(store: LocalStore): Promise<void> {
   await serialized(async () => {
     await store.writeKv(IDENTITY_KEY, "");
+    await deleteDeviceToken();
     await store.writeKv(CURSOR_KEY, "0");
     await store.writeKv(ADOPTED_KEY, "");
   });
@@ -249,6 +280,7 @@ async function pull(
         adoptBaseline: adopt,
       });
       await store.writeKv(PARKED_KEY, JSON.stringify(parkedCardStates));
+      await recordHistory(store, changes.reviewLog);
       if (adopt) await store.writeKv(ADOPTED_KEY, "1");
       await store.writeKv(CURSOR_KEY, String(next));
     });
@@ -395,7 +427,7 @@ export async function claimPairing(
     await serialized(async () => {
       await store.writeKv(CURSOR_KEY, "0");
       await store.writeKv(ADOPTED_KEY, "");
-      await store.writeKv(IDENTITY_KEY, JSON.stringify(identity));
+      await store.writeKv(IDENTITY_KEY, await identityRecord(identity));
     });
     setStatus({ registered: true, lastError: null });
     await syncProgress({ store, fetchImpl });
