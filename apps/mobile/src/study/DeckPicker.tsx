@@ -52,6 +52,8 @@ export interface DeckPickerProps {
   onImport: () => void;
   /** Called when the player wants to delete a deck. */
   onDelete: (deck: DeckCard) => void;
+  /** Called when the player opens the question list of a deck (`due` from the badge). */
+  onOpenDeck: (deck: DeckCard, filter: 'all' | 'due') => void;
 }
 
 /** The critter that waves at the player when there is no deck yet. */
@@ -69,6 +71,7 @@ export function DeckPicker({
   onMoveDeck,
   onImport,
   onDelete,
+  onOpenDeck,
 }: DeckPickerProps) {
   return (
     <View style={styles.root} testID="deck-picker">
@@ -129,6 +132,9 @@ export function DeckPicker({
               }}
               onDelete={() => {
                 onDelete(deck);
+              }}
+              onOpen={(filter) => {
+                onOpenDeck(deck, filter);
               }}
             />
           ))}
@@ -272,12 +278,14 @@ function DeckTile({
   onPress,
   onMove,
   onDelete,
+  onOpen,
 }: {
   deck: DeckCard;
   selected: boolean;
   onPress: () => void;
   onMove: () => void;
   onDelete: () => void;
+  onOpen: (filter: 'all' | 'due') => void;
 }) {
   const press = useSharedValue(0);
   const selectedValue = useSharedValue(selected ? 1 : 0);
@@ -351,13 +359,37 @@ function DeckTile({
           </Text>
 
           <View style={styles.deckMeta}>
-            <Text style={styles.deckQuestions}>
-              {deck.questions} question{deck.questions === 1 ? '' : 's'}
-            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`See the ${deck.questions} questions of ${deck.title}`}
+              testID={`deck-open-${deck.id}`}
+              hitSlop={6}
+              onPress={() => {
+                hapticImpact('light');
+                play('tap');
+                onOpen('all');
+              }}
+              style={({ pressed }) => [styles.listChip, pressed && styles.trashPressed]}
+            >
+              <Text style={styles.deckQuestions}>
+                {deck.questions} question{deck.questions === 1 ? '' : 's'} ›
+              </Text>
+            </Pressable>
             {deck.due > 0 ? (
-              <View style={styles.dueBadge}>
-                <Text style={styles.dueText}>{deck.due} DUE</Text>
-              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`See the ${deck.due} due questions of ${deck.title}`}
+                testID={`deck-due-${deck.id}`}
+                hitSlop={6}
+                onPress={() => {
+                  hapticImpact('light');
+                  play('tap');
+                  onOpen('due');
+                }}
+                style={({ pressed }) => [styles.dueBadge, pressed && styles.trashPressed]}
+              >
+                <Text style={styles.dueText}>{deck.due} DUE ›</Text>
+              </Pressable>
             ) : null}
           </View>
 
@@ -553,6 +585,12 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fonts.bodySemi,
     fontSize: 11,
+  },
+  listChip: {
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    backgroundColor: 'rgba(0,0,0,0.28)',
   },
   dueBadge: {
     borderRadius: radius.chip,
