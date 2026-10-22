@@ -140,7 +140,7 @@ const SHOTS = [
   { name: 'fishing', path: '/fishing', wait: 600 },
   { name: 'fishing-question', path: '/fishing?demo=question', waitFor: 'STUDY NOTE', wait: 900 },
   { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'CONTINUE', wait: 1200 },
-  { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'PLAY AGAIN', wait: 1400 },
+  { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'PLAY AGAIN', wait: 1400, timeout: 90_000 },
 ];
 
 async function main() {
@@ -188,7 +188,7 @@ async function main() {
       await page.waitForFunction(
         (needle) => (document.body.innerText ?? '').includes(needle),
         shot.waitFor,
-        { timeout: 30_000 },
+        { timeout: shot.timeout ?? 30_000 },
       );
     }
 

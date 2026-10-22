@@ -241,6 +241,14 @@ let state: DemoState | null = null;
 function demo(): DemoState {
   if (state === null) {
     state = createDemoState();
+
+    // The demo of the web build can also show a player who cannot afford a
+    // pack (`?poor=1`): the shop then refuses to open another one.
+    const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
+    if (search.includes('poor=1')) {
+      state.wallet.balance = 5;
+      state.wallet.packTickets = 0;
+    }
   }
   return state;
 }

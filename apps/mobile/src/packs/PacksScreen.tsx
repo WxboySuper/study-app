@@ -92,6 +92,23 @@ export function PacksScreen() {
     setOpening({ pack, critter, duplicate: false, runId: 1 });
   }, [params.demo]);
 
+  /**
+   * Whether the player can pay for another pack.
+   *
+   * The check follows the wallet, so the button of the reveal is dimmed as
+   * soon as the tokens run out.
+   */
+  useEffect(() => {
+    if (opening === null || wallet === null) {
+      return;
+    }
+    setCanOpenAnother(
+      canOpenPack(wallet, opening.pack, Date.now(), {
+        useTicket: useTicket && wallet.packTickets > 0,
+      }).ok,
+    );
+  }, [opening, useTicket, wallet]);
+
   const onOpen = useCallback(
     async (pack: PackDef) => {
       if (busy) {
