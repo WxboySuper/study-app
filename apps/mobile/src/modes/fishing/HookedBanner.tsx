@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -78,11 +78,32 @@ export function HookedBanner({ visible, reduceMotion, onReel }: HookedBannerProp
     transform: [{ scale: 0.6 + burst.value * 0.8 }],
   }));
 
+  // One tap reels once: a double tap never skips the question.
+  const reeled = useRef(false);
+  useEffect(() => {
+    reeled.current = false;
+  }, [visible]);
+  const reelOnce = useCallback(() => {
+    if (reeled.current) {
+      return;
+    }
+    reeled.current = true;
+    onReel();
+  }, [onReel]);
+
   if (!visible) {
     return null;
   }
 
   return (
+    <View style={styles.screen} pointerEvents="box-none">
+    {/* A tap anywhere on the screen reels the catch in. */}
+    <Pressable
+      testID="fishing-hooked-anywhere"
+      accessible={false}
+      onPress={reelOnce}
+      style={StyleSheet.absoluteFill}
+    />
     <Animated.View style={[styles.container, bannerStyle]} pointerEvents="box-none">
       <Animated.View style={[styles.burst, burstStyle]} pointerEvents="none">
         <Glow color={colors.gold} size={420} opacity={0.9} />
@@ -92,7 +113,7 @@ export function HookedBanner({ visible, reduceMotion, onReel }: HookedBannerProp
         accessibilityRole="button"
         accessibilityLabel="Reel in the catch"
         accessibilityHint="Tap to start the question"
-        onPress={onReel}
+        onPress={reelOnce}
         style={styles.tapTarget}
       >
         <View style={styles.banner}>
@@ -113,10 +134,18 @@ export function HookedBanner({ visible, reduceMotion, onReel }: HookedBannerProp
         duration={900}
       />
     </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screen: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   container: {
     position: 'absolute',
     top: '20%',

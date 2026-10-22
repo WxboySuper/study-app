@@ -69,6 +69,7 @@ export {
   answerSessionQuestion,
   createSessionQueue,
   masteredCount,
+  masteryCounts,
   masteryProgress,
   nextSessionQuestion,
   sessionComplete,
