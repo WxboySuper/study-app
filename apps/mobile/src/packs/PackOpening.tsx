@@ -106,6 +106,8 @@ export function PackOpening({
    */
   const legendaryRef = useRef(legendary);
   legendaryRef.current = legendary;
+  const rarityRef = useRef(rarity);
+  rarityRef.current = rarity;
 
   // The intensity of the show depends on the rarity.
   const show = useMemo(
@@ -170,7 +172,14 @@ export function PackOpening({
       setPhase('reveal');
       setBurst((current) => current + 1);
       hapticSuccess();
-      play(legendaryRef.current ? 'legendary' : 'reveal');
+      const opened = rarityRef.current;
+      play(
+        opened === 'legendary'
+          ? 'legendary'
+          : opened === 'rare' || opened === 'epic'
+            ? 'rare'
+            : 'reveal',
+      );
     }, FLY_MS + SHAKE_MS + FLASH_MS);
 
     return () => {
