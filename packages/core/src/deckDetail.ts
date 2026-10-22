@@ -1,5 +1,6 @@
 import { State } from 'ts-fsrs';
 
+import { plainText } from './math';
 import { isLeech, isMatureMastered } from './mastery';
 import { MASTERY_REQUIRED_CORRECT } from './sessionQueue';
 import type { CardState, StudyCard } from './types';
@@ -34,7 +35,7 @@ export interface QuestionRow {
 }
 
 /** The filters of the deck detail screen. */
-export type QuestionFilter = 'all' | 'due' | 'queued' | 'new' | 'learning' | 'scheduled' | 'mastered';
+export type QuestionFilter = 'all' | 'due' | 'queued' | 'new' | 'learning' | 'scheduled' | 'mastered' | 'leech';
 
 export const QUESTION_FILTERS: readonly QuestionFilter[] = [
   'all',
@@ -44,6 +45,7 @@ export const QUESTION_FILTERS: readonly QuestionFilter[] = [
   'learning',
   'scheduled',
   'mastered',
+  'leech',
 ];
 
 /**
@@ -106,6 +108,8 @@ export function matchesQuestionFilter(row: QuestionRow, filter: QuestionFilter):
       return row.queued;
     case 'mastered':
       return row.mastered;
+    case 'leech':
+      return row.leech;
     default:
       return row.status === filter;
   }
@@ -146,6 +150,59 @@ export function formatDueIn(dueAt: number, now: number): string {
     return `${Math.round(ms / (7 * day))}w`;
   }
   return `${Math.round(ms / (30 * day))}mo`;
+}
+
+/**
+ * `true` when a question matches the search box: every word of the query
+ * appears (case-insensitive) in its prompt or answer, as typed or as the
+ * plain text of its math. An empty query matches everything.
+ */
+export function matchesQuestionSearch(row: QuestionRow, query: string): boolean {
+  const words = query.toLowerCase().split(/\s+/).filter((word) => word.length > 0);
+  if (words.length === 0) {
+    return true;
+  }
+  const { front, back } = row.card;
+  const haystack = [front, back, plainText(front), plainText(back)].join('\n').toLowerCase();
+  return words.every((word) => haystack.includes(word));
+}
+
+/** The orders of the deck detail list. */
+export type QuestionSort = 'deck' | 'due' | 'weakest';
+
+export const QUESTION_SORTS: readonly QuestionSort[] = ['deck', 'due', 'weakest'];
+
+/**
+ * Sorts the rows (a copy; deck order stays the tie-break).
+ *
+ * - `deck`: the order of the deck.
+ * - `due`: soonest due first; new questions (no due time) last.
+ * - `weakest`: leeches first, then the fewest mastery dots, unmastered first.
+ */
+export function sortQuestionRows(rows: readonly QuestionRow[], sort: QuestionSort): QuestionRow[] {
+  const indexed = rows.map((row, index) => ({ row, index }));
+  const key = (row: QuestionRow): number[] => {
+    switch (sort) {
+      case 'due':
+        return [row.dueAt ?? Number.POSITIVE_INFINITY];
+      case 'weakest':
+        return [row.leech ? 0 : 1, row.mastered ? 1 : 0, row.mastery];
+      default:
+        return [];
+    }
+  };
+  indexed.sort((a, b) => {
+    const ka = key(a.row);
+    const kb = key(b.row);
+    for (let i = 0; i < ka.length; i += 1) {
+      const diff = (ka[i] as number) - (kb[i] as number);
+      if (diff !== 0) {
+        return diff;
+      }
+    }
+    return a.index - b.index;
+  });
+  return indexed.map((entry) => entry.row);
 }
 
 /** Parses a `?filter=` route param (falls back to `all`). */
