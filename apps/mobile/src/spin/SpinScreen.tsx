@@ -118,7 +118,7 @@ export function SpinScreen() {
       const won = result.reward;
       const wonWallet = result.wallet;
       const index = Math.max(0, spinSegmentIndex(won));
-      const target = spinTargetRotation(index, 5, (Math.random() - 0.5) * 1.2);
+      const target = spinTargetRotation(index, 5, Math.random() * 2 - 1);
 
       const finish = () => {
         setWallet(wonWallet);
@@ -145,7 +145,8 @@ export function SpinScreen() {
       rotation.value = rotation.value % 360;
       rotation.value = withTiming(
         target,
-        { duration: SPIN_DURATION_MS, easing: Easing.bezier(0.12, 0.8, 0.18, 1) },
+        // A long, slow tail: near an edge the last tick creeps up to the line.
+        { duration: SPIN_DURATION_MS + 400, easing: Easing.bezier(0.1, 0.75, 0.12, 1) },
         (finished) => {
           if (finished) {
             runOnJS(finish)();
