@@ -2,11 +2,13 @@ import * as SQLite from 'expo-sqlite';
 
 import {
   applyTokenAdminAction,
+  applyWalletChanges,
   createInitialState,
   localDayKey,
   type CardState,
   type ImportCard,
   type LocalSyncState,
+  type RemoteChanges,
   type State,
   type StudyCard,
   type SyncPlan,
@@ -335,6 +337,7 @@ async function openRawLocalStore(): Promise<LocalStore> {
   const db = await openLocalDatabase();
 
   return {
+    applyRemoteChanges: (changes, options) => applyLocalRemoteChanges(db, changes, options),
     listCards: () => listLocalCards(db),
     listCardStates: () => listLocalCardStates(db),
     listSets: () => listLocalSets(db),
@@ -944,6 +947,55 @@ export async function upsertLocalCard(
     now,
     now,
   );
+}
+
+/** Applies a pull (docs/design/sync.md §5) without recording outbox events. */
+async function applyLocalRemoteChanges(
+  db: SQLite.SQLiteDatabase,
+  changes: RemoteChanges,
+  options: { adoptBaseline: boolean },
+): Promise<{ parkedCardStates: CardState[] }> {
+  const parkedCardStates: CardState[] = [];
+  await ensurePacksSchema(db);
+  await db.withTransactionAsync(async () => {
+    const rows = await db.getAllAsync<{ id: string }>('SELECT id FROM local_cards');
+    const known = new Set(rows.map((row) => row.id));
+    for (const cardState of changes.cardStates) {
+      if (known.has(cardState.cardId)) await upsertLocalCardState(db, cardState);
+      else parkedCardStates.push(cardState);
+    }
+    const wallet = await readWallet(db, localDayKey(new Date()));
+    const collection = await readCollection(db);
+    const next = applyWalletChanges({ wallet, collection }, changes, options.adoptBaseline);
+    await writeWallet(db, { ...wallet, balance: next.balance, packTickets: next.packTickets });
+    for (const id of collection.keys()) {
+      if (!next.collection.has(id)) {
+        await db.runAsync('DELETE FROM collection WHERE critter_id = ?', id);
+      }
+    }
+    for (const [id, count] of next.collection) {
+      if (collection.get(id) === count) continue;
+      await db.runAsync(
+        `INSERT INTO collection (critter_id, count, first_caught_at) VALUES (?, ?, ?)
+         ON CONFLICT(critter_id) DO UPDATE SET count = excluded.count`,
+        id,
+        count,
+        Date.now(),
+      );
+    }
+    for (const [key, value] of Object.entries(changes.kv)) {
+      await writeLocalKv(db, key, value);
+    }
+    if (changes.lastSpin !== null) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO daily_spins (local_date, reward, spun_at) VALUES (?, ?, ?)',
+        changes.lastSpin.localDate,
+        changes.lastSpin.reward,
+        Date.now(),
+      );
+    }
+  });
+  return { parkedCardStates };
 }
 
 /** Inserts or updates the scheduling state of a card. */

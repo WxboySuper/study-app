@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   appendOutbox,
+  applyWalletChanges,
+  mergeCardStates,
   dropFromOutbox,
   foldRemoteEvents,
   makeEvent,
@@ -299,5 +301,70 @@ describe("foldRemoteEvents", () => {
     expect(changes.kv["fishing.masteryCounts.v1"]).toBe("B");
     expect(changes.lastSpin?.reward).toBe(7);
     expect(changes.baseline?.wallet.balance).toBe(9);
+  });
+});
+
+describe("applyWalletChanges", () => {
+  const current = {
+    wallet: { balance: 5, packTickets: 1 },
+    collection: new Map([["a", 1]]),
+  };
+  const baseline = {
+    wallet: { balance: 100, packTickets: 3 },
+    collection: { b: 2 },
+    lastSpin: null,
+  };
+  it("adds deltas to the current wallet and drops empty critters", () => {
+    const out = applyWalletChanges(
+      current,
+      {
+        wallet: { balance: -10, packTickets: 2, critters: { a: -1, c: 1 } },
+        baseline,
+      },
+      false,
+    );
+    expect(out.balance).toBe(0);
+    expect(out.packTickets).toBe(3);
+    expect([...out.collection]).toEqual([["c", 1]]);
+  });
+  it("adopts the baseline on the first pull", () => {
+    const out = applyWalletChanges(
+      current,
+      { wallet: { balance: 1, packTickets: 0, critters: {} }, baseline },
+      true,
+    );
+    expect(out.balance).toBe(101);
+    expect(out.collection.get("b")).toBe(2);
+    expect(out.collection.has("a")).toBe(false);
+  });
+  it("tolerates a malformed baseline and no baseline", () => {
+    const bad = applyWalletChanges(
+      current,
+      {
+        wallet: { balance: 0, packTickets: 0, critters: {} },
+        baseline: { wallet: {}, collection: { x: "?" } } as never,
+      },
+      true,
+    );
+    expect(bad.balance).toBe(0);
+    expect(bad.collection.size).toBe(0);
+    const none = applyWalletChanges(
+      current,
+      { wallet: { balance: 0, packTickets: 0, critters: {} }, baseline: null },
+      true,
+    );
+    expect(none.balance).toBe(5);
+  });
+});
+
+describe("mergeCardStates", () => {
+  it("keeps the newest state per card", () => {
+    const merged = mergeCardStates(
+      [state("c1", 10), state("c2", null)],
+      [state("c1", 5), state("c2", null, 2), state("c3", 1)],
+    );
+    expect(merged.find((s) => s.cardId === "c1")?.lastReview).toBe(10);
+    expect(merged.find((s) => s.cardId === "c2")?.reps).toBe(2);
+    expect(merged).toHaveLength(3);
   });
 });

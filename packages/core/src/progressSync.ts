@@ -285,3 +285,64 @@ export function foldRemoteEvents(
     reviews,
   };
 }
+
+/** The wallet and collection after applying pulled changes. */
+export function applyWalletChanges(
+  current: {
+    wallet: Pick<WalletSnapshot, "balance" | "packTickets">;
+    collection: ReadonlyMap<string, number>;
+  },
+  changes: Pick<RemoteChanges, "wallet" | "baseline">,
+  adoptBaseline: boolean,
+): {
+  balance: number;
+  packTickets: number;
+  collection: Map<string, number>;
+} {
+  const base =
+    adoptBaseline && changes.baseline !== null
+      ? {
+          balance: Number(changes.baseline.wallet?.balance) || 0,
+          packTickets: Number(changes.baseline.wallet?.packTickets) || 0,
+          collection: new Map(
+            Object.entries(changes.baseline.collection ?? {}).map(
+              ([id, n]) => [id, Number(n) || 0] as const,
+            ),
+          ),
+        }
+      : {
+          balance: current.wallet.balance,
+          packTickets: current.wallet.packTickets,
+          collection: new Map(current.collection),
+        };
+  const collection = base.collection;
+  for (const [id, n] of Object.entries(changes.wallet.critters)) {
+    collection.set(id, (collection.get(id) ?? 0) + n);
+  }
+  for (const [id, n] of [...collection]) {
+    if (n <= 0) collection.delete(id);
+  }
+  return {
+    balance: Math.max(0, base.balance + changes.wallet.balance),
+    packTickets: Math.max(0, base.packTickets + changes.wallet.packTickets),
+    collection,
+  };
+}
+
+/** Merges parked card states with new ones (newest `lastReview` wins). */
+export function mergeCardStates(
+  a: readonly CardState[],
+  b: readonly CardState[],
+): CardState[] {
+  const out = new Map<string, CardState>();
+  for (const state of [...a, ...b]) {
+    const current = out.get(state.cardId);
+    if (
+      current === undefined ||
+      (state.lastReview ?? -1) >= (current.lastReview ?? -1)
+    ) {
+      out.set(state.cardId, state);
+    }
+  }
+  return [...out.values()];
+}
