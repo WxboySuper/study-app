@@ -3,7 +3,7 @@ import { Hono, type Context } from 'hono';
 
 import { hasMuseToken } from './auth';
 import { deleteDeck, readDeck, readDecksSince, upsertDeck } from './decks';
-import { fetchLatestRelease, readCachedRelease, writeCachedRelease } from './release';
+import { latestRelease, RELEASE_ASSET_URL, RELEASE_USER_AGENT } from './release';
 import type { Bindings } from './types';
 
 /**
@@ -127,25 +127,73 @@ app.get('/api/sync', async (c) => {
  * GitHub is behind a rate limit, and every device asks the same question.
  */
 app.get('/api/update', async (c) => {
-  const cached = await readCachedRelease();
-  if (cached !== null) {
-    return c.json(cached);
-  }
-
-  let release = null;
-  try {
-    release = await fetchLatestRelease(c.env?.GH_TOKEN);
-  } catch {
-    // No network, no answer: the endpoint says that it does not know.
-    release = null;
-  }
+  const release = await latestRelease(c.env?.GH_TOKEN);
 
   if (release === null) {
     return c.json({ error: 'update_unavailable' }, 502);
   }
 
-  await writeCachedRelease(release);
-  return c.json(release);
+  // The app downloads the APK through the Worker, which streams the GitHub
+  // asset with its token: the device never needs a GitHub account.
+  const origin = new URL(c.req.url).origin;
+  return c.json({
+    ...release,
+    apkUrl: release.apkAssetId === null ? null : `${origin}/api/update/apk`,
+  });
+});
+
+/**
+ * Streams the APK of the latest release.
+ *
+ * The Worker asks the GitHub API for the asset with its token and the
+ * `application/octet-stream` accept header, then pipes the body to the
+ * device. The download is named after the version of the release and is
+ * served with the Android package MIME.
+ */
+app.get('/api/update/apk', async (c) => {
+  const release = await latestRelease(c.env?.GH_TOKEN);
+
+  if (release === null || release.apkAssetId === null) {
+    return c.json({ error: 'apk_unavailable' }, 502);
+  }
+
+  const headers: Record<string, string> = {
+    Accept: 'application/octet-stream',
+    'User-Agent': RELEASE_USER_AGENT,
+  };
+
+  const token = c.env?.GH_TOKEN;
+  if (typeof token === 'string' && token !== '') {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  let asset: Response;
+  try {
+    asset = await fetch(`${RELEASE_ASSET_URL}/${release.apkAssetId}`, {
+      headers,
+      redirect: 'follow',
+    });
+  } catch {
+    return c.json({ error: 'apk_unavailable' }, 502);
+  }
+
+  if (!asset.ok || asset.body === null) {
+    return c.json({ error: 'apk_unavailable' }, 502);
+  }
+
+  const version = release.version.replace(/[^0-9A-Za-z._-]/g, '');
+  const download: Record<string, string> = {
+    'Content-Type': 'application/vnd.android.package-archive',
+    'Content-Disposition': `attachment; filename="cramcritters-${version}.apk"`,
+    'Cache-Control': 'public, max-age=600',
+  };
+
+  const length = asset.headers.get('content-length');
+  if (length !== null) {
+    download['Content-Length'] = length;
+  }
+
+  return new Response(asset.body, { status: 200, headers: download });
 });
 
 /**

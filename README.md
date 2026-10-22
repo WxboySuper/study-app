@@ -10,6 +10,13 @@ Anki-style spaced repetition (FSRS).
 - **DB:** [D1](https://developers.cloudflare.com/d1/) (SQLite) for everything.
 - **SRS:** [ts-fsrs](https://github.com/open-spaced-repetition/ts-fsrs) `5.4.2`
   (pinned) in `packages/core`, shared by the app and the API.
+- **Session scheduler:** the in-session queue is a TypeScript port of the
+  *design* of [Anki](https://github.com/ankitects/anki)'s scheduler (new,
+  learning and review queues, learning steps, sibling burying). It lives in
+  [`packages/core/src/anki/`](packages/core/src/anki/) under the AGPL-3.0
+  license, with the attribution in
+  [`NOTICE`](packages/core/src/anki/NOTICE). The real-day intervals still come
+  from the MIT-licensed `ts-fsrs`.
 
 The full product plan lives in [docs/SPEC.md](docs/SPEC.md). The fishing mode
 is described in [docs/design/fishing.md](docs/design/fishing.md).

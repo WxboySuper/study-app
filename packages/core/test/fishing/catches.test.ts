@@ -58,10 +58,10 @@ describe('the catch tiers (§6)', () => {
       name: 'Trash',
       color: '#8d6e63',
       minLbs: 1,
-      maxLbs: 10,
+      maxLbs: 3,
     });
     expect(tierDefinition('legend').color).toBe('#8e24aa');
-    expect(tierDefinition('legend').maxLbs).toBe(2_500_000);
+    expect(tierDefinition('legend').maxLbs).toBe(40);
   });
 
   it('gives the heavy tier a haul of its own', () => {
@@ -73,7 +73,7 @@ describe('the catch tiers (§6)', () => {
     expect(heavy.maxLbs).toBeGreaterThan(legend.maxLbs);
   });
 
-  it('grows the weight ladder about 10x per tier', () => {
+  it('grows the weight ladder tier by tier', () => {
     for (let index = 1; index < CATCH_TIERS.length; index += 1) {
       const previous = CATCH_TIERS[index - 1]!;
       const current = CATCH_TIERS[index]!;
@@ -107,7 +107,7 @@ describe('the catch list (§7)', () => {
     ]);
     for (const entry of junk) {
       expect(entry.minLbs).toBe(1);
-      expect(entry.maxLbs).toBe(10);
+      expect(entry.maxLbs).toBe(3);
       expect(entry.joke).toBeDefined();
       expect(entry.contentType).toBe('junk');
     }
@@ -200,10 +200,10 @@ describe('the catch list (§7)', () => {
 
   it('keeps the tier weights of the design doc', () => {
     const easy = catchesOfTier('easy', { now: INSIDE_THE_WINDOW })[0]!;
-    expect([easy.minLbs, easy.maxLbs]).toEqual([10, 100]);
+    expect([easy.minLbs, easy.maxLbs]).toEqual([3, 7]);
 
     const legend = catchesOfTier('legend', { now: INSIDE_THE_WINDOW })[0]!;
-    expect([legend.minLbs, legend.maxLbs]).toEqual([500_000, 2_500_000]);
+    expect([legend.minLbs, legend.maxLbs]).toEqual([32, 40]);
   });
 
   it('keeps every catch inside the weight range of its tier', () => {

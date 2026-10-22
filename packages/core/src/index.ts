@@ -84,6 +84,33 @@ export {
 } from './sessionQueue';
 
 export {
+  DEFAULT_ANKI_SETTINGS,
+  Intersperser,
+  LearningSteps,
+  Rating as AnkiRating,
+  ankiCardFromState,
+  answerAnkiCard,
+  buildAnkiQueues,
+  burySiblings,
+  fsrsIntervalDays,
+  learningGapQuestions,
+  pickNextAnki,
+  removeAnkiCard,
+  requeueAnkiCard,
+  reviewGapQuestions,
+  siblingIds,
+  type AnkiAnswerContext,
+  type AnkiAnswerResult,
+  type AnkiCard,
+  type AnkiPick,
+  type AnkiPickGroup,
+  type AnkiQueue,
+  type AnkiQueues,
+  type AnkiRecord,
+  type AnkiSettings,
+} from './anki';
+
+export {
   hasMath,
   mathSources,
   plainText,

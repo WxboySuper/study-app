@@ -12,6 +12,7 @@ const FishingDemos = [
   'question',
   'reveal',
   'payout',
+  'layout',
   'seq-highlight',
   'seq-dip',
   'seq-tug',

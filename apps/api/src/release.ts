@@ -14,7 +14,8 @@
  *   "url": "https://github.com/WxboySuper/study-app/releases/tag/v0.1.3",
  *   "name": "CramCritters 0.1.3",
  *   "publishedAt": "2026-10-20T18:04:11Z",
- *   "apkUrl": "https://github.com/WxboySuper/study-app/releases/download/v0.1.3/app.apk"
+ *   "apkUrl": "https://api.cramcritters.app/api/update/apk",
+ *   "apkAssetId": 123456
  * }
  * ```
  */
@@ -22,6 +23,10 @@
 /** The feed of the releases of the game on GitHub. */
 export const RELEASE_FEED_URL =
   'https://api.github.com/repos/WxboySuper/study-app/releases/latest';
+
+/** The base of the assets of a release on GitHub. */
+export const RELEASE_ASSET_URL =
+  'https://api.github.com/repos/WxboySuper/study-app/releases/assets';
 
 /** How long the Worker keeps the answer of the feed. */
 export const RELEASE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -44,6 +49,8 @@ export interface ReleasePayload {
   publishedAt: string | null;
   /** The APK of the release (`null` when the release has no APK). */
   apkUrl: string | null;
+  /** The GitHub id of the APK asset (`null` when the release has no APK). */
+  apkAssetId: number | null;
 }
 
 /**
@@ -112,19 +119,22 @@ export function parseReleasePayload(payload: unknown): ReleasePayload | null {
       ? release.published_at
       : null;
 
+  const apk = readApkAsset(release.assets);
+
   return {
     version,
     url,
     name,
     publishedAt,
-    apkUrl: readApkUrl(release.assets),
+    apkUrl: apk.url,
+    apkAssetId: apk.id,
   };
 }
 
-/** Reads the download url of the first APK of the files of a release. */
-function readApkUrl(assets: unknown): string | null {
+/** The download url and the asset id of the first APK of a release. */
+function readApkAsset(assets: unknown): { url: string | null; id: number | null } {
   if (!Array.isArray(assets)) {
-    return null;
+    return { url: null, id: null };
   }
 
   for (const asset of assets) {
@@ -132,16 +142,46 @@ function readApkUrl(assets: unknown): string | null {
       continue;
     }
 
-    const file = asset as { name?: unknown; browser_download_url?: unknown };
+    const file = asset as { id?: unknown; name?: unknown; browser_download_url?: unknown };
     const name = typeof file.name === 'string' ? file.name : '';
     const url = typeof file.browser_download_url === 'string' ? file.browser_download_url : '';
+    const id = typeof file.id === 'number' && Number.isFinite(file.id) ? file.id : null;
 
     if (name.toLowerCase().endsWith('.apk') && url !== '') {
-      return url;
+      return { url, id };
     }
   }
 
-  return null;
+  return { url: null, id: null };
+}
+
+/**
+ * The latest release of the game, from the Worker cache or from GitHub.
+ *
+ * Both the JSON feed and the APK download read the same cached release, so
+ * the APK endpoint knows which asset to stream.
+ */
+export async function latestRelease(
+  token?: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ReleasePayload | null> {
+  const cached = await readCachedRelease();
+  if (cached !== null) {
+    return cached;
+  }
+
+  let release: ReleasePayload | null = null;
+  try {
+    release = await fetchLatestRelease(token, fetchImpl);
+  } catch {
+    release = null;
+  }
+
+  if (release !== null) {
+    await writeCachedRelease(release);
+  }
+
+  return release;
 }
 
 /** What the Worker keeps in its cache. */

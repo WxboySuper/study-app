@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { DEFAULT_ANKI_SETTINGS } from '../src/anki';
 import { createSeededRng } from '../src/fishing/roll';
 import {
   MASTERY_MIN_GAP,
@@ -54,19 +55,43 @@ function state(
   };
 }
 
-/** Asks the questions of a session until the queue is empty. */
-function drain(queue: SessionQueueState, limit = 100): SessionQueueState {
+/** Asks the next question of the session. */
+function ask(queue: SessionQueueState): { id: string; queue: SessionQueueState } {
+  const next = nextSessionQuestion(queue);
+  if (next.question === null) {
+    throw new Error('The queue is empty.');
+  }
+  return { id: next.question.id, queue: next.state };
+}
+
+/** Asks and answers one question. */
+function round(
+  queue: SessionQueueState,
+  correct: boolean,
+): { id: string; queue: SessionQueueState } {
+  const next = ask(queue);
+  return {
+    id: next.id,
+    queue: answerSessionQuestion(next.queue, next.id, correct),
+  };
+}
+
+/** Asks `count` questions of a session (and answers them correctly). */
+function pickMany(
+  queue: SessionQueueState,
+  count: number,
+  correct = true,
+): { ids: string[]; queue: SessionQueueState } {
+  const ids: string[] = [];
   let state = queue;
 
-  for (let round = 0; round < limit; round += 1) {
-    const next = nextSessionQuestion(state);
-    if (next.question === null) {
-      return state;
-    }
-    state = next.state;
+  for (let index = 0; index < count; index += 1) {
+    const next = round(state, correct);
+    ids.push(next.id);
+    state = next.queue;
   }
 
-  return state;
+  return { ids, queue: state };
 }
 
 /** How many questions of the scope are not mastered yet. */
@@ -75,42 +100,27 @@ function unmastered(queue: SessionQueueState): number {
 }
 
 describe('createSessionQueue', () => {
-  it('shuffles the questions with the given random source', () => {
-    const questions = ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => question(id));
-
-    const first = createSessionQueue({
-      questions,
-      mode: 'mastery',
-      rng: createSeededRng(42),
-    });
-    const second = createSessionQueue({
-      questions,
-      mode: 'mastery',
-      rng: createSeededRng(42),
-    });
-
-    expect(first.pending).toEqual(second.pending);
-    expect([...first.pending].sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
-  });
-
-  it('gives another order with another seed', () => {
-    const questions = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((id) => question(id));
-
-    const first = createSessionQueue({ questions, mode: 'mastery', rng: createSeededRng(1) });
-    const second = createSessionQueue({ questions, mode: 'mastery', rng: createSeededRng(2) });
-
-    expect(first.pending).not.toEqual(second.pending);
-  });
-
   it('knows every question of the scope', () => {
     const queue = createSessionQueue({
-      questions: [question('a'), question('b')],
+      questions: [question('a'), question('b'), question('c')],
       mode: 'mastery',
       rng: createSeededRng(1),
     });
 
-    expect(sessionTotal(queue)).toBe(2);
+    expect(sessionTotal(queue)).toBe(3);
     expect(masteredCount(queue)).toBe(0);
+    expect([...queue.pending].sort()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('shuffles the new queue with the given random source', () => {
+    const questions = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((id) => question(id));
+
+    const first = createSessionQueue({ questions, mode: 'mastery', rng: createSeededRng(1) });
+    const second = createSessionQueue({ questions, mode: 'mastery', rng: createSeededRng(1) });
+    const other = createSessionQueue({ questions, mode: 'mastery', rng: createSeededRng(2) });
+
+    expect(pickMany(first, 8).ids).toEqual(pickMany(second, 8).ids);
+    expect(pickMany(first, 8).ids).not.toEqual(pickMany(other, 8).ids);
   });
 });
 
@@ -122,17 +132,18 @@ describe('mastery mode', () => {
       rng: createSeededRng(7),
     });
 
-    for (let round = 0; round < MASTERY_REQUIRED_CORRECT - 1; round += 1) {
-      const next = nextSessionQuestion(queue);
-      queue = answerSessionQuestion(next.state, 'a', true);
+    for (let answer = 1; answer < MASTERY_REQUIRED_CORRECT; answer += 1) {
+      const next = round(queue, true);
+      queue = next.queue;
 
+      expect(queue.records.a?.correctStreak).toBe(answer);
       expect(masteredCount(queue)).toBe(0);
       expect(sessionComplete(queue)).toBe(false);
     }
 
-    const last = nextSessionQuestion(queue);
-    queue = answerSessionQuestion(last.state, 'a', true);
+    queue = round(queue, true).queue;
 
+    expect(queue.records.a?.correctStreak).toBe(MASTERY_REQUIRED_CORRECT);
     expect(masteredCount(queue)).toBe(1);
     expect(sessionComplete(queue)).toBe(true);
   });
@@ -144,22 +155,20 @@ describe('mastery mode', () => {
       rng: createSeededRng(7),
     });
 
-    const first = nextSessionQuestion(queue);
-    queue = answerSessionQuestion(first.state, 'a', false);
+    queue = round(queue, false).queue;
 
     expect(masteredCount(queue)).toBe(0);
     expect(sessionComplete(queue)).toBe(false);
     expect(queue.records.a?.missed).toBe(true);
 
     // The question starts over: three right answers are needed again.
-    for (let round = 0; round < MASTERY_REQUIRED_CORRECT - 1; round += 1) {
-      const next = nextSessionQuestion(queue);
-      queue = answerSessionQuestion(next.state, 'a', true);
+    for (let answer = 1; answer < MASTERY_REQUIRED_CORRECT; answer += 1) {
+      queue = round(queue, true).queue;
+      expect(queue.records.a?.correctStreak).toBe(answer);
       expect(masteredCount(queue)).toBe(0);
     }
 
-    const last = nextSessionQuestion(queue);
-    queue = answerSessionQuestion(last.state, 'a', true);
+    queue = round(queue, true).queue;
 
     expect(masteredCount(queue)).toBe(1);
     expect(sessionComplete(queue)).toBe(true);
@@ -172,63 +181,91 @@ describe('mastery mode', () => {
       rng: createSeededRng(7),
     });
 
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', true);
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', true);
+    queue = round(queue, true).queue;
+    queue = round(queue, true).queue;
     expect(queue.records.a?.correctStreak).toBe(2);
     expect(masteredCount(queue)).toBe(0);
 
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', false);
+    queue = round(queue, false).queue;
     expect(queue.records.a?.correctStreak).toBe(0);
     expect(masteredCount(queue)).toBe(0);
 
     // Two right answers are not enough any more: the question starts over.
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', true);
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', true);
+    queue = round(queue, true).queue;
+    queue = round(queue, true).queue;
     expect(masteredCount(queue)).toBe(0);
 
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', true);
+    queue = round(queue, true).queue;
     expect(masteredCount(queue)).toBe(1);
   });
 
   it('brings a missed question back three to five questions later', () => {
-    const questions = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((id) => question(id));
+    const questions = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].map((id) =>
+      question(id),
+    );
 
     for (let seed = 0; seed < 40; seed += 1) {
       let queue = createSessionQueue({
         questions,
-        mode: 'mastery',
+        mode: 'endless',
         rng: createSeededRng(seed),
       });
 
-      const first = nextSessionQuestion(queue);
-      const missed = first.question?.id ?? '';
-      queue = answerSessionQuestion(first.state, missed, false);
+      const first = ask(queue);
+      const missed = first.id;
+      queue = answerSessionQuestion(first.queue, missed, false);
 
-      // The missed question waits three to five questions.
-      const distance = queue.pending.indexOf(missed);
+      let distance = 0;
+      let again = false;
+
+      for (let index = 0; index < 30; index += 1) {
+        const next = round(queue, true);
+        distance += 1;
+        queue = next.queue;
+        if (next.id === missed) {
+          again = true;
+          break;
+        }
+      }
+
+      expect(again).toBe(true);
       expect(distance).toBeGreaterThanOrEqual(3);
       expect(distance).toBeLessThanOrEqual(5);
     }
   });
 
-  it('spreads the right answers out: the question comes back a few questions later', () => {
-    const questions = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map((id) => question(id));
+  it('spreads the right answers out', () => {
+    const questions = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].map((id) =>
+      question(id),
+    );
 
     for (let seed = 0; seed < 40; seed += 1) {
       let queue = createSessionQueue({
         questions,
-        mode: 'mastery',
+        mode: 'endless',
         rng: createSeededRng(seed),
       });
 
-      const first = nextSessionQuestion(queue);
-      const asked = first.question?.id ?? '';
-      queue = answerSessionQuestion(first.state, asked, true);
+      const first = ask(queue);
+      const asked = first.id;
+      queue = answerSessionQuestion(first.queue, asked, true);
 
-      // The right answers of a question are spread out.
-      const distance = queue.pending.indexOf(asked);
+      let distance = 0;
+      let again = false;
+
+      for (let index = 0; index < 30; index += 1) {
+        const next = round(queue, true);
+        distance += 1;
+        queue = next.queue;
+        if (next.id === asked) {
+          again = true;
+          break;
+        }
+      }
+
+      expect(again).toBe(true);
       expect(distance).toBeGreaterThanOrEqual(MASTERY_MIN_GAP);
-      expect(distance).toBeLessThanOrEqual(5);
+      expect(distance).toBeLessThanOrEqual(10);
     }
   });
 
@@ -241,25 +278,21 @@ describe('mastery mode', () => {
     });
 
     const askedAt = new Map<string, number>();
-    let round = 0;
+    let roundNumber = 0;
 
-    while (!sessionComplete(queue) && round < 200) {
-      const next = nextSessionQuestion(queue);
-      const id = next.question?.id;
-      if (id === undefined) {
-        break;
-      }
+    while (!sessionComplete(queue) && roundNumber < 400) {
+      const next = ask(queue);
+      const last = askedAt.get(next.id);
 
-      const last = askedAt.get(id);
       // A deck that holds a single question left has no other choice: that
       // question comes back right away.
       if (last !== undefined && unmastered(queue) > 1) {
-        expect(round - last).toBeGreaterThanOrEqual(MASTERY_MIN_GAP);
+        expect(roundNumber - last).toBeGreaterThanOrEqual(MASTERY_MIN_GAP);
       }
 
-      askedAt.set(id, round);
-      queue = answerSessionQuestion(next.state, id, true);
-      round += 1;
+      askedAt.set(next.id, roundNumber);
+      queue = answerSessionQuestion(next.queue, next.id, true);
+      roundNumber += 1;
     }
 
     expect(sessionComplete(queue)).toBe(true);
@@ -274,18 +307,16 @@ describe('mastery mode', () => {
       rng: createSeededRng(11),
     });
 
-    for (let round = 0; round < 60; round += 1) {
+    for (let roundNumber = 0; roundNumber < 80; roundNumber += 1) {
       // A deck of a single question left has no other choice.
       if (unmastered(queue) <= 1) {
         break;
       }
 
-      const next = nextSessionQuestion(queue);
-      if (next.question === null) {
-        break;
-      }
-      expect(next.question.id).not.toBe(queue.lastAskedId);
-      queue = answerSessionQuestion(next.state, next.question.id, round % 3 === 0);
+      const previous = queue.lastAskedId;
+      const next = ask(queue);
+      expect(next.id).not.toBe(previous);
+      queue = answerSessionQuestion(next.queue, next.id, roundNumber % 3 === 0);
     }
   });
 
@@ -297,12 +328,12 @@ describe('mastery mode', () => {
       rng: createSeededRng(5),
     });
 
-    const first = nextSessionQuestion(queue);
-    const asked = first.question?.id ?? '';
-    queue = answerSessionQuestion(first.state, asked, true);
+    const first = ask(queue);
+    const asked = first.id;
+    queue = answerSessionQuestion(first.queue, asked, true);
 
     // The deck holds two questions: the gap cannot be three.
-    expect(queue.pending.indexOf(asked)).toBe(1);
+    expect(queue.cards[asked]?.dueAt).toBeLessThanOrEqual(2);
   });
 
   it('asks the only question of a one-question deck again right away', () => {
@@ -312,13 +343,12 @@ describe('mastery mode', () => {
       rng: createSeededRng(3),
     });
 
-    const first = nextSessionQuestion(queue);
-    expect(first.question?.id).toBe('only');
+    const first = ask(queue);
+    expect(first.id).toBe('only');
 
     // The deck holds one question: it comes back right away.
-    queue = answerSessionQuestion(first.state, 'only', true);
-    const second = nextSessionQuestion(queue);
-    expect(second.question?.id).toBe('only');
+    queue = answerSessionQuestion(first.queue, 'only', true);
+    expect(ask(queue).id).toBe('only');
   });
 
   it('ends only when every question of the scope is mastered', () => {
@@ -331,11 +361,7 @@ describe('mastery mode', () => {
 
     let guard = 0;
     while (!sessionComplete(queue) && guard < 200) {
-      const next = nextSessionQuestion(queue);
-      if (next.question === null) {
-        break;
-      }
-      queue = answerSessionQuestion(next.state, next.question.id, true);
+      queue = round(queue, true).queue;
       guard += 1;
     }
 
@@ -353,30 +379,27 @@ describe('mastery mode', () => {
 
     expect(sessionRemaining(queue)).toBe(3);
 
-    const next = nextSessionQuestion(queue);
-    queue = answerSessionQuestion(next.state, next.question!.id, true);
+    queue = round(queue, true).queue;
 
     // The question is not mastered yet: it comes back later.
     expect(sessionRemaining(queue)).toBe(3);
   });
 
   it('shows the progress of every question of the scope', () => {
-    const questions = ['a', 'b'].map((id) => question(id));
     let queue = createSessionQueue({
-      questions,
+      questions: [question('a')],
       mode: 'mastery',
       rng: createSeededRng(2),
     });
 
     expect(masteryProgress(queue)).toEqual([
       { id: 'a', correct: 0, required: MASTERY_REQUIRED_CORRECT, mastered: false },
-      { id: 'b', correct: 0, required: MASTERY_REQUIRED_CORRECT, mastered: false },
     ]);
 
-    const first = nextSessionQuestion(queue);
-    const asked = first.question!.id;
-    queue = answerSessionQuestion(first.state, asked, true);
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, asked, true);
+    const first = ask(queue);
+    const asked = first.id;
+    queue = answerSessionQuestion(first.queue, asked, true);
+    queue = answerSessionQuestion(ask(queue).queue, asked, true);
 
     const progress = masteryProgress(queue).find((entry) => entry.id === asked);
     expect(progress?.correct).toBe(2);
@@ -391,11 +414,11 @@ describe('mastery mode', () => {
       rng: createSeededRng(4),
     });
 
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', true);
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', true);
+    queue = round(queue, true).queue;
+    queue = round(queue, true).queue;
     expect(masteryProgress(queue)[0]?.correct).toBe(2);
 
-    queue = answerSessionQuestion(nextSessionQuestion(queue).state, 'a', false);
+    queue = round(queue, false).queue;
     expect(masteryProgress(queue)[0]?.correct).toBe(0);
     expect(masteryProgress(queue)[0]?.mastered).toBe(false);
   });
@@ -437,6 +460,60 @@ describe('mastery mode', () => {
   });
 });
 
+describe('the intervals', () => {
+  it('grows the review interval after every correct answer', () => {
+    let queue = createSessionQueue({
+      questions: [question('a')],
+      mode: 'endless',
+      rng: createSeededRng(15),
+    });
+
+    const intervals: number[] = [];
+
+    for (let index = 0; index < 8; index += 1) {
+      queue = round(queue, true).queue;
+      const days = queue.cards.a?.intervalDays ?? 0;
+      if (days > 0) {
+        intervals.push(days);
+      }
+    }
+
+    expect(intervals.length).toBeGreaterThanOrEqual(3);
+    for (let index = 1; index < intervals.length; index += 1) {
+      expect(intervals[index]!).toBeGreaterThan(intervals[index - 1]!);
+    }
+  });
+
+  it('maps a learning step to a question gap and a review interval much further out', () => {
+    const questions = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].map((id) =>
+      question(id),
+    );
+    let queue = createSessionQueue({
+      questions,
+      mode: 'endless',
+      rng: createSeededRng(4),
+    });
+
+    const first = ask(queue);
+    queue = answerSessionQuestion(first.queue, first.id, true);
+    const learning = queue.cards[first.id];
+
+    expect(learning?.queue).toBe('learning');
+    expect(learning?.dueAt).toBeGreaterThanOrEqual(3);
+
+    // Make it graduate: the review interval parks it far behind the session.
+    let guard = 0;
+    while (queue.cards[first.id]?.queue !== 'review' && guard < 20) {
+      queue = round(queue, true).queue;
+      guard += 1;
+    }
+
+    const review = queue.cards[first.id];
+    expect(review?.queue).toBe('review');
+    expect(review?.dueAt).toBeGreaterThan(learning?.dueAt ?? 0);
+  });
+});
+
 describe('endless mode', () => {
   it('never ends by itself', () => {
     const queue = createSessionQueue({
@@ -456,11 +533,127 @@ describe('endless mode', () => {
       rng: createSeededRng(9),
     });
 
-    for (let round = 0; round < 200; round += 1) {
-      const next = nextSessionQuestion(queue);
-      expect(next.question).not.toBeNull();
-      expect(next.question!.id).not.toBe(queue.lastAskedId);
-      queue = answerSessionQuestion(next.state, next.question!.id, true);
+    for (let roundNumber = 0; roundNumber < 200; roundNumber += 1) {
+      const previous = queue.lastAskedId;
+      const next = ask(queue);
+      expect(next.id).not.toBe(previous);
+      queue = answerSessionQuestion(next.queue, next.id, true);
+    }
+  });
+
+  it('keeps the new questions coming', () => {
+    const questions = [
+      ...Array.from({ length: 20 }, (_, index) => question(`new-${index}`)),
+      ...Array.from({ length: 20 }, (_, index) =>
+        question(`review-${index}`, state(`review-${index}`, { due: 0, stability: 5 })),
+      ),
+    ];
+
+    let queue = createSessionQueue({
+      questions,
+      mode: 'endless',
+      rng: createSeededRng(3),
+    });
+
+    let sinceNew = 0;
+    let newPicks = 0;
+
+    for (let roundNumber = 0; roundNumber < 40; roundNumber += 1) {
+      const newRemain = queue.queues.newIds.length > 0;
+      const next = ask(queue);
+      queue = answerSessionQuestion(next.queue, next.id, true);
+      const group = queue.lastGroup;
+      if (group === 'new') {
+        sinceNew = 0;
+        newPicks += 1;
+      } else if (newRemain) {
+        sinceNew += 1;
+        // One new card in roughly every three picks while any remain.
+        expect(sinceNew).toBeLessThanOrEqual(3);
+      }
+    }
+
+    expect(newPicks).toBeGreaterThan(10);
+  });
+
+  it('covers a 60 question deck early instead of studying a small working set', () => {
+    const questions = Array.from({ length: 60 }, (_, index) => question(`q-${index}`));
+    let queue = createSessionQueue({
+      questions,
+      mode: 'endless',
+      rng: createSeededRng(17),
+    });
+
+    const first = pickMany(queue, 20);
+    queue = first.queue;
+    // The first pass introduces ten unseen questions (the 10 minute learning
+    // step brings them back later); the deck is not a small working set.
+    expect(new Set(first.ids).size).toBeGreaterThanOrEqual(10);
+
+    const rest = pickMany(queue, 100);
+    const all = new Set([...first.ids, ...rest.ids]);
+    expect(all.size).toBeGreaterThanOrEqual(30);
+
+    const firstSixty = new Set([...first.ids, ...rest.ids.slice(0, 40)]).size;
+    expect(firstSixty).toBeGreaterThanOrEqual(30);
+    expect(all.size).toBe(60);
+  });
+
+  it('shows a high-stability card only rarely', () => {
+    const normal = Array.from({ length: 100 }, (_, index) =>
+      question(`normal-${index}`, state(`normal-${index}`, { due: 0, stability: 5 })),
+    );
+    const wellKnown = Array.from({ length: 100 }, (_, index) =>
+      question(
+        `known-${index}`,
+        state(`known-${index}`, {
+          due: 0,
+          stability: DEFAULT_ANKI_SETTINGS.highStabilityDays * 2,
+        }),
+      ),
+    );
+
+    let queue = createSessionQueue({
+      questions: [...normal, ...wellKnown],
+      mode: 'endless',
+      rng: createSeededRng(8),
+    });
+
+    let knownPicks = 0;
+    const picks = 100;
+
+    // The questions are not answered: the review queue is a fixed set, so
+    // the test observes the choice of the picker itself.
+    for (let roundNumber = 0; roundNumber < picks; roundNumber += 1) {
+      const next = ask(queue);
+      if (next.id.startsWith('known-')) {
+        knownPicks += 1;
+      }
+      queue = next.queue;
+    }
+
+    expect(knownPicks).toBeGreaterThan(0);
+    expect(knownPicks).toBeLessThan(picks * 0.3);
+  });
+
+  it('keeps a gap between two serves of the same question', () => {
+    const questions = Array.from({ length: 12 }, (_, index) => question(`q-${index}`));
+    let queue = createSessionQueue({
+      questions,
+      mode: 'endless',
+      rng: createSeededRng(19),
+    });
+
+    const askedAt = new Map<string, number>();
+
+    for (let roundNumber = 0; roundNumber < 160; roundNumber += 1) {
+      const next = ask(queue);
+      const last = askedAt.get(next.id);
+      if (last !== undefined && unmastered(queue) > 1) {
+        expect(roundNumber - last).toBeGreaterThanOrEqual(MASTERY_MIN_GAP);
+      }
+      askedAt.set(next.id, roundNumber);
+      queue = answerSessionQuestion(next.queue, next.id, roundNumber % 4 !== 0);
     }
   });
 
@@ -479,10 +672,10 @@ describe('endless mode', () => {
     });
 
     const picks: string[] = [];
-    for (let round = 0; round < 40; round += 1) {
-      const next = nextSessionQuestion(queue);
-      picks.push(next.question!.id);
-      queue = answerSessionQuestion(next.state, next.question!.id, true);
+    for (let roundNumber = 0; roundNumber < 40; roundNumber += 1) {
+      const next = ask(queue);
+      picks.push(next.id);
+      queue = answerSessionQuestion(next.queue, next.id, true);
     }
 
     const duePicks = picks.filter((id) => id === 'due').length;
@@ -507,49 +700,47 @@ describe('endless mode', () => {
     });
 
     // The player misses "missed" once.
-    const first = nextSessionQuestion(queue);
-    queue = answerSessionQuestion(first.state, first.question!.id, false);
+    const first = ask(queue);
+    queue = answerSessionQuestion(first.queue, first.id, false);
 
     const picks: string[] = [];
-    for (let round = 0; round < 40; round += 1) {
-      const next = nextSessionQuestion(queue);
-      picks.push(next.question!.id);
-      queue = answerSessionQuestion(next.state, next.question!.id, true);
+    for (let roundNumber = 0; roundNumber < 40; roundNumber += 1) {
+      const next = ask(queue);
+      picks.push(next.id);
+      queue = answerSessionQuestion(next.queue, next.id, true);
     }
 
     // The missed question is asked again (it is not dropped).
-    expect(picks).toContain('missed');
-    expect(picks.filter((id) => id === 'missed').length).toBeGreaterThan(0);
+    expect(picks).toContain(first.id);
   });
 
   it('uses the fresh scheduling state of the questions', () => {
-    const questions = [question('a'), question('b')];
-    let queue = createSessionQueue({
-      questions,
+    const queue = createSessionQueue({
+      questions: [question('a'), question('b')],
       mode: 'endless',
       rng: createSeededRng(8),
     });
 
-    queue = updateSessionStates(queue, {
+    const next = updateSessionStates(queue, {
       a: state('a', { due: 0, stability: 20 }),
       b: state('b', { due: Date.now() + 86_400_000, stability: 20 }),
     });
 
-    expect(queue.states.a?.due).toBe(0);
-    expect(queue.states.b?.due).toBeGreaterThan(Date.now());
+    expect(next.states.a?.due).toBe(0);
+    expect(next.states.b?.due).toBeGreaterThan(Date.now());
   });
 
   it('keeps every question of the scope in the pool', () => {
     const questions = ['a', 'b', 'c'].map((id) => question(id));
-    let queue = createSessionQueue({
+    const queue = createSessionQueue({
       questions,
       mode: 'endless',
       rng: createSeededRng(2),
     });
 
-    queue = drain(queue, 30);
+    const drained = pickMany(queue, 30).queue;
 
-    expect([...queue.pending].sort()).toEqual(['a', 'b', 'c']);
+    expect([...drained.pending].sort()).toEqual(['a', 'b', 'c']);
   });
 
   it('counts the questions the player does not know yet', () => {
@@ -562,8 +753,7 @@ describe('endless mode', () => {
 
     expect(sessionRemaining(queue)).toBe(2);
 
-    const next = nextSessionQuestion(queue);
-    queue = answerSessionQuestion(next.state, next.question!.id, true);
+    queue = round(queue, true).queue;
 
     expect(sessionRemaining(queue)).toBe(1);
   });
@@ -635,7 +825,8 @@ describe('the edges of the queue', () => {
     const next = answerSessionQuestion(queue, 'ghost', false);
 
     expect(next.records.ghost?.missed).toBe(true);
-    expect(next.pending).toContain('ghost');
+    expect(next.missedIds).toContain('ghost');
+    expect(next.pending).toEqual(['a']);
   });
 
   it('reads the states of a map', () => {

@@ -28,10 +28,10 @@ const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 /**
  * How many questions of the deck get their own dots in the HUD.
  *
- * A deck of a hundred cards does not fit on the screen, so the dots stop
- * there (the question that is on the screen always keeps its own).
+ * A deck with more than twenty questions does not fit on the screen, so it
+ * collapses into one compact bar with an "X/Y mastered" label instead.
  */
-const MAX_MASTERY_DOTS = 24;
+const MAX_MASTERY_DOTS = 20;
 
 export interface HudProps {
   /** The session, for the counters. */
@@ -121,6 +121,9 @@ export function Hud({
     };
   }, [progress, currentQuestionId]);
 
+  const compactMastery = progress.length > MAX_MASTERY_DOTS;
+  const masteryRatio = total > 0 ? Math.max(0, Math.min(1, mastered / total)) : 0;
+
   return (
     <View style={styles.container} pointerEvents="box-none">
       <View style={styles.topRow} pointerEvents="box-none">
@@ -197,42 +200,64 @@ export function Hud({
       </View>
 
       {mastery && progress.length > 0 ? (
-        <View style={styles.masteryRow} pointerEvents="none">
-          {dots.map((entry) => (
-            <View
-              key={entry.id}
-              style={styles.masteryDots}
-              accessible
-              accessibilityLabel={`${entry.correct} of ${entry.required} right answers`}
-            >
-              {Array.from({ length: entry.required }, (_, index) => (
-                <View
-                  key={`${entry.id}-${index}`}
-                  style={[
-                    styles.masteryDot,
-                    index < entry.correct ? styles.masteryDotOn : styles.masteryDotOff,
-                    entry.id === currentQuestionId ? styles.masteryDotCurrent : null,
-                  ]}
-                />
-              ))}
+        compactMastery ? (
+          <View
+            style={styles.masteryBarRow}
+            pointerEvents="none"
+            accessible
+            accessibilityLabel={`${mastered} of ${total} questions mastered`}
+          >
+            <View style={styles.masteryTrack}>
+              <View style={[styles.masteryFill, { width: `${Math.round(masteryRatio * 100)}%` }]} />
             </View>
-          ))}
+            <Text style={styles.masteryBarLabel}>
+              {mastered}/{total} mastered
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.masteryRow} pointerEvents="none">
+            {dots.map((entry) => (
+              <View
+                key={entry.id}
+                style={styles.masteryDots}
+                accessible
+                accessibilityLabel={`${entry.correct} of ${entry.required} right answers`}
+              >
+                {Array.from({ length: entry.required }, (_, index) => (
+                  <View
+                    key={`${entry.id}-${index}`}
+                    style={[
+                      styles.masteryDot,
+                      index < entry.correct ? styles.masteryDotOn : styles.masteryDotOff,
+                      entry.id === currentQuestionId ? styles.masteryDotCurrent : null,
+                    ]}
+                  />
+                ))}
+              </View>
+            ))}
 
-          {hidden > 0 ? <Text style={styles.masteryMore}>+{hidden}</Text> : null}
-        </View>
+            {hidden > 0 ? <Text style={styles.masteryMore}>+{hidden}</Text> : null}
+          </View>
+        )
       ) : null}
 
       {log.length === 0 ? null : (
-        <View style={styles.log} pointerEvents="none">
-          {log.map((entry, index) => (
-            <View
-              key={`${entry.id}-${index}`}
-              style={[styles.logItem, { borderColor: tierColor(entry.tier) }]}
-            >
-              <Sprite assetId={entry.assetId} size={18} />
-              <Text style={styles.logWeight}>{formatShort(entry.lbs)}</Text>
-            </View>
-          ))}
+        <View style={styles.logRow} pointerEvents="none">
+          <Text style={styles.logTitle}>PREVIOUS CATCHES</Text>
+          <View style={styles.log}>
+            {log.map((entry, index) => (
+              <View
+                key={`${entry.id}-${index}`}
+                style={[styles.logItem, { borderColor: tierColor(entry.tier) }]}
+              >
+                <Sprite assetId={entry.assetId} size={18} />
+                <Text numberOfLines={1} style={styles.logName}>
+                  {shortName(entry.name)}
+                </Text>
+                <Text style={styles.logWeight}>{formatShort(entry.lbs)}</Text>
+              </View>
+            ))}
+          </View>
         </View>
       )}
     </View>
@@ -250,6 +275,12 @@ function formatShort(lbs: number): string {
   return `${Math.round(lbs)}`;
 }
 
+/** A short name for the tight row of previous catches. */
+function shortName(name: string): string {
+  const first = name.trim().split(/\s+/)[0] ?? name;
+  return first.length > 12 ? `${first.slice(0, 11)}…` : first;
+}
+
 /** The colour of the tiers, exported for the reveal card. */
 export const TIER_COLORS = CATCH_TIERS.reduce<Record<string, string>>((colors, tier) => {
   colors[tier.id] = tier.color;
@@ -258,10 +289,7 @@ export const TIER_COLORS = CATCH_TIERS.reduce<Record<string, string>>((colors, t
 
 const styles = StyleSheet.create({
   container: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
+    width: '100%',
     paddingTop: 10,
     paddingHorizontal: 12,
     gap: 8,
@@ -416,6 +444,34 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingTop: 2,
   },
+  masteryBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingTop: 2,
+  },
+  masteryTrack: {
+    flex: 1,
+    maxWidth: 210,
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(248, 250, 252, 0.22)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+  },
+  masteryFill: {
+    height: '100%',
+    borderRadius: 4,
+    backgroundColor: colors.gold,
+  },
+  masteryBarLabel: {
+    color: 'rgba(255,255,255,0.88)',
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    letterSpacing: 0.4,
+  },
   masteryDots: {
     flexDirection: 'row',
     gap: 3,
@@ -441,8 +497,20 @@ const styles = StyleSheet.create({
     fontSize: 10,
     alignSelf: 'center',
   },
+  logRow: {
+    gap: 4,
+  },
+  logTitle: {
+    color: 'rgba(255,255,255,0.66)',
+    fontFamily: fonts.titleSemi,
+    fontSize: 8,
+    letterSpacing: 1.4,
+    textAlign: 'right',
+  },
   log: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'flex-end',
     gap: 6,
   },
   logItem: {
@@ -454,6 +522,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
+    maxWidth: 150,
+  },
+  logName: {
+    flexShrink: 1,
+    color: '#e2e8f0',
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
   },
   logWeight: {
     color: '#e2e8f0',

@@ -89,6 +89,7 @@ const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
   question: 10,
   reveal: 1,
   payout: 3,
+  layout: 1,
   'seq-highlight': 1,
   'seq-dip': 1,
   'seq-tug': 1,
@@ -113,6 +114,7 @@ export type FishingDemo =
   | 'question'
   | 'reveal'
   | 'payout'
+  | 'layout'
   | 'seq-highlight'
   | 'seq-dip'
   | 'seq-tug'
@@ -945,6 +947,32 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       catchCritter();
     }
 
+    if (demo === 'layout') {
+      // Three catches fill the "previous catches" row of the HUD, then the
+      // demo starts one more cast and never answers it: the screenshot keeps
+      // the long math note on the screen.
+      let caught = 0;
+      const fishForLayout = () => {
+        catchAt(0, true, () => {
+          caught += 1;
+          if (caught >= 3) {
+            // Leave the reveal card first: the cast of the last question is
+            // ignored while the catch is still on the screen.
+            dispatch({ type: 'continue' });
+            later(250, () => {
+              catchAt(0, false);
+            });
+            return;
+          }
+          dispatch({ type: 'continue' });
+          later(120, () => {
+            fishForLayout();
+          });
+        });
+      };
+      fishForLayout();
+    }
+
     return () => {
       cancelled = true;
       for (const timer of timers) {
@@ -1031,45 +1059,55 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         onReel={onReel}
       />
 
-      <QuestionNote
-        visible={machine.phase === 'question' || machine.phase === 'answered'}
-        question={machine.question}
-        feedback={machine.feedback}
-        locked={machine.phase === 'answered'}
-        onAnswer={onAnswer}
-        onSelfGrade={onSelfGrade}
-        reduceMotion={reduceMotion}
-      />
-
       {/*
-        The hold of the answer: a tap anywhere goes on before the wait is
-        over. It sits above the note (so the note cannot swallow the tap)
-        and below the HUD (so the "End" button keeps working).
+        The HUD and the question live in one normal column: the counters,
+        mastery bar and previous catches stack above the note instead of
+        floating over it. Nothing is absolutely positioned here, so the note
+        can never be covered by the HUD.
       */}
-      {machine.phase === 'answered' ? (
-        <Pressable
-          testID="fishing-hold"
-          accessibilityRole="button"
-          accessibilityLabel="Continue"
-          accessibilityHint="Tap to continue before the answer is held any longer"
-          style={StyleSheet.absoluteFill}
-          onPress={onSkipHold}
+      <View style={styles.hudStack} pointerEvents="box-none">
+        <Hud
+          session={machine.session}
+          remaining={progress.left}
+          mastery={mastery}
+          mastered={progress.mastered}
+          total={progress.total}
+          progress={progress.dots}
+          currentQuestionId={machine.question?.cardId ?? null}
+          biggestTier={biggestTier}
+          tokens={balance}
+          onEnd={onRequestEnd}
+          reduceMotion={reduceMotion}
         />
-      ) : null}
 
-      <Hud
-        session={machine.session}
-        remaining={progress.left}
-        mastery={mastery}
-        mastered={progress.mastered}
-        total={progress.total}
-        progress={progress.dots}
-        currentQuestionId={machine.question?.cardId ?? null}
-        biggestTier={biggestTier}
-        tokens={balance}
-        onEnd={onRequestEnd}
-        reduceMotion={reduceMotion}
-      />
+        <View style={styles.noteStack} pointerEvents="box-none">
+          <QuestionNote
+            visible={machine.phase === 'question' || machine.phase === 'answered'}
+            question={machine.question}
+            feedback={machine.feedback}
+            locked={machine.phase === 'answered'}
+            onAnswer={onAnswer}
+            onSelfGrade={onSelfGrade}
+            reduceMotion={reduceMotion}
+          />
+
+          {/*
+            The hold of the answer: a tap anywhere on the note area goes on
+            before the wait is over. It sits above the note but inside the
+            note's own box, so the "End" button of the HUD keeps working.
+          */}
+          {machine.phase === 'answered' ? (
+            <Pressable
+              testID="fishing-hold"
+              accessibilityRole="button"
+              accessibilityLabel="Continue"
+              accessibilityHint="Tap to continue before the answer is held any longer"
+              style={StyleSheet.absoluteFill}
+              onPress={onSkipHold}
+            />
+          ) : null}
+        </View>
+      </View>
 
       {machine.phase === 'reveal' && machine.reveal !== null ? (
         <RevealCard
@@ -1181,6 +1219,15 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0b1020',
+  },
+  hudStack: {
+    flex: 1,
+    width: '100%',
+  },
+  noteStack: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'flex-start',
   },
   demoMarker: {
     position: 'absolute',

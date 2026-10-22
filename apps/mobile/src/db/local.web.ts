@@ -270,6 +270,48 @@ const DEMO_CARDS: StudyCard[] = [
 ];
 
 /**
+ * The deck of the long-note screenshot.
+ *
+ * The web build can seed a 65 question deck of long math questions
+ * (`?demo=layout`), so the fishing screen can be photographed with a full
+ * mastery bar and a note that fills the width of a phone. Every prompt and
+ * every answer carries LaTeX: the picture checks the padding of the
+ * parchment, the wrapping of long formulas and the scrolling of the note.
+ */
+const LAYOUT_DECK_ID = 'set_layout_65';
+
+const LAYOUT_CARDS: StudyCard[] = Array.from({ length: 65 }, (_, index) => {
+  const n = index + 1;
+  const front =
+    index % 3 === 0
+      ? `Solve the differential equation $\\frac{d^2y}{dx^2} + ${n}\\,\\frac{dy}{dx} + ${n + 1}y = \\sin(${n}x)$ for $y(x)$ when $x > 0$ and $y(0) = ${n}$.`
+      : index % 3 === 1
+        ? `Which expression gives the value of $\\int_{0}^{${n}} \\left( ${n}x^2 + \\frac{1}{x + 1} \\right) dx$ for $x > -1$?`
+        : `Simplify $\\frac{${n}x^2 + ${n + 2}x + 1}{x + 1} + \\sqrt{${n * n}x^2 + ${n}x + 1}$ for $x \\ge 0$.`;
+
+  const answer =
+    index % 3 === 0
+      ? `$y = e^{-${n}x/2}\\left(A\\cos(\\omega x) + B\\sin(\\omega x)\\right) + \\frac{${n}}{${n + 1}}\\sin(${n}x)$`
+      : index % 3 === 1
+        ? `$\\frac{${n}}{3}${n}^3 + \\ln(${n} + 1) - \\ln(1) = \\frac{${n}^4}{3} + \\ln(${n} + 1)$`
+        : `$${n}x + 1 + ${n}x\\sqrt{x^2 + 1} + \\frac{${n}}{2}\\ln\\left(x + \\sqrt{x^2 + 1}\\right)$$`;
+
+  return {
+    id: `${LAYOUT_DECK_ID}_card_${n}`,
+    setId: LAYOUT_DECK_ID,
+    topicId: 'topic_physics',
+    type: 'mc',
+    front,
+    back: answer,
+    wrong: [
+      answer.replace(`${n}`, `${n + 1}`),
+      answer.replace('\\sin', '\\cos').replace('\\ln', '\\log'),
+      answer.replace('$', '$ - '),
+    ],
+  };
+});
+
+/**
  * The collection of the demo player.
  *
  * Half of the starter pack, with a few duplicates that can be sold: the
@@ -336,7 +378,19 @@ function demoCardStates(): Map<string, CardState> {
 }
 
 /** Creates the state of the demo player. */
-function createDemoState(): DemoState {
+function createDemoState(layoutDeck = false): DemoState {
+  const sets = layoutDeck
+    ? [
+        ...DEMO_SETS,
+        {
+          id: LAYOUT_DECK_ID,
+          topicId: 'topic_physics',
+          title: 'Calculus warm-up (65)',
+          classId: 'class_science',
+        },
+      ]
+    : DEMO_SETS;
+
   return {
     wallet: {
       balance: 150,
@@ -346,10 +400,10 @@ function createDemoState(): DemoState {
       packTickets: 1,
     },
     collection: new Map(Object.entries(DEMO_COLLECTION)),
-    cards: DEMO_CARDS,
+    cards: layoutDeck ? [...DEMO_CARDS, ...LAYOUT_CARDS] : DEMO_CARDS,
     cardRemoteIds: new Map(),
     cardStates: demoCardStates(),
-    sets: DEMO_SETS,
+    sets,
     topics: DEMO_TOPICS,
     classes: DEMO_CLASSES,
     kv: new Map(),
@@ -365,11 +419,13 @@ let state: DemoState | null = null;
 /** The state of the demo player, created on the first use. */
 function demo(): DemoState {
   if (state === null) {
-    state = createDemoState();
+    const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
+    // The screenshot of the long note asks for the 65 question math deck
+    // (`?demo=layout`); every other page gets the small demo player.
+    state = createDemoState(search.includes('demo=layout'));
 
     // The demo of the web build can also show a player who cannot afford a
     // pack (`?poor=1`): the shop then refuses to open another one.
-    const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
     if (search.includes('poor=1')) {
       state.wallet.balance = 5;
       state.wallet.packTickets = 0;
