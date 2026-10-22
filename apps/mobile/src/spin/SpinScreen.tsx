@@ -4,6 +4,7 @@ import {
   canSpin,
   localDayKey,
   spinSegmentIndex,
+  spinTargetRotation,
   type WalletSnapshot,
 } from '@study-app/core';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
@@ -12,6 +13,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, {
   Easing,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -41,8 +43,8 @@ import { SpinWheel } from './SpinWheel';
  *
  * The wheel can be spun once per local day. The reward is decided by the
  * local store (the same pure code the server would run), and the wheel then
- * spins down to the segment that was won: it decelerates like a real wheel,
- * overshoots a little and settles, while the pointer ticks on every segment
+ * spins down to the segment that was won and stops dead centre on it (no
+ * snap back), while the pointer ticks on every segment
  * that passes under it.
  *
  * The jackpot is a show of its own: golden rays, a storm of confetti and
@@ -50,10 +52,8 @@ import { SpinWheel } from './SpinWheel';
  */
 
 /** How long the wheel spins. */
-const SPIN_DURATION_MS = 4200;
+const SPIN_DURATION_MS = 4600;
 
-/** How far the wheel overshoots before it settles (in degrees). */
-const OVERSHOOT_DEG = 26;
 
 export function SpinScreen() {
   const params = useLocalSearchParams<{ demo?: string }>();
@@ -67,7 +67,6 @@ export function SpinScreen() {
 
   const rotation = useSharedValue(0);
   const cardScale = useSharedValue(0);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const spunRef = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -93,11 +92,6 @@ export function SpinScreen() {
 
   useEffect(() => {
     void prepareSfx();
-    return () => {
-      if (timerRef.current !== null) {
-        clearTimeout(timerRef.current);
-      }
-    };
   }, []);
 
   const onSpin = useCallback(async () => {
@@ -119,26 +113,17 @@ export function SpinScreen() {
         return;
       }
 
-      setWallet(result.wallet);
+      // The spin is already saved (the prize counts once, even if the app is
+      // killed mid-spin), but nothing is shown until the wheel stops.
+      const won = result.reward;
+      const wonWallet = result.wallet;
+      const index = Math.max(0, spinSegmentIndex(won));
+      const target = spinTargetRotation(index, 5, (Math.random() - 0.5) * 1.2);
 
-      // The wheel spins down to the segment that was won: it overshoots a
-      // little and settles back on it.
-      const index = Math.max(0, spinSegmentIndex(result.reward));
-      const jitter = (Math.random() - 0.5) * 20;
-      const step = 360 / SPIN_SEGMENTS.length;
-      const target = 5 * 360 - index * step - step / 2 + jitter;
-      rotation.value = withSequence(
-        withTiming(target + OVERSHOOT_DEG, {
-          duration: SPIN_DURATION_MS,
-          easing: Easing.out(Easing.cubic),
-        }),
-        withSpring(target, { damping: 11, stiffness: 120, mass: 1.1 }),
-      );
-
-      const timer = setTimeout(() => {
-        timerRef.current = null;
-        setReward(result.reward);
-        setWonToday(result.reward);
+      const finish = () => {
+        setWallet(wonWallet);
+        setReward(won);
+        setWonToday(won);
         setSpinning(false);
         setAlreadySpun(true);
         setBurst((current) => current + 1);
@@ -149,14 +134,24 @@ export function SpinScreen() {
         playSfx('coin');
         play('spinWin');
         play('coin');
-        if (result.reward >= SPIN_JACKPOT) {
+        if (won >= SPIN_JACKPOT) {
           hapticImpact('heavy');
-          hapticSuccess();
-        } else {
-          hapticSuccess();
         }
-      }, SPIN_DURATION_MS + 120);
-      timerRef.current = timer;
+        hapticSuccess();
+      };
+
+      // One deceleration straight onto the target: no overshoot, no spring,
+      // so the segment the wheel stops on is the segment that pays.
+      rotation.value = rotation.value % 360;
+      rotation.value = withTiming(
+        target,
+        { duration: SPIN_DURATION_MS, easing: Easing.bezier(0.12, 0.8, 0.18, 1) },
+        (finished) => {
+          if (finished) {
+            runOnJS(finish)();
+          }
+        },
+      );
     } catch {
       setMessage('The wheel could not be spun.');
       setSpinning(false);

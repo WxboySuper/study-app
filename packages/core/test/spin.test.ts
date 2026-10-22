@@ -9,7 +9,9 @@ import {
   canSpin,
   findSpinSegment,
   spinDailyWheel,
+  spinSegmentAtRotation,
   spinSegmentIndex,
+  spinTargetRotation,
 } from '../src/spin';
 import { emptyWallet } from '../src/wallet';
 
@@ -80,5 +82,35 @@ describe('applySpinReward', () => {
     // The wheel is a bonus: it does not count toward the daily earning cap.
     expect(next.tokensToday).toBe(480);
     expect(wallet.balance).toBe(40);
+  });
+});
+
+describe('the angle of the wheel', () => {
+  it('lands on the chosen segment for every segment, turn count and jitter', () => {
+    SPIN_SEGMENTS.forEach((segment, index) => {
+      for (const turns of [0, 1, 5, 8]) {
+        for (const jitter of [-1, -0.7, -0.3, 0, 0.3, 0.7, 1]) {
+          const rotation = spinTargetRotation(index, turns, jitter);
+          expect(spinSegmentAtRotation(rotation)).toBe(index);
+          expect(SPIN_SEGMENTS[spinSegmentAtRotation(rotation)]?.reward).toBe(segment.reward);
+        }
+      }
+    });
+  });
+
+  it('maps the reward back to the same segment after the rotation', () => {
+    for (const segment of SPIN_SEGMENTS) {
+      const index = spinSegmentIndex(segment.reward);
+      expect(spinSegmentAtRotation(spinTargetRotation(index))).toBe(index);
+    }
+  });
+
+  it('reads the segment boundaries clockwise from the pointer', () => {
+    const step = 360 / SPIN_SEGMENTS.length;
+    expect(spinSegmentAtRotation(0)).toBe(0);
+    expect(spinSegmentAtRotation(-step + 0.01)).toBe(0);
+    expect(spinSegmentAtRotation(-step - 0.01)).toBe(1);
+    expect(spinSegmentAtRotation(0.01)).toBe(SPIN_SEGMENTS.length - 1);
+    expect(spinSegmentAtRotation(-360 * 3 - step * 2.5)).toBe(2);
   });
 });

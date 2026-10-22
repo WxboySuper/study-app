@@ -47,17 +47,17 @@ const RIM_RADIUS = 94;
 /**
  * The segment that is under the pointer at a rotation.
  *
- * The wedges are drawn with their centre at a quarter of a segment, so the
- * pointer has to be moved by half a segment to land on one.
- */
 /** The number of segments, read once so the worklet captures a number. */
 const SEGMENT_COUNT = SPIN_SEGMENTS.length;
 
 export function segmentAt(rotation: number): number {
   'worklet';
+  // Same math as `spinSegmentAtRotation` of @study-app/core (tested there):
+  // wedge i spans [i, i + 1) steps clockwise from 12 o'clock.
   const step = 360 / SEGMENT_COUNT;
-  const raw = Math.round((-rotation - step / 2) / step);
-  return ((raw % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
+  const face = ((-rotation % 360) + 360) % 360;
+  const index = Math.floor(face / step);
+  return ((index % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
 }
 
 /** Mixes a hex color with white (`amount` above 0) or black (below 0). */
