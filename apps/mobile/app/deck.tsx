@@ -4,13 +4,16 @@ import {
   countQuestionFilters,
   formatDueIn,
   matchesQuestionFilter,
+  matchesQuestionSearch,
+  sortQuestionRows,
+  type QuestionSort,
   parseQuestionFilter,
   type QuestionFilter,
   type QuestionRow,
 } from '@study-app/core';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { TextInput, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -48,6 +51,7 @@ const FILTER_LOOK: { filter: QuestionFilter; label: string; color: string }[] = 
   { filter: 'learning', label: 'LEARNING', color: '#a78bff' },
   { filter: 'scheduled', label: 'LATER', color: '#34d399' },
   { filter: 'mastered', label: 'MASTERED', color: '#ffd166' },
+  { filter: 'leech', label: 'LEECHES', color: '#f97316' },
 ];
 
 /** How many new questions a session takes (the home screen uses the same). */
@@ -59,6 +63,8 @@ export default function DeckDetailRoute() {
   const params = useLocalSearchParams<{ id?: string; filter?: string }>();
   const setId = typeof params.id === 'string' ? params.id : '';
   const [filter, setFilter] = useState<QuestionFilter>(parseQuestionFilter(params.filter));
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<QuestionSort>('deck');
   const [title, setTitle] = useState('Deck');
   const [rows, setRows] = useState<QuestionRow[] | null>(null);
   const [now, setNow] = useState(() => Date.now());
@@ -96,8 +102,12 @@ export default function DeckDetailRoute() {
 
   const counts = useMemo(() => countQuestionFilters(rows ?? []), [rows]);
   const shown = useMemo(
-    () => (rows ?? []).filter((row) => matchesQuestionFilter(row, filter)),
-    [filter, rows],
+    () =>
+      sortQuestionRows(
+        (rows ?? []).filter((row) => matchesQuestionFilter(row, filter) && matchesQuestionSearch(row, query)),
+        sort,
+      ),
+    [filter, query, rows, sort],
   );
 
   const onPlay = () => {
@@ -145,6 +155,33 @@ export default function DeckDetailRoute() {
           })}
         </View>
 
+        <View style={styles.searchRow}>
+          <TextInput
+            testID="deck-search"
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search questions and answers"
+            placeholderTextColor={colors.textMuted}
+            autoCorrect={false}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+            accessibilityLabel="Search questions"
+            style={styles.search}
+          />
+          <Pressable
+            testID="deck-sort"
+            accessibilityRole="button"
+            accessibilityLabel={`Sort: ${SORT_LABEL[sort]}`}
+            onPress={() => {
+              play('tap');
+              setSort(SORT_NEXT[sort]);
+            }}
+            style={({ pressed }) => [styles.sortButton, pressed && styles.pressed]}
+          >
+            <Text style={styles.sortText}>⇅ {SORT_LABEL[sort]}</Text>
+          </Pressable>
+        </View>
+
         {rows === null ? (
           <CritterLoader emoji="🐟" label="Counting the questions…" />
         ) : (
@@ -179,6 +216,9 @@ export default function DeckDetailRoute() {
   );
 }
 
+const SORT_LABEL: Record<QuestionSort, string> = { deck: 'DECK', due: 'DUE', weakest: 'WEAKEST' };
+const SORT_NEXT: Record<QuestionSort, QuestionSort> = { deck: 'due', due: 'weakest', weakest: 'deck' };
+
 /** One question of the deck: prompt, answer, status and mastery dots. */
 function QuestionTile({ row, index, now }: { row: QuestionRow; index: number; now: number }) {
   const look = STATUS_LOOK[row.status];
@@ -203,6 +243,11 @@ function QuestionTile({ row, index, now }: { row: QuestionRow; index: number; no
             {look.glyph} {statusText}
           </Text>
         </View>
+        {row.leech ? (
+          <View style={[styles.pill, styles.leechPill]}>
+            <Text style={[styles.pillText, { color: '#f97316' }]}>🐛 LEECH</Text>
+          </View>
+        ) : null}
         {row.queued ? (
           <View style={[styles.pill, styles.queuedPill]}>
             <Text style={[styles.pillText, { color: colors.gold }]}>🎣 QUEUED</Text>
@@ -267,6 +312,26 @@ const styles = StyleSheet.create({
   footerSpace: { height: 96 },
   tile: { borderRadius: radius.tile },
   tileMastered: { borderColor: colors.gold },
+  leechPill: { backgroundColor: '#f9731626', borderColor: '#f97316' },
+  searchRow: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, marginBottom: 8 },
+  search: {
+    flex: 1,
+    minHeight: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    color: colors.text,
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  sortButton: {
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+  },
+  sortText: { color: colors.text, fontWeight: '700', fontSize: 12, letterSpacing: 0.6 },
   tileContent: { padding: spacing.md, gap: spacing.sm },
   tileTop: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   number: { color: colors.textDim, fontFamily: fonts.title, fontSize: 12 },

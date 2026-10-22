@@ -412,6 +412,10 @@ export {
   type QuestionFilter,
   type QuestionRow,
   type QuestionStatusKind,
+  matchesQuestionSearch,
+  sortQuestionRows,
+  QUESTION_SORTS,
+  type QuestionSort,
 } from './deckDetail';
 export {
   appendOutbox,
