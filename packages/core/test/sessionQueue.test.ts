@@ -125,15 +125,18 @@ describe('createSessionQueue', () => {
   });
 });
 
+/** Right answers a new card needs to graduate with the default learning steps. */
+const LEARN_STEPS = DEFAULT_ANKI_SETTINGS.learnStepsMinutes.length;
+
 describe('mastery mode', () => {
-  it(`needs ${MASTERY_REQUIRED_CORRECT} right answers in a row to master a question`, () => {
+  it('masters a question when it graduates from its learning steps', () => {
     let queue = createSessionQueue({
       questions: [question('a')],
       mode: 'mastery',
       rng: createSeededRng(7),
     });
 
-    for (let answer = 1; answer < MASTERY_REQUIRED_CORRECT; answer += 1) {
+    for (let answer = 1; answer < LEARN_STEPS; answer += 1) {
       const next = round(queue, true);
       queue = next.queue;
 
@@ -144,12 +147,12 @@ describe('mastery mode', () => {
 
     queue = round(queue, true).queue;
 
-    expect(queue.records.a?.correctStreak).toBe(MASTERY_REQUIRED_CORRECT);
+    expect(queue.records.a?.correctStreak).toBe(LEARN_STEPS);
     expect(masteredCount(queue)).toBe(1);
     expect(sessionComplete(queue)).toBe(true);
   });
 
-  it(`needs the same ${MASTERY_REQUIRED_CORRECT} right answers after a miss`, () => {
+  it('starts the learning steps over after a miss', () => {
     let queue = createSessionQueue({
       questions: [question('a')],
       mode: 'mastery',
@@ -162,8 +165,8 @@ describe('mastery mode', () => {
     expect(sessionComplete(queue)).toBe(false);
     expect(queue.records.a?.missed).toBe(true);
 
-    // The question starts over: three right answers are needed again.
-    for (let answer = 1; answer < MASTERY_REQUIRED_CORRECT; answer += 1) {
+    // The question starts over: every learning step is needed again.
+    for (let answer = 1; answer < LEARN_STEPS; answer += 1) {
       queue = round(queue, true).queue;
       expect(queue.records.a?.correctStreak).toBe(answer);
       expect(masteredCount(queue)).toBe(0);
@@ -183,16 +186,14 @@ describe('mastery mode', () => {
     });
 
     queue = round(queue, true).queue;
-    queue = round(queue, true).queue;
-    expect(queue.records.a?.correctStreak).toBe(2);
+    expect(queue.records.a?.correctStreak).toBe(1);
     expect(masteredCount(queue)).toBe(0);
 
     queue = round(queue, false).queue;
     expect(queue.records.a?.correctStreak).toBe(0);
     expect(masteredCount(queue)).toBe(0);
 
-    // Two right answers are not enough any more: the question starts over.
-    queue = round(queue, true).queue;
+    // One right answer is not enough any more: the steps start over.
     queue = round(queue, true).queue;
     expect(masteredCount(queue)).toBe(0);
 
@@ -400,10 +401,9 @@ describe('mastery mode', () => {
     const first = ask(queue);
     const asked = first.id;
     queue = answerSessionQuestion(first.queue, asked, true);
-    queue = answerSessionQuestion(ask(queue).queue, asked, true);
 
     const progress = masteryProgress(queue).find((entry) => entry.id === asked);
-    expect(progress?.correct).toBe(2);
+    expect(progress?.correct).toBe(1);
     expect(progress?.required).toBe(MASTERY_REQUIRED_CORRECT);
     expect(progress?.mastered).toBe(false);
   });
@@ -416,8 +416,7 @@ describe('mastery mode', () => {
     });
 
     queue = round(queue, true).queue;
-    queue = round(queue, true).queue;
-    expect(masteryProgress(queue)[0]?.correct).toBe(2);
+    expect(masteryProgress(queue)[0]?.correct).toBe(1);
 
     queue = round(queue, false).queue;
     expect(masteryProgress(queue)[0]?.correct).toBe(0);
@@ -854,11 +853,11 @@ describe('mastery across sessions (regression: 0/36 mastered after 40 answers)',
     card: { id: `metr_${index}`, front: `Q${index}`, back: 'A', wrong: ['B'] } as never,
   }));
 
-  it('keeps the correct answers of earlier sessions and masters on the third', () => {
+  it('keeps the correct answers of earlier sessions and masters on graduation', () => {
     const first = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(3) });
-    let state = answerSessionQuestion(first, 'metr_0', true);
-    state = answerSessionQuestion(state, 'metr_0', true);
+    const state = answerSessionQuestion(first, 'metr_0', true);
     expect(masteredCount(state)).toBe(0);
+    expect(masteryCounts(state).metr_0).toBe(1);
 
     // The app restarts the session (or the screen re-mounts): the counts carry over.
     const second = createSessionQueue({
@@ -867,7 +866,10 @@ describe('mastery across sessions (regression: 0/36 mastered after 40 answers)',
       rng: createSeededRng(4),
       masteryCounts: masteryCounts(state),
     });
-    expect(masteredCount(answerSessionQuestion(second, 'metr_0', true))).toBe(1);
+    expect(masteryCounts(second).metr_0).toBe(1);
+    // Graduation, not the meter, masters it: the learning steps run again.
+    const again = answerSessionQuestion(answerSessionQuestion(second, 'metr_0', true), 'metr_0', true);
+    expect(masteredCount(again)).toBe(1);
   });
 
   it('counts spread-out correct answers and resets on a miss', () => {
