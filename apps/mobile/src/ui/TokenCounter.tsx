@@ -31,6 +31,8 @@ export interface TokenCounterProps {
   style?: StyleProp<TextStyle>;
   /** How long the count up takes, in milliseconds. */
   duration?: number;
+  /** The number the count up starts from (defaults to the value). */
+  startAt?: number;
   /** The label the screen reader reads. */
   accessibilityLabel?: string;
 }
@@ -43,10 +45,11 @@ export function TokenCounter({
   showIcon = true,
   style,
   duration = 700,
+  startAt,
   accessibilityLabel,
 }: TokenCounterProps) {
-  const [display, setDisplay] = useState(value);
-  const counter = useSharedValue(value);
+  const [display, setDisplay] = useState(startAt ?? value);
+  const counter = useSharedValue(startAt ?? value);
   const pop = useSharedValue(0);
 
   useEffect(() => {

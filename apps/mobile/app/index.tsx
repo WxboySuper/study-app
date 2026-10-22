@@ -15,16 +15,10 @@ import Animated, {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
-  listLocalCardStates,
-  listLocalCards,
-  listLocalSets,
-  listLocalTopics,
-  openLocalDatabase,
+  openLocalStore,
   type LocalSet,
   type LocalTopic,
 } from '@/db/local';
-import { readLastSpin } from '@/db/packs';
-import { readCollection, readWallet } from '@/db/wallet';
 import { critterArt } from '@/packs/critterArt';
 import { scopeTitle, useSettings } from '@/settings';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
@@ -90,11 +84,11 @@ export default function HomeScreen() {
       let cancelled = false;
       void (async () => {
         try {
-          const db = await openLocalDatabase();
+          const store = await openLocalStore();
           const today = localDayKey(new Date());
-          const wallet = await readWallet(db, today);
-          const collection = await readCollection(db);
-          const lastSpin = await readLastSpin(db);
+          const wallet = await store.readWallet(today);
+          const collection = await store.readCollection();
+          const lastSpin = await store.readLastSpin();
           if (!cancelled) {
             setBalance(wallet.balance);
             setPackTickets(wallet.packTickets);
@@ -116,11 +110,11 @@ export default function HomeScreen() {
 
     void (async () => {
       try {
-        const db = await openLocalDatabase();
-        const cards = await listLocalCards(db);
-        const states = await listLocalCardStates(db);
-        const localSets = await listLocalSets(db);
-        const localTopics = await listLocalTopics(db);
+        const store = await openLocalStore();
+        const cards = await store.listCards();
+        const states = await store.listCardStates();
+        const localSets = await store.listSets();
+        const localTopics = await store.listTopics();
         if (cancelled) {
           return;
         }
@@ -176,13 +170,14 @@ export default function HomeScreen() {
             entering={FadeInDown.springify().damping(16).delay(80)}
             style={styles.walletRow}
           >
-            <GlassCard style={styles.walletCard} tint={colors.gold}>
+            <GlassCard style={styles.walletCard} contentStyle={styles.walletCardContent} tint={colors.gold}>
               <TokenCounter value={balance ?? 0} size={26} accessibilityLabel={`${balance ?? 0} tokens`} />
               <Text style={styles.walletLabel}>tokens</Text>
             </GlassCard>
 
             <GlassCard
               style={styles.walletCard}
+              contentStyle={styles.walletCardContent}
               tint={colors.ticket}
               accessibilityLabel={`${packTickets} pack tickets`}
             >
@@ -344,7 +339,7 @@ function PlayCard({
       <View style={styles.playWrap}>
         <Glow color={colors.primary} size={300} opacity={0.55} style={styles.playGlow} />
 
-        <GlassCard style={styles.playCard} tint="#7b61ff">
+        <GlassCard contentStyle={styles.playCard} tint="#7b61ff">
           <View style={styles.playTop}>
             <View style={styles.playText}>
               <Text style={styles.playKicker}>PLAY</Text>
@@ -541,6 +536,8 @@ const styles = StyleSheet.create({
   },
   walletCard: {
     flex: 1,
+  },
+  walletCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

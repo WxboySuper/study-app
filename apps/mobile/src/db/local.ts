@@ -1,19 +1,21 @@
 import * as SQLite from 'expo-sqlite';
 
-import type { CardState, ReviewLogRecord, State, StudyCard } from '@study-app/core';
+import type { CardState, State, StudyCard } from '@study-app/core';
+
+import {
+  buyAndOpenPack,
+  readLastSpin,
+  sellAllDuplicatesLocal,
+  sellDuplicates,
+  spinDailyWheelLocal,
+} from './packs';
+import type { LocalSet, LocalTopic, LocalStore, PendingReview } from './types';
+import { readCollection, readWallet, settleLocalSession } from './wallet';
+
+export type { LocalSet, LocalTopic, PendingReview } from './types';
 
 /** The name of the local (on device) SQLite database. */
 export const LOCAL_DATABASE_NAME = 'study-app.db';
-
-/** A review that is waiting to be synced to the server. */
-export interface PendingReview extends ReviewLogRecord {
-  /** Client generated id, makes the sync idempotent. */
-  clientId: string;
-  cardId: string;
-  sessionId: string | null;
-  durationMs: number | null;
-  createdAt: number;
-}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS local_topics (
@@ -84,9 +86,45 @@ CREATE INDEX IF NOT EXISTS outbox_created_at ON outbox (created_at);
  * state and the outbox of reviews that still have to be synced.
  */
 export async function openLocalDatabase(): Promise<SQLite.SQLiteDatabase> {
-  const db = await SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME);
-  await db.execAsync(SCHEMA);
-  return db;
+  if (database === null) {
+    database = SQLite.openDatabaseAsync(LOCAL_DATABASE_NAME).then(async (db) => {
+      await db.execAsync(SCHEMA);
+      return db;
+    });
+  }
+  return database;
+}
+
+/** The database of the app, opened once. */
+let database: Promise<SQLite.SQLiteDatabase> | null = null;
+
+/**
+ * Opens the local store of the app.
+ *
+ * On the phone the store is the SQLite database; on the web it is the
+ * in-memory mock of `src/db/local.web.ts`. The screens only ever see the
+ * {@link LocalStore} interface, so they do not care where the data lives.
+ */
+export async function openLocalStore(): Promise<LocalStore> {
+  const db = await openLocalDatabase();
+
+  return {
+    listCards: () => listLocalCards(db),
+    listCardStates: () => listLocalCardStates(db),
+    listSets: () => listLocalSets(db),
+    listTopics: () => listLocalTopics(db),
+    upsertCardState: (state) => upsertLocalCardState(db, state),
+    enqueueReview: (review) => enqueueReview(db, review),
+    readWallet: (today) => readWallet(db, today),
+    readCollection: () => readCollection(db),
+    settleSession: (sessionId, mode, outcome, today, now, sync) =>
+      settleLocalSession(db, sessionId, mode, outcome, today, now, sync),
+    readLastSpin: () => readLastSpin(db),
+    buyAndOpenPack: (packId, options) => buyAndOpenPack(db, packId, options),
+    sellDuplicates: (critterId, qty, now) => sellDuplicates(db, critterId, qty, now),
+    sellAllDuplicates: (now) => sellAllDuplicatesLocal(db, now),
+    spinDailyWheel: (today, options) => spinDailyWheelLocal(db, today, options),
+  };
 }
 
 /** Reads every locally known card. */
@@ -105,20 +143,6 @@ export async function listLocalCards(db: SQLite.SQLiteDatabase): Promise<StudyCa
     choices: row.choices_json ? (JSON.parse(row.choices_json) as string[]) : undefined,
     answerIndex: row.answer_index ?? undefined,
   }));
-}
-
-/** A set of the local store. */
-export interface LocalSet {
-  id: string;
-  topicId: string | null;
-  title: string;
-}
-
-/** A topic of the local store. */
-export interface LocalTopic {
-  id: string;
-  name: string;
-  color: string | null;
 }
 
 /** Reads every locally known set, sorted by title. */

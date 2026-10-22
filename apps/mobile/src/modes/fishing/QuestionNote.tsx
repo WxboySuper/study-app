@@ -1,6 +1,6 @@
 import type { FishingFeedback, FishingQuestion } from '@study-app/core';
-import { useEffect } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -10,16 +10,16 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { fishingSprite } from './assets';
+import { colors, fonts, radius } from '@/theme';
+import { GameButton, GlassCard, Particles } from '@/ui';
 
 /**
  * The question of the fishing mode (docs/design/fishing.md §4).
  *
- * The card lives *inside* the scene: a parchment note unrolls from the taut
- * line above the water and the four answers hang from a rope at the bottom
- * of the screen as wooden lure tags. There is never a full screen quiz card.
+ * The card lives *inside* the scene: a glassy note slides up from the water
+ * and the four answers sit below it as chunky buttons. The right answer
+ * flashes green with a burst of sparks, the wrong one flashes red.
  */
-
 export interface QuestionNoteProps {
   /** `true` while the question is on the screen. */
   visible: boolean;
@@ -33,53 +33,60 @@ export interface QuestionNoteProps {
   reduceMotion: boolean;
 }
 
-export function QuestionNote({ visible, question, feedback, onAnswer, reduceMotion }: QuestionNoteProps) {
-  const unroll = useSharedValue(0);
+export function QuestionNote({
+  visible,
+  question,
+  feedback,
+  onAnswer,
+  reduceMotion,
+}: QuestionNoteProps) {
+  const slide = useSharedValue(0);
 
   useEffect(() => {
     if (reduceMotion) {
-      unroll.value = visible ? 1 : 0;
+      slide.value = visible ? 1 : 0;
       return;
     }
 
-    unroll.value = visible
-      ? withSpring(1, { damping: 14, stiffness: 120 })
+    slide.value = visible
+      ? withSpring(1, { damping: 16, stiffness: 130 })
       : withTiming(0, { duration: 180, easing: Easing.in(Easing.quad) });
-  }, [visible, reduceMotion, unroll]);
+  }, [visible, reduceMotion, slide]);
 
   const noteStyle = useAnimatedStyle(() => ({
-    opacity: unroll.value,
-    transform: [{ translateY: (1 - unroll.value) * -40 }, { scaleY: 0.6 + unroll.value * 0.4 }],
+    opacity: slide.value,
+    transform: [{ translateY: (1 - slide.value) * 60 }],
   }));
 
-  const dimStyle = useAnimatedStyle(() => ({ opacity: unroll.value * 0.3 }));
+  const dimStyle = useAnimatedStyle(() => ({ opacity: slide.value * 0.35 }));
 
   if (!visible || question === null) {
     return null;
   }
 
-  const fontSize = question.prompt.length > 140 ? 16 : question.prompt.length > 70 ? 18 : 20;
-  const parchment = fishingSprite('ui_parchment_note');
+  const fontSize = question.prompt.length > 140 ? 15 : question.prompt.length > 70 ? 17 : 19;
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
 
-      <Animated.View style={[styles.note, noteStyle]} pointerEvents="box-none">
-        <View style={styles.paper}>
-          {parchment === null ? null : (
-            <Image source={parchment} resizeMode="stretch" style={styles.paperImage} />
-          )}
+      <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
+        <GlassCard contentStyle={styles.note} tint={colors.ticket}>
+          <View style={styles.noteHead}>
+            <View style={styles.pin} />
+            <Text style={styles.noteLabel}>STUDY NOTE</Text>
+          </View>
+
           <ScrollView style={styles.promptScroll} contentContainerStyle={styles.promptContent}>
             <Text style={[styles.prompt, { fontSize }]}>{question.prompt}</Text>
             {question.bonus ? <Text style={styles.bonus}>bonus review</Text> : null}
           </ScrollView>
-        </View>
+        </GlassCard>
       </Animated.View>
 
-      <View style={styles.tags} pointerEvents="box-none">
+      <View style={styles.answers} pointerEvents="box-none">
         {question.choices.slice(0, 4).map((choice, index) => (
-          <AnswerTag
+          <AnswerButton
             key={`${index}-${choice}`}
             label={choice}
             index={index}
@@ -87,7 +94,6 @@ export function QuestionNote({ visible, question, feedback, onAnswer, reduceMoti
             onPress={() => {
               onAnswer(index);
             }}
-            reduceMotion={reduceMotion}
           />
         ))}
       </View>
@@ -95,71 +101,106 @@ export function QuestionNote({ visible, question, feedback, onAnswer, reduceMoti
   );
 }
 
-interface AnswerTagProps {
+interface AnswerButtonProps {
   label: string;
   index: number;
   feedback: FishingFeedback | null;
   onPress: () => void;
-  reduceMotion: boolean;
 }
 
-function AnswerTag({ label, index, feedback, onPress, reduceMotion }: AnswerTagProps) {
-  const press = useSharedValue(0);
+/** One answer: a chunky button that flashes when it is right or wrong. */
+function AnswerButton({ label, index, feedback, onPress }: AnswerButtonProps) {
+  const [burst, setBurst] = useState(0);
   const shake = useSharedValue(0);
+  const flash = useSharedValue(0);
+  const press = useSharedValue(0);
 
   const isCorrect = feedback !== null && index === feedback.answerIndex;
   const isWrong = feedback !== null && !feedback.correct && index === feedback.choiceIndex;
+  const answered = feedback !== null;
 
   useEffect(() => {
-    if (feedback === null || reduceMotion) {
+    if (feedback === null) {
       shake.value = 0;
+      flash.value = 0;
       return;
     }
 
     if (isWrong) {
       shake.value = withSequence(
-        withTiming(-7, { duration: 55 }),
-        withTiming(7, { duration: 55 }),
+        withTiming(-8, { duration: 55 }),
+        withTiming(8, { duration: 55 }),
         withTiming(-4, { duration: 55 }),
         withTiming(0, { duration: 55 }),
       );
     }
-  }, [feedback, isWrong, reduceMotion, shake]);
 
-  const tagStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shake.value }, { scale: 1 - press.value * 0.06 }],
+    if (isCorrect || isWrong) {
+      flash.value = withSequence(
+        withTiming(1, { duration: 90 }),
+        withTiming(0, { duration: 520 }),
+      );
+      setBurst((current) => current + 1);
+    }
+  }, [feedback, isCorrect, isWrong, shake, flash]);
+
+  const shakeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shake.value }, { scale: 1 - press.value * 0.04 }],
   }));
 
-  const background = isCorrect
-    ? '#2f9e44'
-    : isWrong
-      ? '#c92a2a'
-      : feedback !== null
-        ? 'rgba(87, 62, 40, 0.55)'
-        : '#b08968';
+  const flashStyle = useAnimatedStyle(() => ({
+    opacity: flash.value * 0.85,
+  }));
 
   return (
-    <Animated.View style={[styles.tagWrapper, tagStyle]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={label}
+    <Animated.View style={[styles.answer, shakeStyle]}>
+      <GameButton
+        label={label}
+        variant={answered ? 'ghost' : 'primary'}
+        size="md"
+        disabled={answered && !feedback.retry}
         onPress={onPress}
-        disabled={feedback !== null && !feedback.retry}
-        onPressIn={() => {
-          press.value = withTiming(1, { duration: 60 });
-        }}
-        onPressOut={() => {
-          press.value = withTiming(0, { duration: 90 });
-        }}
-        style={({ pressed }) => [styles.tag, { backgroundColor: background }, pressed && styles.tagPressed]}
-      >
-        <View style={styles.hole} />
-        <Text style={styles.tagLabel} numberOfLines={3}>
-          {label}
-        </Text>
-        {isCorrect ? <Text style={styles.mark}>✓</Text> : null}
-        {isWrong ? <Text style={styles.mark}>✗</Text> : null}
-      </Pressable>
+        textStyle={styles.answerLabel}
+        accessibilityLabel={label}
+      />
+
+      {isCorrect ? (
+        <>
+          <Animated.View style={[styles.flash, styles.flashGood, flashStyle]} pointerEvents="none" />
+          <View style={styles.markGood} pointerEvents="none">
+            <Text style={styles.markText}>✓</Text>
+          </View>
+          <Particles
+            trigger={burst}
+            count={16}
+            colors={['#86efac', '#22c55e', '#ffffff']}
+            size={10}
+            distance={110}
+            gravity={240}
+            duration={800}
+            style={styles.burst}
+          />
+        </>
+      ) : null}
+
+      {isWrong ? (
+        <>
+          <Animated.View style={[styles.flash, styles.flashBad, flashStyle]} pointerEvents="none" />
+          <View style={styles.markBad} pointerEvents="none">
+            <Text style={styles.markText}>✗</Text>
+          </View>
+          <Particles
+            trigger={burst}
+            count={14}
+            colors={['#fda4af', '#ef476f', '#ffffff']}
+            size={9}
+            distance={100}
+            gravity={260}
+            duration={800}
+            style={styles.burst}
+          />
+        </>
+      ) : null}
     </Animated.View>
   );
 }
@@ -168,45 +209,52 @@ const styles = StyleSheet.create({
   dim: {
     backgroundColor: '#000000',
   },
-  note: {
+  noteWrap: {
     position: 'absolute',
-    top: '12%',
+    top: '13%',
     left: 14,
     right: 14,
   },
-  paper: {
-    backgroundColor: '#f4e3b2',
-    borderRadius: 12,
-    borderWidth: 3,
-    borderColor: '#c9a66b',
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    minHeight: 120,
-    overflow: 'hidden',
+  note: {
+    padding: 14,
+    gap: 8,
   },
-  paperImage: {
-    ...StyleSheet.absoluteFill,
-    width: '100%',
-    height: '100%',
+  noteHead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pin: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: colors.ticket,
+  },
+  noteLabel: {
+    color: colors.ticket,
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    letterSpacing: 2,
   },
   promptScroll: {
-    maxHeight: 150,
+    maxHeight: 140,
   },
   promptContent: {
     paddingVertical: 2,
   },
   prompt: {
-    color: '#3b2f14',
-    fontWeight: '700',
-    lineHeight: 26,
+    color: colors.text,
+    fontFamily: fonts.bodyBold,
+    lineHeight: 25,
   },
   bonus: {
     marginTop: 6,
-    color: '#8a6d3b',
-    fontSize: 12,
+    color: colors.textDim,
+    fontFamily: fonts.bodySemi,
+    fontSize: 11,
     fontStyle: 'italic',
   },
-  tags: {
+  answers: {
     position: 'absolute',
     left: 12,
     right: 12,
@@ -215,39 +263,44 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
   },
-  tagWrapper: {
+  answer: {
     width: '48%',
     flexGrow: 1,
+    justifyContent: 'center',
   },
-  tag: {
-    minHeight: 56,
-    borderRadius: 12,
-    borderWidth: 3,
-    borderColor: '#6f4e37',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
+  answerLabel: {
+    fontSize: 15,
+    textAlign: 'center',
   },
-  tagPressed: {
-    opacity: 0.85,
+  flash: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: radius.button,
   },
-  hole: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#6f4e37',
+  flashGood: {
+    backgroundColor: colors.success,
   },
-  tagLabel: {
-    flex: 1,
-    color: '#fdf6e3',
-    fontSize: 16,
-    fontWeight: '700',
+  flashBad: {
+    backgroundColor: colors.danger,
   },
-  mark: {
+  markGood: {
+    position: 'absolute',
+    right: 8,
+    top: 4,
+  },
+  markBad: {
+    position: 'absolute',
+    right: 8,
+    top: 4,
+  },
+  markText: {
     color: '#ffffff',
+    fontFamily: fonts.title,
     fontSize: 20,
-    fontWeight: '900',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowRadius: 4,
+  },
+  burst: {
+    top: -20,
+    bottom: -20,
   },
 });

@@ -309,7 +309,7 @@ export function PackOpening({
             </Animated.View>
           </Animated.View>
 
-          <GlassCard style={styles.reveal} tint={rarityColor}>
+          <GlassCard contentStyle={styles.reveal} tint={rarityColor}>
             <Animated.View style={[styles.artBox, critterStyle]}>
               {art === null ? (
                 <Text style={styles.emoji}>{critter.emoji}</Text>

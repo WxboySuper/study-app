@@ -4,15 +4,17 @@ import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { useAnimatedProps, useSharedValue, withSpring } from 'react-native-reanimated';
 
+import { colors, fonts, radius } from '@/theme';
+import { GlassCard, TokenCounter } from '@/ui';
+
 import { tierColor } from './assets';
 
 /**
  * The HUD of the fishing mode (docs/design/fishing.md §9).
  *
- * Top left: the haul in lbs (with a roll-up). Top right: the End button.
- * Top centre: the cards answered, the streak, the cards that are left, the
- * lure rank pips and the powerup that is held. Below it: the log of the
- * last five catches.
+ * The wallet and the lure sit at the top, the streak burns next to them and
+ * the haul counts itself up under the top bar. The log of the last five
+ * catches keeps the eyes on the water.
  */
 
 /** A text input that can be animated (the number roll-up). */
@@ -25,13 +27,22 @@ export interface HudProps {
   remaining: number;
   /** The tier of the biggest catch, for the colour of the counter. */
   biggestTier: CatchTier | null;
+  /** The tokens of the player. */
+  tokens: number;
   /** Called when the player wants to end the session. */
   onEnd: () => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
 }
 
-export function Hud({ session, remaining, biggestTier, onEnd, reduceMotion }: HudProps) {
+export function Hud({
+  session,
+  remaining,
+  biggestTier,
+  tokens,
+  onEnd,
+  reduceMotion,
+}: HudProps) {
   const haul = useSharedValue(session.haulLbs);
 
   useEffect(() => {
@@ -57,8 +68,54 @@ export function Hud({ session, remaining, biggestTier, onEnd, reduceMotion }: Hu
   return (
     <View style={styles.container} pointerEvents="box-none">
       <View style={styles.topRow} pointerEvents="box-none">
+        <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.walletChip}>
+          <TokenCounter value={tokens} size={17} />
+        </GlassCard>
+
+        <View style={styles.center} pointerEvents="none">
+          <View style={styles.chipRow}>
+            <View style={styles.lureChip}>
+              <Text style={styles.lureLabel}>LURE</Text>
+              <View style={styles.pips} accessibilityLabel={`Lure rank ${session.roll.lureRank}`}>
+                {[1, 2, 3, 4, 5].map((rank) => (
+                  <View
+                    key={rank}
+                    style={[styles.pip, rank <= session.roll.lureRank ? styles.pipOn : styles.pipOff]}
+                  />
+                ))}
+              </View>
+            </View>
+
+            {session.streak > 0 ? (
+              <View style={styles.streakChip}>
+                <Text style={styles.flame}>🔥</Text>
+                <Text style={styles.streakText}>{session.streak}</Text>
+              </View>
+            ) : null}
+
+            {powerup === null ? null : (
+              <View style={styles.powerupChip}>
+                <Text style={styles.powerupText}>
+                  {powerup.emoji} {powerup.name}
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="End the session"
+          onPress={onEnd}
+          style={({ pressed }) => [styles.endButton, pressed && styles.endButtonPressed]}
+        >
+          <Text style={styles.endLabel}>END</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.bottomRow} pointerEvents="none">
         <View style={styles.haulBox}>
-          <Text style={styles.haulLabel}>Haul</Text>
+          <Text style={styles.haulLabel}>HAUL</Text>
           <AnimatedTextInput
             editable={false}
             animatedProps={haulProps}
@@ -71,35 +128,10 @@ export function Hud({ session, remaining, biggestTier, onEnd, reduceMotion }: Hu
           />
         </View>
 
-        <View style={styles.stats} pointerEvents="none">
+        <View style={styles.stats}>
           <Text style={styles.stat}>{session.answered} answered</Text>
-          <Text style={styles.stat}>{session.streak > 0 ? `🔥 ${session.streak}` : '—'}</Text>
           <Text style={styles.stat}>{remaining} left</Text>
-          <View style={styles.pips} accessibilityLabel={`Lure rank ${session.roll.lureRank}`}>
-            {[1, 2, 3, 4, 5].map((rank) => (
-              <View
-                key={rank}
-                style={[
-                  styles.pip,
-                  rank <= session.roll.lureRank ? styles.pipOn : styles.pipOff,
-                ]}
-              />
-            ))}
-          </View>
-          {powerup === null ? null : (
-            <Text style={styles.powerup}>
-              {powerup.emoji} {powerup.name}
-            </Text>
-          )}
         </View>
-
-        <Pressable
-          accessibilityRole="button"
-          onPress={onEnd}
-          style={({ pressed }) => [styles.endButton, pressed && styles.endButtonPressed]}
-        >
-          <Text style={styles.endLabel}>End</Text>
-        </Pressable>
       </View>
 
       {log.length === 0 ? null : (
@@ -142,91 +174,162 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    paddingTop: 8,
+    paddingTop: 10,
     paddingHorizontal: 12,
+    gap: 8,
   },
   topRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
   },
-  haulBox: {
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    borderRadius: 14,
-    paddingHorizontal: 12,
+  walletChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  haulLabel: {
-    color: '#94a3b8',
-    fontSize: 11,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  haulValue: {
-    color: '#f8fafc',
-    fontSize: 22,
-    fontWeight: '800',
-    padding: 0,
-    minWidth: 120,
-  },
-  stats: {
+  center: {
+    flex: 1,
     alignItems: 'center',
-    gap: 2,
   },
-  stat: {
-    color: '#f8fafc',
-    fontSize: 12,
-    fontWeight: '600',
-    textShadowColor: 'rgba(15, 23, 42, 0.8)',
-    textShadowRadius: 4,
+  chipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  lureChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.chip,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(8, 16, 34, 0.62)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  lureLabel: {
+    color: colors.textMuted,
+    fontFamily: fonts.titleSemi,
+    fontSize: 9,
+    letterSpacing: 1.4,
   },
   pips: {
     flexDirection: 'row',
-    gap: 4,
-    marginTop: 2,
+    gap: 3,
   },
   pip: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
   pipOn: {
-    backgroundColor: '#ffd166',
+    backgroundColor: colors.gold,
   },
   pipOff: {
-    backgroundColor: 'rgba(248, 250, 252, 0.3)',
+    backgroundColor: 'rgba(248, 250, 252, 0.28)',
   },
-  powerup: {
-    color: '#ffd166',
+  streakChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderRadius: radius.chip,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(239, 71, 111, 0.28)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 138, 128, 0.55)',
+  },
+  flame: {
+    fontSize: 13,
+  },
+  streakText: {
+    color: '#ffffff',
+    fontFamily: fonts.title,
+    fontSize: 14,
+  },
+  powerupChip: {
+    borderRadius: radius.chip,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(8, 16, 34, 0.62)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.16)',
+  },
+  powerupText: {
+    color: colors.gold,
+    fontFamily: fonts.titleSemi,
     fontSize: 11,
-    fontWeight: '700',
   },
   endButton: {
-    backgroundColor: 'rgba(15, 23, 42, 0.55)',
-    borderRadius: 999,
+    backgroundColor: 'rgba(8, 16, 34, 0.72)',
+    borderRadius: radius.pill,
     borderWidth: 2,
-    borderColor: '#f8fafc',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    borderColor: 'rgba(255,255,255,0.55)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
   },
   endButtonPressed: {
     opacity: 0.7,
+    transform: [{ scale: 0.94 }],
   },
   endLabel: {
-    color: '#f8fafc',
-    fontSize: 14,
-    fontWeight: '800',
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 12,
+    letterSpacing: 1.2,
+  },
+  bottomRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'space-between',
+  },
+  haulBox: {
+    alignSelf: 'flex-start',
+    borderRadius: radius.tile,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: 'rgba(8, 16, 34, 0.55)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+  },
+  haulLabel: {
+    color: colors.textMuted,
+    fontFamily: fonts.titleSemi,
+    fontSize: 9,
+    letterSpacing: 1.6,
+  },
+  haulValue: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 20,
+    padding: 0,
+    width: 104,
+  },
+  stats: {
+    alignItems: 'flex-end',
+    gap: 2,
+  },
+  stat: {
+    color: 'rgba(255,255,255,0.86)',
+    fontFamily: fonts.titleSemi,
+    fontSize: 12,
+    textShadowColor: 'rgba(6, 12, 28, 0.9)',
+    textShadowRadius: 4,
   },
   log: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 8,
   },
   logItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'rgba(8, 16, 34, 0.6)',
     borderRadius: 10,
     borderWidth: 1,
     paddingHorizontal: 8,
@@ -237,7 +340,7 @@ const styles = StyleSheet.create({
   },
   logWeight: {
     color: '#e2e8f0',
+    fontFamily: fonts.titleSemi,
     fontSize: 11,
-    fontWeight: '700',
   },
 });

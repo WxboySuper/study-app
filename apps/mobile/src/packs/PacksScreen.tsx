@@ -7,14 +7,12 @@ import {
   type PackDef,
   type WalletSnapshot,
 } from '@study-app/core';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { openLocalDatabase } from '@/db/local';
-import { buyAndOpenPack } from '@/db/packs';
-import { readCollection, readWallet } from '@/db/wallet';
+import { openLocalStore } from '@/db/local';
 import { colors, fonts, radius } from '@/theme';
 import { GameBackground, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
 
@@ -31,6 +29,7 @@ import { PackOpening } from './PackOpening';
  */
 
 export function PacksScreen() {
+  const params = useLocalSearchParams<{ demo?: string }>();
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
   const [owned, setOwned] = useState<Map<string, number>>(new Map());
   const [useTicket, setUseTicket] = useState(false);
@@ -44,11 +43,11 @@ export function PacksScreen() {
 
   const refresh = useCallback(async () => {
     try {
-      const db = await openLocalDatabase();
+      const store = await openLocalStore();
       const today = localDayKey(new Date());
-      const nextWallet = await readWallet(db, today);
+      const nextWallet = await store.readWallet(today);
       setWallet(nextWallet);
-      setOwned(await readCollection(db));
+      setOwned(await store.readCollection());
     } catch {
       // The shop stays empty when the local store cannot be read.
     }
@@ -61,6 +60,22 @@ export function PacksScreen() {
     }, [refresh]),
   );
 
+  // The demo of the web build opens the reveal of a pack right away.
+  useEffect(() => {
+    if (params.demo !== 'reveal') {
+      return;
+    }
+    const pack = PACKS[0];
+    if (pack === undefined) {
+      return;
+    }
+    const critter = pack.critters.find((entry) => entry.rarity === 'epic') ?? pack.critters[0];
+    if (critter === undefined) {
+      return;
+    }
+    setOpening({ pack, critter, duplicate: false });
+  }, [params.demo]);
+
   const onOpen = useCallback(
     async (pack: PackDef, force = false) => {
       if (busy && !force) {
@@ -71,8 +86,8 @@ export function PacksScreen() {
       setMessage(null);
 
       try {
-        const db = await openLocalDatabase();
-        const result = await buyAndOpenPack(db, pack.id, {
+        const store = await openLocalStore();
+        const result = await store.buyAndOpenPack(pack.id, {
           useTicket: useTicket && (wallet?.packTickets ?? 0) > 0,
         });
 
@@ -124,13 +139,13 @@ export function PacksScreen() {
             title="PACK SHOP"
             subtitle="Open a pack, find a critter"
             right={
-              <GlassCard borderRadius={radius.chip} elevated={false} style={styles.headerChip}>
+              <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.headerChip}>
                 <TokenCounter value={balance} size={18} />
               </GlassCard>
             }
           />
 
-          <GlassCard style={styles.wallet} tint={colors.ticket}>
+          <GlassCard contentStyle={styles.wallet} tint={colors.ticket}>
             <View style={styles.walletCell}>
               <TokenCounter value={balance} size={20} />
               <Text style={styles.walletLabel}>tokens</Text>

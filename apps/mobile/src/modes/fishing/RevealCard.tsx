@@ -1,7 +1,7 @@
 import type { CatchTier, RolledCatch } from '@study-app/core';
-import { CATCH_TIERS, POWERUPS, findCritter, isCatchOutcome } from '@study-app/core';
-import { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { CATCH_TIERS, isCatchOutcome } from '@study-app/core';
+import { useEffect, useState } from 'react';
+import { StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedProps,
@@ -12,6 +12,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { colors, fonts, radius, rarityColors } from '@/theme';
+import { GameButton, GlassCard, Glow, LightRays, Particles } from '@/ui';
+
+import { assetIdOf, captionOf, nameOf } from './catchArt';
 import { tierColor } from './assets';
 import { Sprite } from './Sprite';
 
@@ -43,12 +47,16 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
   const scale = useSharedValue(0.6);
   const weight = useSharedValue(0);
   const flash = useSharedValue(0);
+  const stamp = useSharedValue(0);
+  const [burst, setBurst] = useState(0);
 
   const isCatch = isCatchOutcome(landed);
   const tier: CatchTier | null = isCatch ? landed.tier : null;
   const tierName = tier === null ? null : (CATCH_TIERS.find((entry) => entry.id === tier)?.name ?? tier);
-  const color = tier === null ? '#208aef' : tierColor(tier);
+  const color = tier === null ? '#38bdf8' : tierColor(tier);
   const lbs = isCatch ? landed.lbs : 0;
+  const isCritter = landed.kind === 'critter';
+  const rarityColor = isCritter && landed.kind === 'critter' ? rarityColors[landed.critter.rarity] : color;
 
   useEffect(() => {
     if (!visible) {
@@ -61,14 +69,20 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
       scale.value = 1;
       weight.value = lbs;
       flash.value = 0;
+      stamp.value = 1;
       return;
     }
 
     scale.value = withSequence(
-      withTiming(1.05, { duration: 160, easing: Easing.out(Easing.quad) }),
+      withTiming(1.06, { duration: 160, easing: Easing.out(Easing.quad) }),
       withSpring(1, { damping: 12, stiffness: 150 }),
     );
     weight.value = withTiming(lbs, { duration: 900, easing: Easing.out(Easing.cubic) });
+    stamp.value = withSequence(
+      withTiming(1.4, { duration: 90, easing: Easing.out(Easing.quad) }),
+      withSpring(1, { damping: 11, stiffness: 200 }),
+    );
+    setBurst((current) => current + 1);
 
     // The big catches flash the whole screen.
     if (tier === 'cotd' || tier === 'legend') {
@@ -77,7 +91,7 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
         withTiming(0, { duration: 520 }),
       );
     }
-  }, [visible, reduceMotion, scale, weight, flash, lbs, tier]);
+  }, [visible, reduceMotion, scale, weight, flash, stamp, lbs, tier, setBurst]);
 
   const cardStyle = useAnimatedStyle(() => ({
     opacity: visible ? 1 : 0,
@@ -85,6 +99,11 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
   }));
 
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.55 }));
+
+  const stampStyle = useAnimatedStyle(() => ({
+    opacity: visible ? 1 : 0,
+    transform: [{ rotate: '-9deg' }, { scale: stamp.value }],
+  }));
 
   const weightProps = useAnimatedProps(() => ({
     text: `${Math.round(weight.value).toLocaleString('en-US')} lbs`,
@@ -99,112 +118,79 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <Animated.View style={[StyleSheet.absoluteFill, styles.flash, flashStyle]} pointerEvents="none" />
 
+      {tier === 'cotd' || tier === 'legend' ? (
+        <LightRays color={color} count={18} size={720} opacity={0.34} style={styles.rays} />
+      ) : null}
+
       <View style={styles.center} pointerEvents="box-none">
         <Animated.View style={[styles.card, cardStyle]}>
-          {tierName === null ? null : (
-            <View style={[styles.ribbon, { backgroundColor: color }]}>
-              <Text style={styles.ribbonText}>{tierName}</Text>
-            </View>
-          )}
-
-          <View style={styles.art}>
-            <Sprite assetId={assetIdOf(landed)} size={140} />
-            {isNew ? (
-              <View style={styles.newStamp}>
-                <Text style={styles.newStampText}>NEW!</Text>
-              </View>
-            ) : null}
-          </View>
-
-          <Text style={styles.name}>{nameOf(landed)}</Text>
-
-          {isCatch ? (
-            <AnimatedTextInput
-              editable={false}
-              animatedProps={weightProps}
-              underlineColorAndroid="transparent"
-              style={[styles.weight, { color }]}
-              accessibilityLabel={`${nameOf(landed)} weighs ${Math.round(lbs).toLocaleString('en-US')} lbs`}
-            />
-          ) : null}
-
-          {captionOf(landed) === undefined ? null : (
-            <Text style={styles.joke}>“{captionOf(landed)}”</Text>
-          )}
-
-          <Pressable
-            accessibilityRole="button"
-            onPress={onContinue}
-            style={({ pressed }) => [styles.continue, pressed && styles.continuePressed]}
+          <GlassCard
+            contentStyle={styles.cardContent}
+            tint={rarityColor}
+            face={[`${rarityColor}33`, `${rarityColor}0f`]}
           >
-            <Text style={styles.continueText}>Continue</Text>
-          </Pressable>
+            {tierName === null ? null : (
+              <View style={[styles.ribbon, { backgroundColor: color }]}>
+                <Text style={styles.ribbonText}>{tierName}</Text>
+              </View>
+            )}
+
+            <View style={styles.art}>
+              <Glow color={rarityColor} size={250} opacity={0.65} style={styles.artGlow} />
+              <Sprite assetId={assetIdOf(landed)} size={150} />
+              {isNew ? (
+                <Animated.View style={[styles.newStamp, stampStyle]}>
+                  <Text style={styles.newStampText}>NEW!</Text>
+                </Animated.View>
+              ) : null}
+            </View>
+
+            <Text style={styles.name}>{nameOf(landed)}</Text>
+
+            {isCatch ? (
+              <AnimatedTextInput
+                editable={false}
+                animatedProps={weightProps}
+                underlineColorAndroid="transparent"
+                style={[styles.weight, { color }]}
+                accessibilityLabel={`${nameOf(landed)} weighs ${Math.round(lbs).toLocaleString('en-US')} lbs`}
+              />
+            ) : null}
+
+            {captionOf(landed) === undefined ? null : (
+              <Text style={styles.joke}>“{captionOf(landed)}”</Text>
+            )}
+
+            <View style={styles.actions}>
+              <GameButton label="CONTINUE" variant="primary" size="lg" onPress={onContinue} />
+            </View>
+          </GlassCard>
         </Animated.View>
       </View>
+
+      <Particles
+        trigger={burst}
+        count={26}
+        colors={[rarityColor, '#ffffff', colors.gold]}
+        size={11}
+        distance={180}
+        gravity={300}
+        duration={1000}
+        style={styles.splash}
+      />
     </View>
   );
-}
-
-/** The sprite of a catch. */
-function assetIdOf(landed: RolledCatch): string {
-  switch (landed.kind) {
-    case 'fish':
-    case 'critter':
-    case 'junk':
-      return landed.catch.assetId;
-    case 'new_lure':
-      return 'special_new_lure';
-    case 'frenzy':
-      return 'special_frenzy';
-    case 'powerup':
-      return POWERUPS.find((entry) => entry.id === landed.powerup)?.assetId ?? 'pu_double_hook';
-    case 'pack_ticket':
-      return 'special_pack_ticket';
-  }
-}
-
-/** The name of a catch. */
-function nameOf(landed: RolledCatch): string {
-  switch (landed.kind) {
-    case 'fish':
-    case 'critter':
-    case 'junk':
-      return landed.catch.name;
-    case 'new_lure':
-      return 'New Lure!';
-    case 'frenzy':
-      return 'FRENZY!';
-    case 'powerup':
-      return POWERUPS.find((entry) => entry.id === landed.powerup)?.name ?? 'Powerup';
-    case 'pack_ticket':
-      return 'Pack Ticket!';
-  }
-}
-
-/**
- * The caption of a catch: the joke of the silly catches and the vibe of the
- * critters.
- */
-function captionOf(landed: RolledCatch): string | undefined {
-  if (landed.kind === 'critter') {
-    const critter = findCritter(landed.critter.id);
-    return critter?.vibe;
-  }
-  if (landed.kind === 'fish' || landed.kind === 'junk') {
-    return landed.catch.joke;
-  }
-  if (landed.kind === 'pack_ticket') {
-    return 'One free Brain Buddies pack.';
-  }
-  if (landed.kind === 'frenzy') {
-    return 'The next five catches come fast and heavy.';
-  }
-  return undefined;
 }
 
 const styles = StyleSheet.create({
   flash: {
     backgroundColor: '#ffffff',
+  },
+  rays: {
+    top: '50%',
+    left: '50%',
+    marginTop: -360,
+    marginLeft: -360,
   },
   center: {
     ...StyleSheet.absoluteFill,
@@ -212,87 +198,83 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   card: {
-    width: '84%',
-    borderRadius: 20,
-    backgroundColor: '#fdf6e3',
-    borderWidth: 4,
-    borderColor: '#1d3557',
-    paddingVertical: 18,
-    paddingHorizontal: 16,
+    width: '86%',
+  },
+  cardContent: {
+    paddingVertical: 20,
+    paddingHorizontal: 18,
     alignItems: 'center',
   },
   ribbon: {
     alignSelf: 'stretch',
     alignItems: 'center',
-    borderRadius: 10,
+    borderRadius: radius.chip,
     paddingVertical: 6,
     marginBottom: 12,
   },
   ribbonText: {
     color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontSize: 14,
+    fontFamily: fonts.title,
+    letterSpacing: 1.6,
     textTransform: 'uppercase',
   },
   art: {
-    width: 150,
-    height: 150,
+    width: 160,
+    height: 160,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  artGlow: {
+    position: 'absolute',
+  },
   newStamp: {
     position: 'absolute',
-    top: 0,
-    right: -4,
-    backgroundColor: '#ef476f',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    transform: [{ rotate: '12deg' }],
+    top: 2,
+    right: -6,
+    backgroundColor: colors.danger,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 3,
+    borderColor: 'rgba(8, 10, 16, 0.9)',
   },
   newStampText: {
     color: '#ffffff',
-    fontSize: 12,
-    fontWeight: '900',
+    fontSize: 14,
+    fontFamily: fonts.title,
+    letterSpacing: 1.2,
   },
   name: {
     marginTop: 6,
-    color: '#1d3557',
-    fontSize: 22,
-    fontWeight: '900',
+    color: colors.text,
+    fontSize: 23,
+    fontFamily: fonts.title,
     textAlign: 'center',
   },
   weight: {
     marginTop: 2,
     fontSize: 26,
-    fontWeight: '900',
+    fontFamily: fonts.title,
     padding: 0,
     minWidth: 140,
     textAlign: 'center',
   },
   joke: {
     marginTop: 8,
-    color: '#6f4e37',
-    fontSize: 14,
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
     fontStyle: 'italic',
     textAlign: 'center',
+    lineHeight: 18,
   },
-  continue: {
+  actions: {
+    width: '100%',
     marginTop: 16,
-    backgroundColor: '#1d3557',
-    borderRadius: 999,
-    paddingHorizontal: 28,
-    paddingVertical: 10,
-    minHeight: 44,
-    justifyContent: 'center',
   },
-  continuePressed: {
-    opacity: 0.8,
-  },
-  continueText: {
-    color: '#f8fafc',
-    fontSize: 15,
-    fontWeight: '800',
+  splash: {
+    top: '35%',
+    bottom: '35%',
   },
 });

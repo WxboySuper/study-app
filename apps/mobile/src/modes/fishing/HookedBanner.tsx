@@ -9,12 +9,15 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { fishingSprite } from './assets';
+import { colors, fonts, radius, shadow } from '@/theme';
+import { Glow, Particles } from '@/ui';
 
 /**
  * The "HOOKED!" banner of the fishing mode.
  *
- * It slams in with a tilt and a shake (docs/design/fishing.md §3).
+ * It slams into the middle of the screen with a tilt and a shake
+ * (docs/design/fishing.md §3): the word lands, the screen flashes gold and
+ * the phone buzzes.
  */
 export interface HookedBannerProps {
   /** `true` while the banner is on the screen. */
@@ -29,6 +32,7 @@ export function HookedBanner({ visible, reduceMotion, onReel }: HookedBannerProp
   const scale = useSharedValue(0.4);
   const rotate = useSharedValue(-14);
   const shake = useSharedValue(0);
+  const burst = useSharedValue(0);
 
   useEffect(() => {
     if (!visible) {
@@ -39,61 +43,71 @@ export function HookedBanner({ visible, reduceMotion, onReel }: HookedBannerProp
       scale.value = 1;
       rotate.value = -6;
       shake.value = 0;
+      burst.value = 0;
       return;
     }
 
     scale.value = withSequence(
-      withTiming(1.15, { duration: 120, easing: Easing.out(Easing.quad) }),
-      withSpring(1, { damping: 9, stiffness: 160 }),
+      withTiming(1.25, { duration: 120, easing: Easing.out(Easing.quad) }),
+      withSpring(1, { damping: 8, stiffness: 190 }),
     );
     rotate.value = withSequence(
-      withTiming(4, { duration: 120 }),
-      withSpring(-6, { damping: 10, stiffness: 140 }),
+      withTiming(5, { duration: 120 }),
+      withSpring(-6, { damping: 9, stiffness: 150 }),
     );
     shake.value = withSequence(
-      withTiming(1, { duration: 60 }),
-      withTiming(-1, { duration: 60 }),
-      withTiming(0.6, { duration: 60 }),
-      withTiming(0, { duration: 60 }),
+      withTiming(1, { duration: 55 }),
+      withTiming(-1, { duration: 55 }),
+      withTiming(0.6, { duration: 55 }),
+      withTiming(0, { duration: 55 }),
     );
-  }, [visible, reduceMotion, scale, rotate, shake]);
+    burst.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.quad) });
+  }, [visible, reduceMotion, scale, rotate, shake, burst]);
 
   const bannerStyle = useAnimatedStyle(() => ({
     opacity: scale.value > 0.05 ? 1 : 0,
     transform: [
-      { translateX: shake.value * 8 },
+      { translateX: shake.value * 10 },
       { rotate: `${rotate.value}deg` },
       { scale: scale.value },
     ],
   }));
 
   const burstStyle = useAnimatedStyle(() => ({
-    opacity: scale.value * 0.45,
-    transform: [{ scale: 1.4 - scale.value * 0.4 }],
+    opacity: burst.value * 0.5,
+    transform: [{ scale: 0.6 + burst.value * 0.8 }],
   }));
 
   if (!visible) {
     return null;
   }
 
-  const sprite = fishingSprite('ui_hooked_banner');
-
   return (
     <Animated.View style={[styles.container, bannerStyle]} pointerEvents="box-none">
       <Animated.View style={[styles.burst, burstStyle]} pointerEvents="none">
-        <View style={styles.burstCircle} />
+        <Glow color={colors.gold} size={420} opacity={0.9} />
       </Animated.View>
+
       <View style={styles.banner}>
-        {sprite === null ? null : (
-          <Animated.Image source={sprite} resizeMode="contain" style={styles.bannerImage} />
-        )}
         <Text style={styles.text} onPress={onReel}>
           HOOKED!
         </Text>
+        <View style={styles.underline} />
       </View>
+
       <Text style={styles.hint} onPress={onReel}>
-        tap to reel
+        tap to reel in
       </Text>
+
+      <Particles
+        trigger={visible ? 1 : 0}
+        count={18}
+        colors={[colors.gold, '#fff7d6', '#ffffff']}
+        size={11}
+        distance={170}
+        gravity={320}
+        duration={900}
+      />
     </Animated.View>
   );
 }
@@ -101,49 +115,47 @@ export function HookedBanner({ visible, reduceMotion, onReel }: HookedBannerProp
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: '22%',
+    top: '20%',
     left: 0,
     right: 0,
     alignItems: 'center',
   },
   burst: {
     position: 'absolute',
-    top: -30,
-  },
-  burstCircle: {
-    width: 240,
-    height: 240,
-    borderRadius: 120,
-    backgroundColor: '#ffd166',
+    top: -110,
   },
   banner: {
-    backgroundColor: '#ffd166',
-    borderColor: '#ef476f',
-    borderWidth: 6,
-    borderRadius: 18,
-    paddingHorizontal: 28,
-    paddingVertical: 10,
+    backgroundColor: 'rgba(18, 12, 30, 0.92)',
+    borderColor: colors.gold,
+    borderWidth: 5,
+    borderRadius: radius.card,
+    paddingHorizontal: 30,
+    paddingVertical: 14,
     overflow: 'hidden',
-  },
-  bannerImage: {
-    ...StyleSheet.absoluteFill,
-    width: '100%',
-    height: '100%',
+    ...shadow.glow,
   },
   text: {
-    color: '#ef476f',
-    fontSize: 40,
-    fontWeight: '900',
+    color: colors.gold,
+    fontFamily: fonts.title,
+    fontSize: 46,
     letterSpacing: 2,
-    textShadowColor: '#fff4e6',
-    textShadowRadius: 2,
+    textShadowColor: 'rgba(0,0,0,0.6)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 8,
+  },
+  underline: {
+    height: 4,
+    marginTop: 6,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,209,102,0.55)',
   },
   hint: {
-    marginTop: 8,
-    color: '#f8fafc',
+    marginTop: 12,
+    color: '#ffffff',
+    fontFamily: fonts.titleSemi,
     fontSize: 13,
-    fontWeight: '700',
-    textShadowColor: 'rgba(15, 23, 42, 0.9)',
-    textShadowRadius: 4,
+    letterSpacing: 1,
+    textShadowColor: 'rgba(6, 12, 28, 0.95)',
+    textShadowRadius: 6,
   },
 });

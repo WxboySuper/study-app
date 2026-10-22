@@ -16,12 +16,14 @@ import {
   type QueueScope,
   type StudyCard,
 } from '@study-app/core';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { settleLocalSession, readCollection, readWallet } from '@/db/wallet';
-import { enqueueReview, listLocalCardStates, listLocalCards, openLocalDatabase, upsertLocalCardState } from '@/db/local';
+import { openLocalStore } from '@/db/local';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
+import { colors, fonts, radius, shadow } from '@/theme';
+import { GameButton, GlassCard } from '@/ui';
 
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
@@ -52,6 +54,15 @@ const REELING_DURATION_MS = 900;
 const GOT_AWAY_MS = 1_500;
 const NEW_CARD_CAP = 20;
 
+/**
+ * The demo states of the web build.
+ *
+ * The screenshots of the game need the mode in a state that takes a while
+ * to reach by hand (a question, a catch, the end of the session), so the
+ * route can ask for one of them.
+ */
+export type FishingDemo = 'scene' | 'question' | 'reveal' | 'payout';
+
 export interface FishingScreenProps {
   /** What is being studied. */
   scope: ScopeChoice;
@@ -59,6 +70,8 @@ export interface FishingScreenProps {
   onHome: () => void;
   /** Called when the player plays the same scope again. */
   onPlayAgain: () => void;
+  /** The state the demo of the web build jumps to. */
+  demo?: FishingDemo | null;
 }
 
 /**
@@ -86,7 +99,7 @@ function screenReducer(state: FishingState, event: ScreenEvent): FishingState {
   return fishingReducer(state, event);
 }
 
-export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps) {
+export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { autoReel, bait } = useSettings();
 
@@ -99,6 +112,8 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
   const [newCritterIds, setNewCritterIds] = useState<ReadonlySet<string>>(new Set());
   /** The critters the player already owns (for the "NEW!" stamp). */
   const [ownedCritters, setOwnedCritters] = useState<ReadonlySet<string>>(new Set());
+  /** The tokens of the player (the HUD counts them). */
+  const [balance, setBalance] = useState(0);
 
   const queueScope = useMemo<QueueScope>(() => {
     switch (scope.kind) {
@@ -148,9 +163,9 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
     void (async () => {
       try {
-        const db = await openLocalDatabase();
-        const cards = await listLocalCards(db);
-        const states = await listLocalCardStates(db);
+        const store = await openLocalStore();
+        const cards = await store.listCards();
+        const states = await store.listCardStates();
         if (cancelled) {
           return;
         }
@@ -160,7 +175,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
         // The collection knows which critters are already owned: a critter
         // that is new gets the "NEW!" stamp on the reveal card.
-        const collection = await readCollection(db);
+        const collection = await store.readCollection();
         if (cancelled) {
           return;
         }
@@ -168,10 +183,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
         // The wallet knows how many pack tickets were already earned today:
         // the mode must not roll a second one.
-        const wallet = await readWallet(db, localDayKey(new Date()));
+        const wallet = await store.readWallet(localDayKey(new Date()));
         if (cancelled) {
           return;
         }
+        setBalance(wallet.balance);
         dispatch({ type: 'hydrate_pack_tickets', count: wallet.packTicketsToday });
       } catch {
         // Without the local store there is nothing to study; the screen shows
@@ -316,11 +332,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
 
     void (async () => {
       try {
-        const db = await openLocalDatabase();
+        const store = await openLocalStore();
         for (const review of fresh) {
           statesRef.current.set(review.cardId, review.state);
-          await upsertLocalCardState(db, review.state);
-          await enqueueReview(db, {
+          await store.upsertCardState(review.state);
+          await store.enqueueReview({
             ...review.log,
             clientId: `${review.cardId}-${review.reviewedAt}-${persistedRef.current}`,
             cardId: review.cardId,
@@ -406,9 +422,8 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
     const final = resultRef.current;
     void (async () => {
       try {
-        const db = await openLocalDatabase();
-        const settlement = await settleLocalSession(
-          db,
+        const store = await openLocalStore();
+        const settlement = await store.settleSession(
           sessionIdRef.current,
           'fishing',
           {
@@ -421,6 +436,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         );
         if (settlement !== null) {
           setSettledTokens(settlement.payout.tokens);
+          setBalance(settlement.wallet.balance);
           setNewCritterIds(
             new Set(settlement.critters.filter((critter) => !critter.duplicate).map((critter) => critter.critterId)),
           );
@@ -431,18 +447,118 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
     })();
   }, [ended]);
 
-  if (machine.ended) {
-    return (
-      <PayoutScreen
-        result={result}
-        tokens={tokens}
-        newCritterIds={newCritterIds}
-        onPlayAgain={onPlayAgain}
-        onHome={onHome}
-        reduceMotion={reduceMotion}
-      />
-    );
-  }
+  // The demo of the web build plays the mode for the screenshot.
+  const machineRef = useRef(machine);
+  machineRef.current = machine;
+  useEffect(() => {
+    if (demo === null || demo === 'scene' || loading) {
+      return undefined;
+    }
+
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let cancelled = false;
+
+    const later = (ms: number, run: () => void) => {
+      timers.push(
+        setTimeout(() => {
+          if (!cancelled) {
+            run();
+          }
+        }, ms),
+      );
+    };
+
+    // One catch: cast, bite, reel and (when the demo needs it) answer.
+    const catchAt = (at: number, answer: boolean, then?: () => void) => {
+      later(at, () => {
+        dispatch({ type: 'cast' });
+      });
+      later(at + 120, () => {
+        dispatch({ type: 'cast_landed' });
+      });
+      later(at + 280, () => {
+        dispatch({ type: 'bite' });
+      });
+      later(at + 460, () => {
+        dispatch({ type: 'reel' });
+      });
+      if (!answer) {
+        return;
+      }
+      later(at + 980, () => {
+        const question = machineRef.current.question;
+        if (question === null) {
+          return;
+        }
+        dispatch({
+          type: 'answer',
+          choiceIndex: question.answerIndex,
+          durationMs: 800,
+          now: Date.now(),
+        });
+      });
+      later(at + 2150, () => {
+        if (then !== undefined) {
+          then();
+        }
+      });
+    };
+
+    if (demo === 'question') {
+      catchAt(0, false);
+    }
+
+    if (demo === 'reveal') {
+      // The demo keeps fishing until a critter comes out of the water.
+      const tryCatch = (attempt: number) => {
+        catchAt(0, true, () => {
+          const reveal = machineRef.current.reveal;
+          if (reveal !== null && reveal.kind === 'critter') {
+            return;
+          }
+          dispatch({ type: 'continue' });
+          later(120, () => {
+            tryCatch(attempt + 1);
+          });
+        });
+      };
+      tryCatch(0);
+    }
+
+    if (demo === 'payout') {
+      // The demo catches three critters and then packs up.
+      let caught = 0;
+      const catchCritter = () => {
+        catchAt(0, true, () => {
+          const reveal = machineRef.current.reveal;
+          if (reveal !== null && reveal.kind === 'critter') {
+            caught += 1;
+          }
+          if (caught >= 3) {
+            later(300, () => {
+              dispatch({ type: 'request_end' });
+            });
+            later(500, () => {
+              dispatch({ type: 'confirm_end' });
+            });
+            return;
+          }
+          dispatch({ type: 'continue' });
+          later(120, () => {
+            catchCritter();
+          });
+        });
+      };
+      catchCritter();
+    }
+
+    return () => {
+      cancelled = true;
+      for (const timer of timers) {
+        clearTimeout(timer);
+      }
+    };
+  }, [demo, loading]);
 
   const biggestTier = machine.session.biggest?.tier ?? null;
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
@@ -463,6 +579,20 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
     return machine.session.critters.filter((entry) => entry.critterId === revealed.critter.id).length === 1;
   }, [machine.reveal, machine.session.critters, ownedCritters]);
 
+  // The session is over: the payout screen takes over.
+  if (machine.ended) {
+    return (
+      <PayoutScreen
+        result={result}
+        tokens={tokens}
+        newCritterIds={newCritterIds}
+        onPlayAgain={onPlayAgain}
+        onHome={onHome}
+        reduceMotion={reduceMotion}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <LakeScene
@@ -470,12 +600,14 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
         hintTier={hintTier}
         frenzy={frenzy}
         reduceMotion={reduceMotion}
+        landed={machine.phase === 'reeling' ? machine.onTheLine : machine.reveal}
       />
 
       <Hud
         session={machine.session}
         remaining={remainingCards(machine)}
         biggestTier={biggestTier}
+        tokens={balance}
         onEnd={onRequestEnd}
         reduceMotion={reduceMotion}
       />
@@ -522,62 +654,54 @@ export function FishingScreen({ scope, onHome, onPlayAgain }: FishingScreenProps
       {machine.phase === 'idle' ? (
         <Pressable
           accessibilityRole="button"
+          accessibilityLabel="Cast the line"
           onPress={onCast}
           disabled={loading || nothingToStudy}
-          style={({ pressed }) => [styles.castButton, pressed && styles.castPressed]}
+          style={({ pressed }) => [styles.castWrap, pressed && styles.castPressed]}
         >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.castLabel}>{nothingToStudy ? 'No cards yet' : 'Cast'}</Text>
-          )}
+          <View style={styles.castBase}>
+            <LinearGradient
+              colors={['#5eead4', '#0ea5e9', '#2563eb']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 0.4, y: 1 }}
+              style={styles.castFace}
+            >
+              {loading ? (
+                <ActivityIndicator color="#04252f" />
+              ) : (
+                <Text style={styles.castLabel}>{nothingToStudy ? 'NO CARDS YET' : 'CAST'}</Text>
+              )}
+            </LinearGradient>
+          </View>
         </Pressable>
       ) : null}
 
       {machine.phase === 'question' && machine.question === null ? (
         <View style={styles.sheetBackdrop}>
-          <View style={styles.sheet}>
+          <GlassCard contentStyle={styles.sheet} tint={colors.ticket}>
             <Text style={styles.sheetTitle}>No cards left</Text>
             <Text style={styles.sheetBody}>
               There is nothing left to study in this scope. End the session to see the haul.
             </Text>
             <View style={styles.sheetActions}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={onRequestEnd}
-                style={({ pressed }) => [styles.sheetButton, styles.sheetConfirm, pressed && styles.pressed]}
-              >
-                <Text style={styles.sheetButtonText}>End</Text>
-              </Pressable>
+              <GameButton label="END THE SESSION" variant="primary" size="md" onPress={onRequestEnd} />
             </View>
-          </View>
+          </GlassCard>
         </View>
       ) : null}
 
       {machine.phase === 'end_confirm' ? (
         <View style={styles.sheetBackdrop}>
-          <View style={styles.sheet}>
+          <GlassCard contentStyle={styles.sheet} tint={colors.wheel}>
             <Text style={styles.sheetTitle}>Pack up?</Text>
             <Text style={styles.sheetBody}>
               {machine.session.catches} catches · {machine.session.haulLbs.toLocaleString('en-US')} lbs
             </Text>
             <View style={styles.sheetActions}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={onCancelEnd}
-                style={({ pressed }) => [styles.sheetButton, styles.sheetCancel, pressed && styles.pressed]}
-              >
-                <Text style={styles.sheetButtonText}>Keep fishing</Text>
-              </Pressable>
-              <Pressable
-                accessibilityRole="button"
-                onPress={onConfirmEnd}
-                style={({ pressed }) => [styles.sheetButton, styles.sheetConfirm, pressed && styles.pressed]}
-              >
-                <Text style={styles.sheetButtonText}>End</Text>
-              </Pressable>
+              <GameButton label="KEEP FISHING" variant="ghost" size="md" onPress={onCancelEnd} />
+              <GameButton label="END THE SESSION" variant="wheel" size="md" onPress={onConfirmEnd} />
             </View>
-          </View>
+          </GlassCard>
         </View>
       ) : null}
     </View>
@@ -589,29 +713,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#0b1020',
   },
-  castButton: {
+  castWrap: {
     position: 'absolute',
     alignSelf: 'center',
-    bottom: 120,
-    minWidth: 190,
+    bottom: 130,
+  },
+  castBase: {
+    borderRadius: 999,
+    backgroundColor: '#075985',
+    paddingBottom: 7,
+    ...shadow.glow,
+  },
+  castFace: {
+    minWidth: 200,
     minHeight: 62,
     borderRadius: 999,
-    backgroundColor: '#208aef',
-    borderWidth: 4,
-    borderColor: '#ffd166',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 34,
+    overflow: 'hidden',
   },
   castPressed: {
-    opacity: 0.85,
-    transform: [{ scale: 0.97 }],
+    opacity: 0.88,
+    transform: [{ scale: 0.96 }, { translateY: 3 }],
   },
   castLabel: {
-    color: '#ffffff',
+    color: '#04252f',
     fontSize: 24,
-    fontWeight: '900',
-    letterSpacing: 1,
+    fontFamily: fonts.title,
+    letterSpacing: 2,
   },
   gotAway: {
     ...StyleSheet.absoluteFill,
@@ -619,71 +749,53 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   gotAwayCard: {
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
-    borderRadius: 16,
+    backgroundColor: 'rgba(15, 23, 42, 0.88)',
+    borderRadius: radius.card,
     paddingHorizontal: 22,
     paddingVertical: 16,
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.danger,
   },
   gotAwayTitle: {
-    color: '#ff6b6b',
+    color: colors.danger,
     fontSize: 24,
-    fontWeight: '900',
+    fontFamily: fonts.title,
   },
   gotAwayAnswer: {
     marginTop: 6,
-    color: '#f8fafc',
+    color: colors.text,
     fontSize: 16,
-    fontWeight: '700',
+    fontFamily: fonts.bodyBold,
     textAlign: 'center',
   },
   sheetBackdrop: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(2, 6, 23, 0.7)',
+    backgroundColor: 'rgba(2, 6, 23, 0.75)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
   },
   sheet: {
     width: '100%',
-    backgroundColor: '#16213e',
-    borderRadius: 20,
-    padding: 20,
-    gap: 8,
+    maxWidth: 380,
+    gap: 10,
   },
   sheetTitle: {
-    color: '#f8fafc',
+    color: colors.text,
     fontSize: 22,
-    fontWeight: '900',
+    fontFamily: fonts.title,
+    textAlign: 'center',
   },
   sheetBody: {
-    color: '#cbd5f5',
-    fontSize: 15,
+    color: colors.textMuted,
+    fontSize: 14,
+    fontFamily: fonts.bodySemi,
+    textAlign: 'center',
+    lineHeight: 19,
   },
   sheetActions: {
-    flexDirection: 'row',
     gap: 10,
-    marginTop: 12,
-  },
-  sheetButton: {
-    flex: 1,
-    minHeight: 52,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sheetCancel: {
-    backgroundColor: '#1f2937',
-  },
-  sheetConfirm: {
-    backgroundColor: '#e8590c',
-  },
-  sheetButtonText: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  pressed: {
-    opacity: 0.8,
+    marginTop: 6,
   },
 });

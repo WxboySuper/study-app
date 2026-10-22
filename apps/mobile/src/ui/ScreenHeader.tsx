@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
 /** A small glassy chip that holds a number (the tokens, the tickets). */
 export function HeaderChip({ children }: { children: React.ReactNode }) {
   return (
-    <GlassCard borderRadius={radius.chip} elevated={false} style={styles.chip}>
+    <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.chip}>
       {children}
     </GlassCard>
   );

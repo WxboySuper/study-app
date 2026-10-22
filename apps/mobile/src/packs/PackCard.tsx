@@ -66,7 +66,7 @@ export function PackCard({
     <View style={styles.wrap}>
       <Glow color={theme.glow} size={300} opacity={0.4} style={styles.glow} />
 
-      <GlassCard style={styles.card} tint={theme.glow}>
+      <GlassCard contentStyle={styles.card} tint={theme.glow}>
         <View style={styles.head}>
           <View style={styles.headText}>
             <Text style={styles.name} numberOfLines={1}>

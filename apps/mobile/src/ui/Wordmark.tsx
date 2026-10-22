@@ -23,7 +23,8 @@ export interface WordmarkProps {
 /** The logo of the game. */
 export function Wordmark({ text = 'Blookless', size = 42, style }: WordmarkProps) {
   const layers = [
-    { offset: 4, color: colors.primaryDark },
+    { offset: 5, color: colors.primaryDark },
+    { offset: 4, color: '#4a2fc7' },
     { offset: 3, color: '#5b45c9' },
     { offset: 2, color: '#6d51e8' },
   ];
@@ -36,6 +37,7 @@ export function Wordmark({ text = 'Blookless', size = 42, style }: WordmarkProps
           key={layer.offset}
           style={[
             styles.text,
+            styles.layer,
             {
               fontSize: size,
               color: layer.color,
@@ -73,6 +75,10 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontFamily: fonts.title,
     letterSpacing: 1.5,
+  },
+  layer: {
+    position: 'absolute',
+    top: 0,
   },
   front: {
     textShadowColor: 'rgba(0, 0, 0, 0.55)',
