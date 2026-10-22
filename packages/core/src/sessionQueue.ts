@@ -62,7 +62,7 @@ export interface MasteryRecord {
 }
 
 /**
- * How many right answers in a row a question needs to be mastered.
+ * How many right answers (not necessarily in a row; a miss resets the count) a question needs to be mastered.
  *
  * Every question of the scope needs the same number: a missed question is
  * not harder than the others, it only has to be learned again.
@@ -104,10 +104,16 @@ export interface SessionQueueOptions {
   now?: number;
   /** The scheduler settings. Defaults to {@link DEFAULT_ANKI_SETTINGS}. */
   settings?: Partial<AnkiSettings>;
-  /** How many right answers in a row a question needs to be mastered. */
+  /** How many right answers (not necessarily in a row; a miss resets the count) a question needs to be mastered. */
   masteryRequired?: number;
   /** How many questions are asked between two serves of the same question. */
   minGap?: number;
+  /**
+   * The correct answers each question already has toward mastery, from
+   * earlier sessions (by question id). Mastery is spread over sessions: a
+   * question with 2 earlier correct answers is mastered by its next one.
+   */
+  masteryCounts?: Readonly<Record<string, number>>;
 }
 
 /** The state of the queue of a session. */
@@ -145,7 +151,7 @@ export interface SessionQueueState {
   rng: Rng;
   /** The time of the session (epoch milliseconds). */
   now: number;
-  /** How many right answers in a row a question needs to be mastered. */
+  /** How many right answers (not necessarily in a row; a miss resets the count) a question needs to be mastered. */
   masteryRequired: number;
   /** How many questions are asked between two serves of the same question. */
   minGap: number;
@@ -171,8 +177,38 @@ export function createSessionQueue(options: SessionQueueOptions): SessionQueueSt
     cards[question.id] = createCard(question, settings, now, questions.length);
   }
 
-  const queues = buildAnkiQueues(cards, options.rng);
-  const pending = questions.map((question) => question.id);
+  // The progress of earlier sessions. A deck that is fully mastered starts
+  // a fresh round instead of an empty session.
+  const required = toCount(options.masteryRequired, MASTERY_REQUIRED_CORRECT, 1);
+  const seeds = options.masteryCounts ?? {};
+  const seeded = (id: string): number => {
+    const value = seeds[id];
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  };
+  const allMastered =
+    questions.length > 0 && questions.every((question) => seeded(question.id) >= required);
+  if (!allMastered) {
+    for (const question of questions) {
+      const count = seeded(question.id);
+      records[question.id] = {
+        correctStreak: count,
+        missed: false,
+        mastered: options.mode === 'mastery' && count >= required,
+      };
+    }
+  }
+
+  let queues = buildAnkiQueues(cards, options.rng);
+  if (options.mode === 'mastery') {
+    for (const question of questions) {
+      if (records[question.id]?.mastered === true) {
+        queues = removeAnkiCard(queues, question.id);
+      }
+    }
+  }
+  const pending = questions
+    .filter((question) => options.mode !== 'mastery' || records[question.id]?.mastered !== true)
+    .map((question) => question.id);
 
   return {
     mode: options.mode,
@@ -189,7 +225,7 @@ export function createSessionQueue(options: SessionQueueOptions): SessionQueueSt
     asked: 0,
     rng: options.rng,
     now,
-    masteryRequired: toCount(options.masteryRequired, MASTERY_REQUIRED_CORRECT, 1),
+    masteryRequired: required,
     minGap: toCount(options.minGap, MASTERY_MIN_GAP, 0),
     settings,
   };
@@ -467,4 +503,13 @@ function lookupState(states: StateLookup, cardId: string): CardState | undefined
     return states.get(cardId);
   }
   return (states as Readonly<Record<string, CardState | undefined>>)[cardId];
+}
+
+/** The correct answers of every question toward mastery (to persist). */
+export function masteryCounts(state: SessionQueueState): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const [id, record] of Object.entries(state.records)) {
+    counts[id] = record.correctStreak;
+  }
+  return counts;
 }

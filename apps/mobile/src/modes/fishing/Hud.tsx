@@ -169,9 +169,11 @@ export function Hud({
         <View style={styles.stats}>
           <Text style={styles.stat}>{session.answered} answered</Text>
           {mastery ? (
-            <Text style={styles.stat}>
-              {mastered}/{total} mastered
-            </Text>
+            compactMastery && progress.length > 0 ? null : (
+              <Text style={styles.stat}>
+                {mastered}/{total} mastered
+              </Text>
+            )
           ) : (
             <Text style={styles.stat}>{remaining} left</Text>
           )}

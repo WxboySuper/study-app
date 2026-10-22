@@ -8,6 +8,7 @@ import {
   answerSessionQuestion,
   createSessionQueue,
   masteredCount,
+  masteryCounts,
   masteryProgress,
   nextSessionQuestion,
   sessionComplete,
@@ -844,5 +845,60 @@ describe('the edges of the queue', () => {
     expect(next.states.a?.due).toBe(7);
     // The state of "b" is unknown: the old one stays.
     expect(next.states.b).toBeUndefined();
+  });
+});
+
+describe('mastery across sessions (regression: 0/36 mastered after 40 answers)', () => {
+  const deck = Array.from({ length: 36 }, (_, index) => ({
+    id: `metr_${index}`,
+    card: { id: `metr_${index}`, front: `Q${index}`, back: 'A', wrong: ['B'] } as never,
+  }));
+
+  it('keeps the correct answers of earlier sessions and masters on the third', () => {
+    const first = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(3) });
+    let state = answerSessionQuestion(first, 'metr_0', true);
+    state = answerSessionQuestion(state, 'metr_0', true);
+    expect(masteredCount(state)).toBe(0);
+
+    // The app restarts the session (or the screen re-mounts): the counts carry over.
+    const second = createSessionQueue({
+      questions: deck,
+      mode: 'mastery',
+      rng: createSeededRng(4),
+      masteryCounts: masteryCounts(state),
+    });
+    expect(masteredCount(answerSessionQuestion(second, 'metr_0', true))).toBe(1);
+  });
+
+  it('counts spread-out correct answers and resets on a miss', () => {
+    let state = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(5) });
+    state = answerSessionQuestion(state, 'metr_1', true);
+    state = answerSessionQuestion(state, 'metr_2', true);
+    state = answerSessionQuestion(state, 'metr_1', true);
+    state = answerSessionQuestion(state, 'metr_1', false);
+    state = answerSessionQuestion(state, 'metr_1', true);
+    expect(masteryCounts(state).metr_1).toBe(1);
+    state = answerSessionQuestion(state, 'metr_3', true);
+    state = answerSessionQuestion(state, 'metr_1', true);
+    state = answerSessionQuestion(state, 'metr_1', true);
+    expect(masteredCount(state)).toBe(1);
+  });
+
+  it('leaves seeded mastered questions out of the session', () => {
+    const counts = { metr_0: 3, metr_1: 3 };
+    let state = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(6), masteryCounts: counts });
+    expect(masteredCount(state)).toBe(2);
+    for (let index = 0; index < 60; index += 1) {
+      const next = nextSessionQuestion(state);
+      state = next.state;
+      expect(['metr_0', 'metr_1']).not.toContain(next.question?.id);
+      if (next.question) state = answerSessionQuestion(state, next.question.id, false);
+    }
+  });
+
+  it('starts a fresh round when the whole deck was already mastered', () => {
+    const counts = Object.fromEntries(deck.map((q) => [q.id, 3]));
+    const state = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(7), masteryCounts: counts });
+    expect(masteredCount(state)).toBe(0);
   });
 });

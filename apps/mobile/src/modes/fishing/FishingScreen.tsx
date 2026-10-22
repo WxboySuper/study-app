@@ -14,6 +14,7 @@ import {
   fishingReducer,
   leadUpOf,
   masteredCount,
+  masteryCounts,
   masteryProgress,
   masteryStatusOf,
   nextSessionQuestion,
@@ -194,6 +195,41 @@ function screenReducer(state: FishingState, event: ScreenEvent): FishingState {
   return fishingReducer(state, event);
 }
 
+/** The key/value key of the mastery progress (correct answers by question). */
+const MASTERY_COUNTS_KEY = 'fishing.masteryCounts.v1';
+
+/** Reads the mastery progress of earlier sessions. */
+async function readMasteryCounts(store: {
+  readKv(key: string): Promise<string | null>;
+}): Promise<Record<string, number>> {
+  try {
+    const raw = await store.readKv(MASTERY_COUNTS_KEY);
+    const parsed: unknown = raw === null ? {} : JSON.parse(raw);
+    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, number>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Saves the mastery progress of a session (merged into the saved counts). */
+function saveMasteryCounts(state: Parameters<typeof masteryCounts>[0]): void {
+  if (state.mode !== 'mastery') {
+    return;
+  }
+  void (async () => {
+    try {
+      const store = await openLocalStore();
+      const saved = await readMasteryCounts(store);
+      await store.writeKv(
+        MASTERY_COUNTS_KEY,
+        JSON.stringify({ ...saved, ...masteryCounts(state) }),
+      );
+    } catch {
+      // The progress of the session still counts in the session itself.
+    }
+  })();
+}
+
 export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { bait } = useSettings();
@@ -236,7 +272,11 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       case 'set':
         return { kind: 'set', setId: scope.id };
     }
-  }, [scope]);
+    // The route builds a new scope object on every render: depend on its
+    // fields, or every re-render of the route rebuilt the session queue and
+    // wiped the mastery progress.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scope.kind, 'id' in scope ? scope.id : null]);
 
   /**
    * The random source of the questions.
@@ -342,6 +382,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         const cards = await store.listCards();
         const states = await store.listCardStates();
         const sets = await store.listSets();
+        const savedCounts = await readMasteryCounts(store);
         if (cancelled) {
           return;
         }
@@ -361,12 +402,13 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           mode: mastery ? 'mastery' : 'endless',
           rng: queueRng,
           now: Date.now(),
+          masteryCounts: savedCounts,
         });
         engineRef.current = engine;
         setProgress({
-          mastered: 0,
+          mastered: masteredCount(engine),
           total: pool.length,
-          left: pool.length,
+          left: sessionRemaining(engine),
           dots: masteryProgress(engine),
         });
         dispatch({ type: 'set_queue', queue: [] });
@@ -606,6 +648,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       if (engine !== null && question !== null) {
         const next = answerSessionQuestion(engine, question.cardId, correct);
         engineRef.current = next;
+        saveMasteryCounts(next);
         setProgress({
           mastered: masteredCount(next),
           total: sessionTotal(next),
@@ -654,6 +697,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       if (engine !== null && question !== null) {
         const next = answerSessionQuestion(engine, question.cardId, gotIt);
         engineRef.current = next;
+        saveMasteryCounts(next);
         setProgress({
           mastered: masteredCount(next),
           total: sessionTotal(next),
