@@ -679,6 +679,16 @@ export default function HomeScreen() {
               <Text style={styles.versionLabel}>v{appVersion()}</Text>
             </Pressable>
             <GameButton
+              label="QUIZZES"
+              variant="secondary"
+              size="md"
+              onPress={() => {
+                play('tap');
+                router.push('/quiz');
+              }}
+              accessibilityLabel="Quizzes"
+            />
+            <GameButton
               label={Platform.OS === 'web' ? 'LINK TO PHONE' : 'LINK A BROWSER'}
               variant="ghost"
               size="md"

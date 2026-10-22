@@ -282,6 +282,15 @@ export interface LinkedDevice {
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
+/** An authenticated API call with this device's token. */
+export function authedRequest<T>(
+  path: string,
+  init: RequestInit,
+  fetchImpl?: typeof fetch,
+): Promise<Result<T>> {
+  return authed<T>(path, init, fetchImpl);
+}
+
 async function authed<T>(
   path: string,
   init: RequestInit,

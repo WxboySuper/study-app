@@ -451,3 +451,5 @@ export {
   remainingToday,
   type DailyLimits,
 } from './mastery';
+
+export type { QuizAnswerPayload } from './progressSync';
