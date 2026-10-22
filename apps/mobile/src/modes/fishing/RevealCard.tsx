@@ -30,6 +30,9 @@ import { Sprite } from './Sprite';
  * catches (a new lure, the frenzy, a powerup and the pack ticket) get their
  * own card.
  *
+ * A catch never grants a critter to the collection (only a pack does), so the
+ * card has no "NEW!" stamp: it shows the catch, nothing more.
+ *
  * The card is built from the UI art of the mode: the light rays of
  * `ui_reveal_rays` turn slowly behind the catch, the tier name sits on the
  * ribbon of `ui_tier_ribbon` (tinted with the colour of the tier) and the
@@ -57,19 +60,16 @@ export interface RevealCardProps {
   visible: boolean;
   /** The catch that was landed. */
   catch: RolledCatch;
-  /** `true` when the catch was caught for the first time. */
-  isNew: boolean;
   /** Called when the player dismisses the card. */
   onContinue: () => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
 }
 
-export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMotion }: RevealCardProps) {
+export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }: RevealCardProps) {
   const scale = useSharedValue(0.6);
   const weight = useSharedValue(0);
   const flash = useSharedValue(0);
-  const stamp = useSharedValue(0);
   const spin = useSharedValue(0);
   const [burst, setBurst] = useState(0);
 
@@ -100,7 +100,6 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
       scale.value = 1;
       weight.value = lbs;
       flash.value = 0;
-      stamp.value = 1;
       spin.value = 0;
       return;
     }
@@ -110,10 +109,6 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
       withSpring(1, { damping: 12, stiffness: 150 }),
     );
     weight.value = withTiming(lbs, { duration: 900, easing: Easing.out(Easing.cubic) });
-    stamp.value = withSequence(
-      withTiming(1.4, { duration: 90, easing: Easing.out(Easing.quad) }),
-      withSpring(1, { damping: 11, stiffness: 200 }),
-    );
     // The rays of the reveal turn slowly behind the catch.
     spin.value = withRepeat(
       withTiming(360, { duration: 26_000, easing: Easing.linear }),
@@ -129,7 +124,7 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
         withTiming(0, { duration: 520 }),
       );
     }
-  }, [visible, reduceMotion, scale, weight, flash, stamp, spin, lbs, tier, setBurst]);
+  }, [visible, reduceMotion, scale, weight, flash, spin, lbs, tier, setBurst]);
 
   const cardStyle = useAnimatedStyle(() => ({
     opacity: visible ? 1 : 0,
@@ -137,11 +132,6 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
   }));
 
   const flashStyle = useAnimatedStyle(() => ({ opacity: flash.value * 0.55 }));
-
-  const stampStyle = useAnimatedStyle(() => ({
-    opacity: visible ? 1 : 0,
-    transform: [{ rotate: '-9deg' }, { scale: stamp.value }],
-  }));
 
   const spinStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${spin.value}deg` }],
@@ -226,11 +216,6 @@ export function RevealCard({ visible, catch: landed, isNew, onContinue, reduceMo
                 </Animated.View>
               )}
               <Sprite assetId={assetIdOf(landed)} size={isHeavy ? 168 : 150} />
-              {isNew ? (
-                <Animated.View style={[styles.newStamp, stampStyle]}>
-                  <Text style={styles.newStampText}>NEW!</Text>
-                </Animated.View>
-              ) : null}
             </View>
 
             {tagArt === null ? (
@@ -357,23 +342,6 @@ const styles = StyleSheet.create({
   raysImage: {
     width: 260,
     height: 260,
-  },
-  newStamp: {
-    position: 'absolute',
-    top: 2,
-    right: -6,
-    backgroundColor: colors.danger,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderWidth: 3,
-    borderColor: 'rgba(8, 10, 16, 0.9)',
-  },
-  newStampText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontFamily: fonts.title,
-    letterSpacing: 1.2,
   },
   tag: {
     alignSelf: 'stretch',

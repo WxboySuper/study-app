@@ -545,8 +545,9 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
 /**
  * Turns a catch of the catalogue into the outcome of a roll.
  *
- * A critter catch carries the critter itself, so the session can add it to
- * the collection at the end.
+ * A critter catch carries the critter itself, so the reveal card can show its
+ * rarity and its vibe. A catch never grants the critter to the collection:
+ * only a pack does.
  */
 export function toOutcome(catchDef: CatchDef, lbs: number): CatchOutcome {
   if (catchDef.contentType === 'critter') {

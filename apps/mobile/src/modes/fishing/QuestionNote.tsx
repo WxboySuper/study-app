@@ -21,6 +21,10 @@ import { GameButton, Particles } from '@/ui';
  * water and the answers sit below it as chunky buttons. The right answer
  * flashes green with a burst of sparks, the wrong one flashes red.
  *
+ * After the answer the note stays on the screen for a moment: the answer
+ * the player picked and the right answer keep their colours, so the card
+ * can be reread. The buttons are switched off while the answer is held.
+ *
  * A card without wrong answers of its own cannot be asked as a multiple
  * choice question: the note shows the question alone, the player taps to
  * reveal the answer and then grades itself ("Got it" / "Missed it").
@@ -32,6 +36,13 @@ export interface QuestionNoteProps {
   question: FishingQuestion | null;
   /** The feedback of the last answer. */
   feedback: FishingFeedback | null;
+  /**
+   * `true` while the answer is held on the screen.
+   *
+   * The answers cannot be pressed and the note lets the taps through, so
+   * a tap anywhere goes on.
+   */
+  locked?: boolean;
   /** Called when the player picks an answer. */
   onAnswer: (choiceIndex: number) => void;
   /** Called when the player grades a self-graded card. */
@@ -44,6 +55,7 @@ export function QuestionNote({
   visible,
   question,
   feedback,
+  locked = false,
   onAnswer,
   onSelfGrade,
   reduceMotion,
@@ -101,7 +113,7 @@ export function QuestionNote({
   // itself.
   if (question.selfGrade) {
     return (
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View style={StyleSheet.absoluteFill} pointerEvents={locked ? 'none' : 'box-none'}>
         <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
 
         <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
@@ -169,7 +181,7 @@ export function QuestionNote({
   }
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+    <View style={StyleSheet.absoluteFill} pointerEvents={locked ? 'none' : 'box-none'}>
       <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
 
       <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
@@ -194,6 +206,7 @@ export function QuestionNote({
             label={choice}
             index={index}
             feedback={feedback}
+            locked={locked}
             onPress={() => {
               onAnswer(index);
             }}
@@ -208,11 +221,13 @@ interface AnswerButtonProps {
   label: string;
   index: number;
   feedback: FishingFeedback | null;
+  /** `true` while the answer is held on the screen. */
+  locked: boolean;
   onPress: () => void;
 }
 
 /** One answer: a chunky button that flashes when it is right or wrong. */
-function AnswerButton({ label, index, feedback, onPress }: AnswerButtonProps) {
+function AnswerButton({ label, index, feedback, locked, onPress }: AnswerButtonProps) {
   const [burst, setBurst] = useState(0);
   const shake = useSharedValue(0);
   const flash = useSharedValue(0);
@@ -261,11 +276,21 @@ function AnswerButton({ label, index, feedback, onPress }: AnswerButtonProps) {
         label={label}
         variant={answered ? 'ghost' : 'primary'}
         size="md"
-        disabled={answered && !feedback.retry}
+        disabled={locked || (answered && !feedback.retry)}
         onPress={onPress}
         textStyle={styles.answerLabel}
+        labelLines={0}
         accessibilityLabel={label}
       />
+
+      {/*
+        The colour of the answer: it stays on the screen while the answer is
+        held, so the player can reread the card.
+      */}
+      {isCorrect ? <View style={[styles.tint, styles.tintGood]} pointerEvents="none" /> : null}
+      {isWrong ? <View style={[styles.tint, styles.tintBad]} pointerEvents="none" /> : null}
+      {isCorrect ? <View style={[styles.outline, styles.outlineGood]} pointerEvents="none" /> : null}
+      {isWrong ? <View style={[styles.outline, styles.outlineBad]} pointerEvents="none" /> : null}
 
       {isCorrect ? (
         <>
@@ -332,7 +357,8 @@ const styles = StyleSheet.create({
   notePlain: {
     borderRadius: 14,
     backgroundColor: '#f4e3b2',
-  },  noteHead: {
+  },
+  noteHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -403,6 +429,27 @@ const styles = StyleSheet.create({
   gradeButton: {
     flex: 1,
     justifyContent: 'center',
+  },
+  tint: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: radius.button,
+  },
+  tintGood: {
+    backgroundColor: 'rgba(34, 197, 94, 0.22)',
+  },
+  tintBad: {
+    backgroundColor: 'rgba(239, 71, 111, 0.22)',
+  },
+  outline: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: radius.button,
+    borderWidth: 3,
+  },
+  outlineGood: {
+    borderColor: '#4ade80',
+  },
+  outlineBad: {
+    borderColor: '#fb7185',
   },
   flash: {
     ...StyleSheet.absoluteFill,

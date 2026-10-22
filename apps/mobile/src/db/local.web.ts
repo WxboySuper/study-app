@@ -344,14 +344,10 @@ export async function openLocalStore(): Promise<LocalStore> {
       }
       current.settled.add(sessionId);
 
-      const settlement = settleSession(current.wallet, outcome, current.collection, today);
+      // A session pays the wallet, it never grants a critter: the collection
+      // only changes when a pack is opened.
+      const settlement = settleSession(current.wallet, outcome, today);
       current.wallet = settlement.wallet;
-      for (const critter of settlement.critters) {
-        current.collection.set(
-          critter.critterId,
-          (current.collection.get(critter.critterId) ?? 0) + 1,
-        );
-      }
       void now;
       void mode;
 

@@ -116,9 +116,10 @@ async function settle(page) {
  * The screenshots of the script.
  *
  * `path` is the route of the screen, `waitFor` is the text that only shows
- * up in that state, `scrollTo` is the test id of the part of the screen the
- * camera has to look at, `actions` are the taps that happen before the
- * picture and `wait` is how long the screen needs after it.
+ * up in that state, `waitForTestId` is the marker of the frame of a demo,
+ * `scrollTo` is the test id of the part of the screen the camera has to look
+ * at, `actions` are the taps that happen before the picture and `wait` is
+ * how long the screen needs after it.
  */
 const SHOTS = [
   { name: 'home', path: '/' },
@@ -138,9 +139,44 @@ const SHOTS = [
   { name: 'spin-spinning', path: '/spin?demo=spin', wait: 1800 },
   { name: 'spin-result', path: '/spin?demo=spin', waitFor: 'TOKENS', wait: 1600 },
   { name: 'fishing', path: '/fishing', wait: 600 },
+  { name: 'fishing-cast', path: '/fishing?demo=cast', wait: 700 },
   { name: 'fishing-question', path: '/fishing?demo=question', waitFor: 'STUDY NOTE', wait: 900 },
   { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'CONTINUE', wait: 700, timeout: 60_000 },
   { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'PLAY AGAIN', wait: 1400, timeout: 90_000 },
+  // The frames of the catch: the answer that is held on the screen, the dip
+  // of the bobber, the tug of the fish, the breach of the catch and the
+  // reveal card that comes after them.
+  {
+    name: 'fishing-seq-highlight',
+    path: '/fishing?demo=seq-highlight',
+    waitForTestId: 'fishing-demo-highlight',
+    wait: 500,
+  },
+  {
+    name: 'fishing-seq-dip',
+    path: '/fishing?demo=seq-dip',
+    waitForTestId: 'fishing-demo-dip',
+    wait: 500,
+  },
+  {
+    name: 'fishing-seq-tug',
+    path: '/fishing?demo=seq-tug',
+    waitForTestId: 'fishing-demo-tug',
+    wait: 500,
+  },
+  {
+    name: 'fishing-seq-breach',
+    path: '/fishing?demo=seq-breach',
+    waitForTestId: 'fishing-demo-breach',
+    wait: 500,
+  },
+  {
+    name: 'fishing-seq-reveal',
+    path: '/fishing?demo=seq-reveal',
+    waitFor: 'CONTINUE',
+    wait: 700,
+    timeout: 60_000,
+  },
 ];
 
 async function main() {
@@ -190,6 +226,15 @@ async function main() {
         shot.waitFor,
         { timeout: shot.timeout ?? 30_000 },
       );
+    }
+
+    // The marker of the frame of a demo (the fishing mode freezes the game
+    // on the frame of the catch).
+    if (shot.waitForTestId !== undefined) {
+      await page
+        .locator(`[data-testid="${shot.waitForTestId}"]`)
+        .first()
+        .waitFor({ state: 'attached', timeout: shot.timeout ?? 30_000 });
     }
 
     // The camera looks at a part of the screen (the deck picker of the home

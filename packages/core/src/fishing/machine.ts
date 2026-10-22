@@ -7,10 +7,15 @@
  *
  * ```
  * IDLE ─cast─▶ CASTING ─cast_landed─▶ WAITING ─bite─▶ HOOKED
- * HOOKED ─reel─▶ QUESTION ─correct─▶ REELING ─reel_finished─▶ REVEAL ─continue─▶ IDLE
- * QUESTION ─wrong─▶ GOT_AWAY ─continue─▶ IDLE
+ * HOOKED ─reel─▶ QUESTION ─answer─▶ ANSWERED ─hold_done─▶ REELING
+ * REELING ─reel_finished─▶ REVEAL ─continue─▶ IDLE
+ * REELING ─reel_finished─▶ GOT_AWAY ─continue─▶ IDLE (the answer was wrong)
  * any ─request_end─▶ END_CONFIRM ─confirm_end─▶ (payout)
  * ```
+ *
+ * The `ANSWERED` phase is the hold after the answer: the right answer turns
+ * green, the wrong one turns red and the player gets a moment to reread the
+ * card before the scene takes over. A tap anywhere skips the wait.
  */
 
 import { Rating, type Grade } from 'ts-fsrs';
@@ -39,10 +44,26 @@ export type FishingPhase =
   | 'waiting'
   | 'hooked'
   | 'question'
+  | 'answered'
   | 'reeling'
   | 'reveal'
   | 'got_away'
   | 'end_confirm';
+
+/**
+ * How long the answer is held on the screen after the player taps it.
+ *
+ * The right answer turns green and the wrong one turns red: the player gets
+ * a moment to reread the question and the answers before the scene takes
+ * over. A tap anywhere skips the wait.
+ */
+export const ANSWER_HOLD_MS = 1_800;
+
+/** How long the lead-up before the reveal card lasts for a big catch. */
+export const LEAD_UP_FULL_MS = 2_500;
+
+/** How long the lead-up lasts for a junk catch (and for a wrong answer). */
+export const LEAD_UP_SHORT_MS = 1_000;
 
 /** The question that is shown in the scene. */
 export interface FishingQuestion {
@@ -81,7 +102,13 @@ export interface CaughtCatch {
   critterId?: string;
 }
 
-/** A critter that was caught. The API validates these when the session ends. */
+/**
+ * A critter that was caught.
+ *
+ * A critter catch is a catch like any other: it counts for the haul and it is
+ * shown on the reveal and on the payout screen. It never grants the critter
+ * to the collection: only a pack does.
+ */
 export interface CritterCatchRecord {
   critterId: string;
   name: string;
@@ -133,7 +160,12 @@ export interface FishingSession {
   byTier: Record<CatchTier, number>;
   /** The catches in the order they landed. */
   log: CaughtCatch[];
-  /** The critters that were caught. */
+  /**
+   * The critters that were caught.
+   *
+   * They are part of the haul and of the payout screen only: a catch never
+   * grants a critter to the collection.
+   */
   critters: CritterCatchRecord[];
   /** How many pack tickets the session produced. */
   packTickets: number;
@@ -214,6 +246,13 @@ export type FishingEvent =
        */
       selfGrade?: boolean;
     }
+  /**
+   * The hold after the answer is over.
+   *
+   * The timer of the hold ran out or the player tapped the screen to go on
+   * before it did.
+   */
+  | { type: 'answer_hold_done' }
   /** The fish was dragged out of the water. */
   | { type: 'reel_finished' }
   /** The reveal (or the "it got away" bubble) is dismissed. */
@@ -328,6 +367,9 @@ export function fishingReducer(state: FishingState, event: FishingEvent): Fishin
 
     case 'answer':
       return state.phase === 'question' ? handleAnswer(state, event) : state;
+
+    case 'answer_hold_done':
+      return state.phase === 'answered' ? handleAnswerHoldDone(state) : state;
 
     case 'reel_finished':
       return state.phase === 'reeling' ? handleReelFinished(state) : state;
@@ -469,7 +511,7 @@ function handleAnswer(
     if (session.roll.powerup === 'second_chance') {
       return {
         ...state,
-        phase: 'question',
+        phase: 'answered',
         session: {
           ...session,
           roll: { ...session.roll, powerup: null },
@@ -480,7 +522,7 @@ function handleAnswer(
 
     return {
       ...state,
-      phase: 'got_away',
+      phase: 'answered',
       session,
       feedback,
       landing: [],
@@ -508,15 +550,34 @@ function handleAnswer(
 
   return {
     ...state,
-    phase: 'reeling',
+    phase: 'answered',
     session: nextSession,
     landing,
     feedback,
   };
 }
 
+/**
+ * The hold after the answer is over.
+ *
+ * The Second Chance puts the player back on the same card (the answers are
+ * live again), every other answer goes on to the lead-up before the reveal.
+ */
+function handleAnswerHoldDone(state: FishingState): FishingState {
+  if (state.feedback?.retry === true) {
+    return { ...state, phase: 'question' };
+  }
+  return { ...state, phase: 'reeling' };
+}
+
 /** The fish was dragged out of the water: the catches land on the dock. */
 function handleReelFinished(state: FishingState): FishingState {
+  if (state.landing.length === 0) {
+    // Nothing came out of the water: the line snapped and the catch is
+    // gone. The bubble of the "it got away" takes over from here.
+    return { ...state, phase: 'got_away' };
+  }
+
   const session = state.session;
   let haulLbs = session.haulLbs;
   let catches = session.catches;
@@ -588,6 +649,34 @@ function pickReveal(landing: readonly RolledCatch[]): RolledCatch | null {
   }
 
   return reveal;
+}
+
+/** The lead-up that comes before the reveal card. */
+export interface FishingLeadUp {
+  /** How long the lead-up lasts. */
+  durationMs: number;
+  /** `true` when the catch gets away (the line snaps at the end). */
+  escaped: boolean;
+}
+
+/**
+ * The lead-up that comes before the reveal card.
+ *
+ * A catch is never on the card out of nowhere: the bobber dips, the fish
+ * pulls on the line and the catch comes out of the water. A critter (or a
+ * heavy catch) gets the full show, a junk catch and a wrong answer get the
+ * short one.
+ */
+export function leadUpOf(state: FishingState): FishingLeadUp {
+  const escaped = state.feedback !== null && !state.feedback.correct;
+  const showTime = state.landing.some(
+    (entry) => entry.kind === 'critter' || entry.kind === 'heavy' || entry.kind === 'fish',
+  );
+
+  return {
+    durationMs: escaped || !showTime ? LEAD_UP_SHORT_MS : LEAD_UP_FULL_MS,
+    escaped,
+  };
 }
 
 /** Takes the next card of the queue (and refills it when it runs dry). */
@@ -666,9 +755,10 @@ export function biggestCatch(state: FishingState): CaughtCatch | null {
 /**
  * The result of the session.
  *
- * The critters and the pack tickets are validated by the API when the session
- * ends, exactly like the tokens (which the server computes from the review
- * logs).
+ * The critters are the ones that were caught (they count for the haul and for
+ * the payout screen) and the pack tickets are validated by the API when the
+ * session ends, exactly like the tokens (which the server computes from the
+ * review logs). A caught critter never grants a critter to the collection.
  */
 export interface FishingSessionResult {
   mode: 'fishing';
@@ -678,6 +768,7 @@ export interface FishingSessionResult {
   haulLbs: number;
   byTier: Record<CatchTier, number>;
   biggest: CaughtCatch | null;
+  /** The critters that were caught (never granted to the collection). */
   critters: CritterCatchRecord[];
   packTickets: number;
   /** How many heavy catches landed (every one of them pays a token bonus). */
