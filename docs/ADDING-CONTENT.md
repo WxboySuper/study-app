@@ -16,16 +16,17 @@ Every entry has:
 |---|---|
 | `id` | The stable id of the entry (`snake_case`). It is used in the save data and in the session log. |
 | `name` | The name shown to the player. |
-| `tier` / `rarity` | Where the entry shows up: the tier of the fishing ladder (`trash`, `easy`, `great`, `rare`, `epic`, `cotd`, `legend`) or the rarity of a critter (`common`, `uncommon`, `rare`, `epic`, `legendary`). |
+| `tier` / `rarity` | Where the entry shows up: the tier of the fishing ladder (`trash`, `easy`, `great`, `rare`, `epic`, `cotd`, `legend`, `heavy`) or the rarity of a critter (`common`, `uncommon`, `rare`, `epic`, `legendary`). |
 | `assetId` | The **art key** of the entry: the file name of its PNG, without the extension (`critter_gigabrain_golem`). The art resolver maps it to the image. |
 | `emoji` | The emoji shown when the image does not exist (yet). |
 | `availableFrom` / `availableUntil` | Optional. The window the entry is available in, in epoch milliseconds. `null` (or missing) means "always". The window is `[from, until)`. |
 | `seasonal` | Optional (`halloween`, `winter`). The entry only shows up in that season. |
 
 The `assetId` of a critter is prefixed with `critter_`, the one of a junk
-item with `junk_`, the one of a special with `special_` or `pu_` and the one
-of a fish with `fish_`. The prefix tells the app what the entry is (and which
-placeholder to use when the image is missing).
+item with `junk_`, the one of a special with `special_` or `pu_`, the one of
+a fish with `fish_` and the one of a heavy catch with `catch_heavy_`. The
+prefix tells the app what the entry is (and which placeholder to use when
+the image is missing).
 
 ## The registries
 
@@ -34,6 +35,7 @@ placeholder to use when the image is missing).
 | `packages/core/src/content/critters.ts` | The critters (`CRITTERS`), their rarities and the odds of the packs. |
 | `packages/core/src/content/packs.ts` | The packs (`CRITTER_PACKS`) with their price and their window. |
 | `packages/core/src/content/junk.ts` | The junk of the "Trash" tier (`JUNK`). |
+| `packages/core/src/content/heavy.ts` | The heavy catches of the "Heavy Catch" tier (`HEAVY`). |
 | `packages/core/src/content/specials.ts` | The specials of the "Special" slice (`SPECIALS`) and the powerups (`POWERUPS`). |
 | `packages/core/src/content/fish.ts` | The fish of the future (`FISHES`). Typed and **empty**: the mode catches critters, junk and specials. |
 
@@ -70,7 +72,7 @@ art.type; // 'critter'
   of the entry when the PNG is missing. The game therefore never shows an
   empty hole.
 - `placeholderFor(type)` returns the placeholder image (`critter`, `junk`,
-  `special` or `fish`).
+  `special`, `fish` or `heavy`).
 
 The map of the images is generated (Metro can only bundle a file that
 exists), so after you add a PNG:
@@ -156,6 +158,36 @@ special table. A pack without a window (`availableFrom: null` and
 ```
 
 3. Run the art script.
+
+## Adding a heavy catch
+
+A heavy catch is the deep end of the lake: a rare catch (~2 % of the
+catches) that weighs more than every critter tier and pays a token bonus
+(15 tokens) at the end of the session. They are **not** the gameplay
+specials of `specials.ts`: those change the session, a heavy catch is a
+catch of the ladder with its own tier.
+
+1. Draw the image: `apps/mobile/assets/fishing/catch_heavy_<id>.png`.
+2. Add the entry to `packages/core/src/content/heavy.ts`:
+
+```ts
+{
+  id: 'moon_koi',
+  name: 'Moon Koi',
+  tier: 'heavy',
+  minLbs: 2_600_000,
+  maxLbs: 9_000_000,
+  assetId: 'catch_heavy_moon_koi',
+  emoji: '🌙',
+  joke: 'It reflects the wrong moon.',
+},
+```
+
+3. Run the art script.
+
+The weight of a heavy catch has to stay inside the range of the "Heavy
+Catch" tier (2,500,000–25,000,000 lbs) and above the heaviest critter
+tier. The test `packages/core/test/fishing/catches.test.ts` checks both.
 
 ## Adding a special
 
@@ -258,6 +290,9 @@ own files (see `assets/CREDITS.md` for their license).
   `packages/core/test/content.test.ts`).
 - A critter always belongs to a **pack of the catalogue** and has a rarity of
   the catalogue.
+- A **heavy catch** pays **15 tokens** at the end of the session (a multiple
+  of 5, like every other token price of the game) and weighs more than
+  every critter tier.
 - The **odds** of the packs are the ones of the SPEC: Common 60 % · Uncommon
   25 % · Rare 10 % · Epic 4 % · Legendary 1 %.
 

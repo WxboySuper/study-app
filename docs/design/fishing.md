@@ -56,6 +56,7 @@ any ─End─▶ END_CONFIRM ─▶ PAYOUT
 
 ## 4. In-scene question overlay
 - A **parchment note** unrolls from the taut line above the water, roughly the top 40% of the screen. The scene stays live behind it, dimmed 30%.
+- The card is the art of the mode: `ui_parchment_note` is stretched behind the prompt and the text is written in dark ink on the parchment.
 - The prompt is large (20sp min, auto-shrinks to 16sp, scrolls if longer).
 - Answers are **4 wooden lure tags** hanging from a rope in a 2×2 grid at the bottom, each 56dp+ tall. Distractors come from the same set.
 - Feedback: the tag presses in, then turns green with ✓ or red with a shake. Self-graded and typed cards (later) use the same gate with "Tap to flip" and ✓/✗ tags.
@@ -64,7 +65,9 @@ any ─End─▶ END_CONFIRM ─▶ PAYOUT
 ## 5. Reveal card
 - It springs in (scale 0.6→1.05→1) over a burst in the rarity colour.
 - It shows the art, name, **rarity ribbon** using Blooket-style tier names (below), **weight** counting up, and a **NEW!** stamp the first time you catch something. Silly catches get a one-line joke caption ("Smells like detention"), critters show their vibe.
+- The card is built from the UI art: the rays of `ui_reveal_rays` turn slowly behind the catch, the tier name sits on the ribbon of `ui_tier_ribbon` (tinted with the colour of the tier) and the name and the weight of the catch hang on the wooden tag of `ui_tag_wood`.
 - Catch of the Day and Angler's Legend get a full-screen flash, a slow-mo leap, a fanfare and a triple haptic.
+- A **Heavy Catch** gets its own deep sea theme: a gold **"HEAVY CATCH!"** banner, extra rays, a bigger splash and a heavy haptic of its own.
 - The art of a catch comes from the art resolver of the app (`apps/mobile/src/content/art.ts`): the PNG of the critter (or of the junk item) when it exists, the placeholder of its type when it does not.
 
 ## 6. Catch tiers, odds and weights
@@ -78,14 +81,19 @@ Our tiers mirror Blooket's names, with a ~10× weight ladder so the number goes 
 | Epic Grab | red | 7,000–30,000 |
 | Catch of the Day | orange | 25,000–500,000 |
 | Angler's Legend | purple | 500,000–2,500,000 |
+| Heavy Catch | deep teal | 2,500,000–25,000,000 |
 Odds per **lure rank** (%; the remaining slice is the "special" table in §8):
-| Rank | Trash | Easy | Great | Rare | Epic | CotD | Legend | Special |
-|---|---|---|---|---|---|---|---|---|
-| 1 Worm | 30 | 45 | 16 | 4 | 0 | 0 | 0 | 5 |
-| 2 Spinner | 20 | 40 | 22 | 10 | 2 | 0 | 0 | 6 |
-| 3 Jig | 12 | 30 | 26 | 18 | 6 | 1 | 0 | 7 |
-| 4 Golden Fly | 8 | 20 | 26 | 24 | 12 | 2.5 | 0.5 | 7 |
-| 5 Legend Lure | 5 | 12 | 22 | 28 | 18 | 6 | 1 | 8 |
+| Rank | Trash | Easy | Great | Rare | Epic | CotD | Legend | Heavy | Special |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 Worm | 28 | 45 | 16 | 4 | 0 | 0 | 0 | 2 | 5 |
+| 2 Spinner | 18 | 40 | 22 | 10 | 2 | 0 | 0 | 2 | 6 |
+| 3 Jig | 10 | 30 | 26 | 18 | 6 | 1 | 0 | 2 | 7 |
+| 4 Golden Fly | 6 | 20 | 26 | 24 | 12 | 2.5 | 0.5 | 2 | 7 |
+| 5 Legend Lure | 3 | 12 | 22 | 28 | 18 | 6 | 1 | 2 | 8 |
+- The **Heavy Catch** tier is the deep end of the lake: it takes 2 % of
+  every rank out of the bottom of the ladder, weighs more than every
+  critter tier and pays **15 tokens** per heavy catch at the end of the
+  session. The Glow Jig shifts its 2 points to the heavy tier as well.
 - **Lure rank rises within a session.** You *reel up* "New Lure!" as a special catch, guaranteed by 5, 12, 22 and 35 correct answers at the latest, as in Blooket. Rank resets each session. The **base lure** you start at is a persistent shop upgrade (§9), so progress carries over.
 - **Bonus or repeat cards** (not due, not new) roll at rank 1 at best, mirroring the SPEC's lower token rate, so farming an easy deck stays boring.
 - **Haul lbs is the score for bests and achievements. Tokens still come only from the SPEC payout formula** (~1.5/correct). Catches never mint tokens directly, apart from the capped specials in §8.
@@ -101,6 +109,7 @@ catalogue: the fish registry is typed and empty (`packages/core/src/content/fish
 - **Epic Grab (epic critters):** Mnemo the Memory Jelly, The Spaced Ranger, The Witching Hour Owl. 7,000–30,000 lbs.
 - **Catch of the Day:** no critter has that rarity yet: the tier falls back to the Angler's Legend (the fish registry will fill it).
 - **Angler's Legend (legendary critters):** Gigabrain Golem and Headless Homework Horseman. 500,000–2,500,000 lbs.
+- **Heavy Catch (the deep end of the lake):** Galaxy Fish, Golden Koi, Ice Fish, Skeleton Fish, Swamp Monster, Treasure Chest and Void Fish. 2,500,000–25,000,000 lbs, so a heavy catch is always the biggest haul of the session. They live in their own registry (`packages/core/src/content/heavy.ts`), they are **not** the gameplay specials of §8 and every one of them pays 15 tokens at the end of the session.
 - **Specials (§8):** New Lure!, FRENZY!, a powerup bottle and a Pack Ticket. They are not catches of the ladder: they change the session or give something.
 
 A critter catch **is added to the collection at End** of the session (a duplicate
@@ -109,9 +118,9 @@ on sale never swim up: the pool of a tier is built from the packs that are
 available at the time of the session.
 
 Data lives in the content registries (`packages/core/src/content/`): the
-critters in `critters.ts`, the junk in `junk.ts`, the specials in
-`specials.ts`. The logic that turns them into catches lives in
-`packages/core/src/fishing/catches.ts`.
+critters in `critters.ts`, the junk in `junk.ts`, the heavy catches in
+`heavy.ts`, the specials in `specials.ts`. The logic that turns them into
+catches lives in `packages/core/src/fishing/catches.ts`.
 
 ## 8. Special catches: lures, Frenzy, powerups, critters
 The "Special" slice in §6 rolls on this table:
@@ -138,11 +147,13 @@ You equip one bait at a time on the pre-session screen. Prices stay below pack p
 ### HUD
 - Top-left: **Haul: 123,456 lbs** with a roll-up and bounce. The digits glow at milestones (10k, 100k, 1M).
 - Top-right: **End** (outlined, asks to confirm).
-- Top-center: cards answered, 🔥 streak, due remaining, lure rank pips (1–5), and any held powerup icon.
+- Top-center: cards answered, 🔥 streak, due remaining, the art of the current lure with its rank pips (1–5), and the art of any held powerup.
 - A catch log strip shows the last 5 catches.
 
 ## 10. End and payout
 End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:id/end` → the payout screen: the fisher holds the biggest catch, the haul total, the catches by rarity, the critters that were caught (new ones are stamped **NEW**), tokens earned (count-up, coin sfx) and a "Open pack" CTA. The critters are added to the collection when the session ends (a duplicate only bumps the count). The client works offline. The outbox syncs and the server stays the source of truth for tokens.
+
+Every **heavy catch** of the session pays **15 tokens** on top of the payout of the SPEC (a multiple of 5, like every other price of the game). The rule lives in `packages/core/src/payout.ts` (`tokensPerHeavyCatch`); every other payout rule is unchanged.
 
 ## 11. Rendering approach (lean MVP)
 **Build it with plain React Native Views/Images and react-native-reanimated 4** (already installed). No Skia for v1.
@@ -200,6 +211,14 @@ Sizes: catches and lures 512×512, background 1080×1920 (portrait), UI pieces a
 - `pu_second_chance`: "fishing line knotted with a glowing heart"
 - `pu_heavy_sinker`: "heavy iron fishing weight with a ×3 shine"
 - `special_pack_ticket`: "golden ticket with a card pack symbol"
+**Heavy catches (the "Heavy Catch" tier)**
+- `catch_heavy_galaxy_fish`: "a cosmic fish with a galaxy inside its body, glowing stars"
+- `catch_heavy_golden_koi`: "a big golden koi with shimmering gold scales"
+- `catch_heavy_ice_fish`: "a big fish made of clear blue ice, frosted"
+- `catch_heavy_skeleton_fish`: "the skeleton of a huge fish, bleached white"
+- `catch_heavy_swamp_monster`: "a huge swamp monster with algae and glowing eyes"
+- `catch_heavy_treasure_chest`: "a barnacle covered treasure chest, slightly open, gold inside"
+- `catch_heavy_void_fish`: "a fish made of dark void, edges dissolving into nothing"
 **UI**
 - `ui_hooked_banner`: "bold tilted comic burst banner shape, yellow with red outline, empty middle for text" (1024×512)
 - `ui_parchment_note`: "unrolled parchment paper note, empty" (1024×640)
@@ -224,6 +243,7 @@ Multiplayer, real distractions against other players, timers, an aquarium displa
 - [ ] A critter catch is added to the collection when the session ends; a duplicate only bumps the count.
 - [ ] Only the critters of the packs that are on sale swim up.
 - [ ] Bonus cards roll at rank 1 at most and never roll the critter special or a ticket.
+- [ ] About 2 % of the catches are heavy catches: they weigh more than any critter tier and pay 15 tokens each at the end of the session.
 - [ ] Sound, haptics and Reduce Motion all have toggles.
 - [ ] Unit tests cover the reducer, the tier odds per rank, the weight roll, the specials and their caps (seeded RNG).
 
