@@ -11,35 +11,43 @@ import Animated, {
 import { hapticImpact } from '@/haptics';
 import { critterArt } from '@/packs/critterArt';
 import { play } from '@/sound/sfx';
-import { colors, fonts, gradients, radius, shadow, spacing } from '@/theme';
+import { colors, fonts, radius, shadow, spacing } from '@/theme';
 import { GlassCard } from '@/ui';
 
-import type { DeckCard } from './decks';
+import { chipKey, classGradient, type ClassChip, type DeckCard } from './decks';
 
 /**
  * The deck picker of the home screen.
  *
- * The study scope is not a list of radio buttons anymore: it is a shelf of
- * chunky deck cards. "All" is the wide card in front of the shelf, every
- * topic and every set is a card of its own, in the gradient of its topic,
- * with the number of cards it holds and a badge for the ones that are due.
+ * The study scope is a row of chunky class chips (All, every class of the
+ * player, Unsorted) and a shelf of deck cards below them. A class chip
+ * studies every deck of the class, a deck card studies only that deck, and
+ * a long press on a class chip opens the sheet that renames or deletes it.
  *
- * The selected deck glows, grows a little and shows a check mark; a press
+ * The selected chip glows, grows a little and shows a check mark; a press
  * dips the card down with a spring and buzzes the phone.
  */
 
 /** The props of the picker. */
 export interface DeckPickerProps {
-  /** The decks of the player (the topics and the sets). */
+  /** The chips of the class row (All, the classes of the player, Unsorted). */
+  chips: readonly ClassChip[];
+  /** The decks of the selected class. */
   decks: readonly DeckCard[];
-  /** The id of the selected deck (`null` means "All decks"). */
-  selectedId: string | null;
-  /** How many cards every deck holds, together. */
-  totalCards: number;
-  /** How many of them are due. */
-  totalDue: number;
-  /** Called when the player picks a deck (`null` means "All decks"). */
-  onSelect: (id: string | null) => void;
+  /** The key of the selected chip. */
+  selectedChip: string;
+  /** The id of the selected deck (`null` when no deck is selected). */
+  selectedDeckId: string | null;
+  /** Called when the player picks a class chip. */
+  onSelectChip: (chip: ClassChip) => void;
+  /** Called when the player picks a deck. */
+  onSelectDeck: (deck: DeckCard) => void;
+  /** Called when the player wants to create a class. */
+  onCreateClass: () => void;
+  /** Called when the player wants to rename or delete a class. */
+  onEditClass: (chip: ClassChip) => void;
+  /** Called when the player wants to move a deck to another class. */
+  onMoveDeck: (deck: DeckCard) => void;
   /** Called when the player wants to import a new deck. */
   onImport: () => void;
   /** Called when the player wants to delete a deck. */
@@ -50,29 +58,55 @@ export interface DeckPickerProps {
 const EMPTY_CRITTER_ID = 'mnemo_the_memory_jelly';
 
 export function DeckPicker({
+  chips,
   decks,
-  selectedId,
-  totalCards,
-  totalDue,
-  onSelect,
+  selectedChip,
+  selectedDeckId,
+  onSelectChip,
+  onSelectDeck,
+  onCreateClass,
+  onEditClass,
+  onMoveDeck,
   onImport,
   onDelete,
 }: DeckPickerProps) {
   return (
     <View style={styles.root} testID="deck-picker">
       <View style={styles.header}>
-        <Text style={styles.title}>STUDY DECKS</Text>
-        <Text style={styles.hint}>Pick a deck to study</Text>
+        <Text style={styles.title}>STUDY CLASSES</Text>
+        <Text style={styles.hint}>Pick a class to study it</Text>
       </View>
 
-      <AllDecks
-        selected={selectedId === null}
-        cards={totalCards}
-        due={totalDue}
-        onPress={() => {
-          onSelect(null);
-        }}
-      />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
+      >
+        {chips.map((chip) => (
+          <ClassTile
+            key={chipKey(chip)}
+            chip={chip}
+            selected={selectedChip === chipKey(chip)}
+            onPress={() => {
+              onSelectChip(chip);
+            }}
+            onLongPress={
+              chip.kind === 'class'
+                ? () => {
+                    onEditClass(chip);
+                  }
+                : undefined
+            }
+          />
+        ))}
+
+        <NewClassTile onPress={onCreateClass} />
+      </ScrollView>
+
+      <View style={styles.header}>
+        <Text style={styles.title}>DECKS</Text>
+        <Text style={styles.hint}>Tap a deck to study only it</Text>
+      </View>
 
       {decks.length === 0 ? (
         <EmptyDecks onImport={onImport} />
@@ -84,11 +118,14 @@ export function DeckPicker({
         >
           {decks.map((deck) => (
             <DeckTile
-              key={`${deck.kind}-${deck.id}`}
+              key={deck.id}
               deck={deck}
-              selected={selectedId === deck.id}
+              selected={selectedDeckId === deck.id}
               onPress={() => {
-                onSelect(deck.id);
+                onSelectDeck(deck);
+              }}
+              onMove={() => {
+                onMoveDeck(deck);
               }}
               onDelete={() => {
                 onDelete(deck);
@@ -100,6 +137,106 @@ export function DeckPicker({
         </ScrollView>
       )}
     </View>
+  );
+}
+
+/** The chip that opens the sheet of a new class. */
+function NewClassTile({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="New class"
+      accessibilityHint="Opens the sheet of a new class"
+      onPress={() => {
+        hapticImpact('light');
+        play('tap');
+        onPress();
+      }}
+      style={({ pressed }) => [styles.newClass, pressed && styles.pressed]}
+    >
+      <Text style={styles.newClassEmoji}>➕</Text>
+      <Text style={styles.newClassTitle}>Class</Text>
+    </Pressable>
+  );
+}
+
+/** One chunky chip of the class row. */
+function ClassTile({
+  chip,
+  selected,
+  onPress,
+  onLongPress,
+}: {
+  chip: ClassChip;
+  selected: boolean;
+  onPress: () => void;
+  onLongPress?: () => void;
+}) {
+  const press = useSharedValue(0);
+  const selectedValue = useSharedValue(selected ? 1 : 0);
+
+  useEffect(() => {
+    selectedValue.value = withTiming(selected ? 1 : 0, { duration: 180 });
+  }, [selected, selectedValue]);
+
+  const style = useAnimatedStyle(() => ({
+    transform: [{ scale: 1 + selectedValue.value * 0.04 - press.value * 0.05 }],
+  }));
+
+  const face = classGradient(chip.color, 0);
+
+  return (
+    <Animated.View style={[styles.chipWrap, selected ? styles.chipSelected : null, style]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityState={{ selected }}
+        accessibilityLabel={`${chip.name}. ${chip.questions} questions, ${chip.due} due`}
+        accessibilityHint={
+          chip.kind === 'class' ? 'Long press to rename or delete the class' : undefined
+        }
+        onPressIn={() => {
+          press.value = withSpring(1, { damping: 18, stiffness: 320, mass: 0.6 });
+        }}
+        onPressOut={() => {
+          press.value = withSpring(0, { damping: 14, stiffness: 240, mass: 0.5 });
+        }}
+        onPress={() => {
+          hapticImpact('light');
+          play('tap');
+          onPress();
+        }}
+        onLongPress={
+          onLongPress === undefined
+            ? undefined
+            : () => {
+                hapticImpact('medium');
+                onLongPress();
+              }
+        }
+      >
+        <GlassCard
+          style={styles.chip}
+          contentStyle={styles.chipContent}
+          face={face}
+          tint={colors.borderStrong}
+          elevated={false}
+        >
+          <Text style={styles.chipEmoji}>{chip.emoji}</Text>
+          <Text style={styles.chipTitle} numberOfLines={1}>
+            {chip.name}
+          </Text>
+          <Text style={styles.chipMeta}>
+            {chip.questions} question{chip.questions === 1 ? '' : 's'}
+          </Text>
+          {chip.due > 0 ? (
+            <View style={styles.dueBadge}>
+              <Text style={styles.dueText}>{chip.due} DUE</Text>
+            </View>
+          ) : null}
+          {selected ? <Check /> : null}
+        </GlassCard>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -128,84 +265,18 @@ function ImportTile({ onPress }: { onPress: () => void }) {
   );
 }
 
-/** The wide card of "All decks". */
-function AllDecks({
-  selected,
-  cards,
-  due,
-  onPress,
-}: {
-  selected: boolean;
-  cards: number;
-  due: number;
-  onPress: () => void;
-}) {
-  const press = useSharedValue(0);
-  const selectedValue = useSharedValue(selected ? 1 : 0);
-
-  useEffect(() => {
-    selectedValue.value = withTiming(selected ? 1 : 0, { duration: 180 });
-  }, [selected, selectedValue]);
-
-  const style = useAnimatedStyle(() => ({
-    transform: [
-      { scale: 1 + selectedValue.value * 0.015 - press.value * 0.02 },
-    ],
-  }));
-
-  return (
-    <Animated.View style={[styles.allWrap, selected ? styles.selectedWrap : null, style]}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{ selected }}
-        accessibilityLabel="All decks. Every card of the game"
-        onPressIn={() => {
-          press.value = withSpring(1, { damping: 18, stiffness: 320, mass: 0.6 });
-        }}
-        onPressOut={() => {
-          press.value = withSpring(0, { damping: 14, stiffness: 240, mass: 0.5 });
-        }}
-        onPress={() => {
-          hapticImpact('light');
-          play('tap');
-          onPress();
-        }}
-      >
-        <GlassCard
-          style={styles.allCard}
-          contentStyle={styles.allContent}
-          face={gradients.primary}
-          tint={colors.primaryLight}
-          elevated={false}
-        >
-          <Text style={styles.allEmoji}>🗺️</Text>
-
-          <View style={styles.allText}>
-            <Text style={styles.allKicker}>EVERYTHING</Text>
-            <Text style={styles.allTitle}>All decks</Text>
-            <Text style={styles.allMeta}>
-              {cards} card{cards === 1 ? '' : 's'}
-              {due > 0 ? ` · ${due} due` : ''}
-            </Text>
-          </View>
-
-          {selected ? <Check /> : null}
-        </GlassCard>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
 /** One deck of the shelf. */
 function DeckTile({
   deck,
   selected,
   onPress,
+  onMove,
   onDelete,
 }: {
   deck: DeckCard;
   selected: boolean;
   onPress: () => void;
+  onMove: () => void;
   onDelete: () => void;
 }) {
   const press = useSharedValue(0);
@@ -224,8 +295,8 @@ function DeckTile({
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ selected }}
-        accessibilityLabel={`${deck.title}. ${deck.cards} cards, ${deck.due} due`}
-        accessibilityHint={deck.kind === 'set' ? 'Long press to delete the deck' : undefined}
+        accessibilityLabel={`${deck.title}. ${deck.questions} questions, ${deck.due} due`}
+        accessibilityHint="Long press to delete the deck"
         onPressIn={() => {
           press.value = withSpring(1, { damping: 18, stiffness: 320, mass: 0.6 });
         }}
@@ -238,10 +309,8 @@ function DeckTile({
           onPress();
         }}
         onLongPress={() => {
-          // Only a set can be deleted: a topic is a pile of sets.
-          if (deck.kind === 'set') {
-            onDelete();
-          }
+          hapticImpact('medium');
+          onDelete();
         }}
       >
         <GlassCard
@@ -251,29 +320,39 @@ function DeckTile({
           tint={colors.borderStrong}
           elevated={false}
         >
-          {deck.kind === 'set' ? (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Delete ${deck.title}`}
-              onPress={() => {
-                onDelete();
-              }}
-              hitSlop={8}
-              style={({ pressed }) => [styles.trash, pressed && styles.trashPressed]}
-            >
-              <Text style={styles.trashGlyph}>🗑</Text>
-            </Pressable>
-          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Move ${deck.title} to another class`}
+            onPress={() => {
+              onMove();
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.move, pressed && styles.trashPressed]}
+          >
+            <Text style={styles.moveGlyph}>🗂️</Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Delete ${deck.title}`}
+            onPress={() => {
+              onDelete();
+            }}
+            hitSlop={8}
+            style={({ pressed }) => [styles.trash, pressed && styles.trashPressed]}
+          >
+            <Text style={styles.trashGlyph}>🗑</Text>
+          </Pressable>
 
           <Text style={styles.deckEmoji}>{deck.emoji}</Text>
-          <Text style={styles.deckEyebrow}>{deck.kind === 'topic' ? 'TOPIC' : 'SET'}</Text>
+          <Text style={styles.deckEyebrow}>{deck.className ?? 'UNSORTED'}</Text>
           <Text style={styles.deckTitle} numberOfLines={2}>
             {deck.title}
           </Text>
 
           <View style={styles.deckMeta}>
-            <Text style={styles.deckCards}>
-              {deck.cards} card{deck.cards === 1 ? '' : 's'}
+            <Text style={styles.deckQuestions}>
+              {deck.questions} question{deck.questions === 1 ? '' : 's'}
             </Text>
             {deck.due > 0 ? (
               <View style={styles.dueBadge}>
@@ -289,7 +368,7 @@ function DeckTile({
   );
 }
 
-/** The check mark of the selected deck. */
+/** The check mark of the selected chip or deck. */
 function Check() {
   return (
     <View style={styles.check} pointerEvents="none">
@@ -314,7 +393,7 @@ function EmptyDecks({ onImport }: { onImport: () => void }) {
       <View style={styles.emptyText}>
         <Text style={styles.emptyTitle}>No decks yet</Text>
         <Text style={styles.emptyHint}>
-          Import a set to fill your decks — then every card you study lives here.
+          Import a set to fill your classes — then every question you study lives here.
         </Text>
 
         <Pressable
@@ -357,46 +436,70 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodySemi,
     fontSize: 11,
   },
-  allWrap: {
+  chipRow: {
+    gap: spacing.sm,
+    paddingRight: spacing.lg,
+    paddingVertical: 4,
+  },
+  chipWrap: {
+    width: 136,
     borderRadius: radius.card,
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  selectedWrap: {
+  chipSelected: {
     borderColor: colors.primaryLight,
     ...shadow.glow,
   },
-  allCard: {
+  chip: {
     borderRadius: radius.card,
+    minHeight: 116,
   },
-  allContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+  chipContent: {
     padding: spacing.md,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-end',
+    gap: 2,
+    minHeight: 116,
   },
-  allEmoji: {
-    fontSize: 34,
+  chipEmoji: {
+    fontSize: 26,
+    marginBottom: spacing.xs,
   },
-  allText: {
-    flex: 1,
-    gap: 1,
-  },
-  allKicker: {
-    color: 'rgba(255,255,255,0.75)',
-    fontFamily: fonts.title,
-    fontSize: 10,
-    letterSpacing: 2,
-  },
-  allTitle: {
+  chipTitle: {
     color: '#ffffff',
     fontFamily: fonts.title,
-    fontSize: 21,
+    fontSize: 15,
+    lineHeight: 18,
   },
-  allMeta: {
+  chipMeta: {
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fonts.bodySemi,
-    fontSize: 12,
+    fontSize: 11,
+  },
+  newClass: {
+    width: 88,
+    minHeight: 116,
+    borderRadius: radius.card,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: colors.borderStrong,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  pressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
+  },
+  newClassEmoji: {
+    fontSize: 26,
+  },
+  newClassTitle: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 13,
   },
   shelf: {
     gap: spacing.sm,
@@ -408,6 +511,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 2,
     borderColor: 'transparent',
+  },
+  selectedWrap: {
+    borderColor: colors.primaryLight,
+    ...shadow.glow,
   },
   deck: {
     borderRadius: radius.card,
@@ -442,7 +549,7 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: spacing.sm,
   },
-  deckCards: {
+  deckQuestions: {
     color: 'rgba(255,255,255,0.85)',
     fontFamily: fonts.bodySemi,
     fontSize: 11,
@@ -482,7 +589,8 @@ const styles = StyleSheet.create({
   },
   empty: {
     borderRadius: radius.card,
-  },  emptyContent: {
+  },
+  emptyContent: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
@@ -529,6 +637,17 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1,
   },
+  move: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
   trash: {
     position: 'absolute',
     top: spacing.sm,
@@ -542,6 +661,9 @@ const styles = StyleSheet.create({
   },
   trashPressed: {
     opacity: 0.7,
+  },
+  moveGlyph: {
+    fontSize: 13,
   },
   trashGlyph: {
     fontSize: 14,

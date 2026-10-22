@@ -1,48 +1,79 @@
-import { countScope, type CardState, type QueueScope, type StudyCard } from '@study-app/core';
+import {
+  buildDeckClassMap,
+  countScope,
+  decksOfClass,
+  type CardState,
+  type QueueScope,
+  type StudyCard,
+} from '@study-app/core';
 
-import type { LocalSet, LocalTopic } from '@/db/local';
+import type { LocalClass, LocalSet } from '@/db/local';
 import type { ScopeChoice } from '@/settings';
 import { gradients, type Gradient } from '@/theme';
 
 /**
  * The decks of the home screen.
  *
- * A deck is a pile of cards the player can study: a topic (all the sets of
- * a tag) or a single set. Every deck knows how many cards it holds and how
- * many of them are due, so the picker can show the numbers before the
- * player taps anything.
+ * A class is a pile of decks: the player groups the decks they study (a
+ * class per subject, per exam, per week...) and studies a whole class at
+ * once. Every class and every deck knows how many questions it holds and how
+ * many of them are due, so the picker can show the numbers before the player
+ * taps anything.
  */
 
+/** What kind of chip a chip of the class row is. */
+export type ClassChipKind = 'all' | 'class' | 'unsorted';
+
+/** One chip of the class row. */
+export interface ClassChip {
+  /** The id of the class (`null` for "All" and for "Unsorted"). */
+  id: string | null;
+  /** What kind of chip this is. */
+  kind: ClassChipKind;
+  /** The name of the chip. */
+  name: string;
+  /** The color of the class (`null` when it has none). */
+  color: string | null;
+  /** The icon of the chip. */
+  emoji: string;
+  /** How many questions the class holds. */
+  questions: number;
+  /** How many of them are due. */
+  due: number;
+}
+
 /** What kind of deck a card of the picker is. */
-export type DeckKind = 'topic' | 'set';
+export type DeckKind = 'class' | 'set';
 
 /** One deck of the picker. */
 export interface DeckCard {
-  /** The id of the deck (the id of the topic or of the set). */
+  /** The id of the deck (the id of the class or of the set). */
   id: string;
   /** What kind of deck this is. */
   kind: DeckKind;
   /** The name of the deck. */
   title: string;
-  /** The name of the topic the deck belongs to (a set without a topic has none). */
-  topicName: string | null;
+  /** The id of the class of the deck (`null` when it has none). */
+  classId: string | null;
+  /** The name of the class of the deck (`null` when it has none). */
+  className: string | null;
   /** The icon of the deck. */
   emoji: string;
-  /** The gradient of the deck (the gradient of its topic). */
+  /** The gradient of the deck (the gradient of its class). */
   gradient: Gradient;
-  /** How many cards the deck holds. */
-  cards: number;
+  /** How many questions the deck holds. */
+  questions: number;
   /** How many of them are due. */
   due: number;
 }
 
-/** The icons of the topics. */
-const TOPIC_EMOJI = ['🧠', '🔬', '🌍', '📜', '🧪', '🗺️', '🎨', '🏛️'];
+/** The icons of the classes. */
+const CLASS_EMOJI = ['🗃️', '📚', '🧠', '🔬', '🌍', '📜', '🧪', '🗺️', '🎨', '🏛️'];
 
-/** The icons of the sets. */
+/** The icons of the decks. */
 const SET_EMOJI = ['🗂️', '📕', '📗', '📘', '📙', '🧾', '🗒️', '📓'];
 
-/** The gradients of the decks that have no topic color. */
+/** The gradients of the decks that have no class color. */
 const FALLBACK_GRADIENTS: readonly Gradient[] = [
   gradients.primary,
   gradients.ticket,
@@ -55,7 +86,7 @@ const FALLBACK_GRADIENTS: readonly Gradient[] = [
 /**
  * Darkens a hex color.
  *
- * The deck of a topic is drawn in the color of the topic, so the gradient
+ * The deck of a class is drawn in the color of the class, so the gradient
  * needs a darker second stop.
  */
 function shade(hex: string, amount: number): string {
@@ -71,8 +102,8 @@ function shade(hex: string, amount: number): string {
   return `#${((channel(16) << 16) | (channel(8) << 8) | channel(0)).toString(16).padStart(6, '0')}`;
 }
 
-/** The gradient of a topic: its own color, or one of the gradients of the app. */
-export function topicGradient(color: string | null, index: number): Gradient {
+/** The gradient of a class: its own color, or one of the gradients of the app. */
+export function classGradient(color: string | null, index: number): Gradient {
   if (color !== null && color.trim() !== '') {
     return [color, shade(color, 0.4)];
   }
@@ -80,71 +111,161 @@ export function topicGradient(color: string | null, index: number): Gradient {
 }
 
 /**
- * Builds the decks of the picker.
+ * The colors a new class can wear.
  *
- * The topics come first (they are the big piles), then the sets. Every deck
- * is counted with the same rules as the queue of a session, so the "due"
- * badge of a deck is exactly the number of cards the session would ask for.
+ * The chips are chunky and colorful: every class of the player gets one of
+ * these, in the order of the palette.
  */
-export function buildDecks(
+export const CLASS_COLORS: readonly string[] = [
+  '#7b61ff',
+  '#22d3ee',
+  '#34d399',
+  '#f472b6',
+  '#fbbf24',
+  '#fb7185',
+  '#a78bfa',
+  '#38bdf8',
+];
+
+/**
+ * Builds the chips of the class row.
+ *
+ * The row always starts with "All" (every question of the game) and ends
+ * with "Unsorted" (the decks that do not belong to any class), with a chip
+ * for every class of the player in between.
+ */
+export function buildClassChips(
+  classes: readonly LocalClass[],
   sets: readonly LocalSet[],
-  topics: readonly LocalTopic[],
   cards: readonly StudyCard[],
   states: ReadonlyMap<string, CardState>,
   now: number,
-): DeckCard[] {
-  const decks: DeckCard[] = [];
+): ClassChip[] {
+  const deckClasses = buildDeckClassMap(sets);
 
-  topics.forEach((topic, index) => {
-    const count = countScope(cards, states, now, { kind: 'topic', topicId: topic.id });
-    decks.push({
-      id: topic.id,
-      kind: 'topic',
-      title: topic.name,
-      topicName: topic.name,
-      emoji: TOPIC_EMOJI[index % TOPIC_EMOJI.length] ?? '🧠',
-      gradient: topicGradient(topic.color, index),
-      cards: count.total,
+  const everything = countScope(cards, states, now);
+  const chips: ClassChip[] = [
+    {
+      id: null,
+      kind: 'all',
+      name: 'All',
+      color: null,
+      emoji: '🗺️',
+      questions: everything.total,
+      due: everything.due,
+    },
+  ];
+
+  classes.forEach((entry, index) => {
+    const count = countScope(
+      cards,
+      states,
+      now,
+      { kind: 'class', classId: entry.id },
+      deckClasses,
+    );
+    chips.push({
+      id: entry.id,
+      kind: 'class',
+      name: entry.name,
+      color: entry.color,
+      emoji: CLASS_EMOJI[index % CLASS_EMOJI.length] ?? '🗃️',
+      questions: count.total,
       due: count.due,
     });
   });
 
-  sets.forEach((set, index) => {
-    const topic = topics.find((entry) => entry.id === set.topicId);
-    const topicIndex = topics.findIndex((entry) => entry.id === set.topicId);
-    const count = countScope(cards, states, now, { kind: 'set', setId: set.id });
-    decks.push({
-      id: set.id,
-      kind: 'set',
-      title: set.title,
-      topicName: topic?.name ?? null,
-      emoji: SET_EMOJI[index % SET_EMOJI.length] ?? '🗂️',
-      gradient: topicGradient(topic?.color ?? null, topicIndex < 0 ? index : topicIndex),
-      cards: count.total,
-      due: count.due,
-    });
+  const unsorted = countScope(cards, states, now, { kind: 'class', classId: null }, deckClasses);
+  chips.push({
+    id: null,
+    kind: 'unsorted',
+    name: 'Unsorted',
+    color: null,
+    emoji: '📥',
+    questions: unsorted.total,
+    due: unsorted.due,
   });
 
-  return decks;
+  return chips;
 }
 
 /**
- * The id of the deck that is selected for a scope.
+ * Builds the decks of the picker.
  *
- * `null` means "All decks".
+ * The decks are the sets of the player. When a class is selected, only the
+ * decks of that class are shown; otherwise every deck is there. Every deck
+ * is counted with the same rules as the queue of a session, so the "due"
+ * badge of a deck is exactly the number of questions the session would ask
+ * for.
  */
-export function selectedDeckId(scope: ScopeChoice): string | null {
-  if (scope.kind === 'all') {
-    return null;
+export function buildDecks(
+  sets: readonly LocalSet[],
+  classes: readonly LocalClass[],
+  cards: readonly StudyCard[],
+  states: ReadonlyMap<string, CardState>,
+  now: number,
+  filter: ClassFilter = { kind: 'all' },
+): DeckCard[] {
+  const shown = filter.kind === 'all' ? sets : decksOfClass(sets, filter.classId);
+
+  return shown.map((set, index) => {
+    const entry = classes.find((candidate) => candidate.id === set.classId);
+    const classIndex = classes.findIndex((candidate) => candidate.id === set.classId);
+    const count = countScope(cards, states, now, { kind: 'set', setId: set.id });
+
+    return {
+      id: set.id,
+      kind: 'set' as const,
+      title: set.title,
+      classId: set.classId ?? null,
+      className: entry?.name ?? null,
+      emoji: SET_EMOJI[index % SET_EMOJI.length] ?? '🗂️',
+      gradient: classGradient(entry?.color ?? null, classIndex < 0 ? index : classIndex),
+      questions: count.total,
+      due: count.due,
+    };
+  });
+}
+
+/** The decks the picker shows. */
+export type ClassFilter = { kind: 'all' } | { kind: 'class'; classId: string | null };
+
+/** The key of a chip of the class row (the chips of the row are unique). */
+export function chipKey(chip: ClassChip): string {
+  if (chip.kind === 'all') {
+    return 'all';
   }
-  return scope.id;
+  if (chip.kind === 'unsorted') {
+    return 'unsorted';
+  }
+  return `class:${chip.id ?? ''}`;
+}
+
+/**
+ * The id of the class that is selected.
+ *
+ * `null` means "All the decks".
+ */
+export function selectedClassId(scope: ScopeChoice): string | null {
+  if (scope.kind === 'class') {
+    return scope.id;
+  }
+  return null;
+}
+
+/** The scope of a chip of the class row. */
+export function scopeOfChip(chip: ClassChip): ScopeChoice {
+  if (chip.kind === 'all') {
+    return { kind: 'all' };
+  }
+  if (chip.kind === 'unsorted') {
+    return { kind: 'class', id: null, title: 'Unsorted' };
+  }
+  return { kind: 'class', id: chip.id ?? '', title: chip.name };
 }
 
 /** The scope of a deck of the picker. */
 export function scopeOfDeck(deck: DeckCard): ScopeChoice {
-  if (deck.kind === 'topic') {
-    return { kind: 'topic', id: deck.id, title: deck.title };
-  }
   return { kind: 'set', id: deck.id, title: deck.title };
 }
 
@@ -155,6 +276,8 @@ export function queueScopeOf(scope: ScopeChoice): QueueScope {
       return { kind: 'all' };
     case 'topic':
       return { kind: 'topic', topicId: scope.id };
+    case 'class':
+      return { kind: 'class', classId: scope.id };
     case 'set':
       return { kind: 'set', setId: scope.id };
   }

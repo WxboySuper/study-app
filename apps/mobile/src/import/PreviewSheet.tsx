@@ -1,6 +1,16 @@
 import type { ParsedDeck } from '@study-app/core';
-import { Modal, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useState } from 'react';
+import {
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
+import type { LocalClass } from '@/db/local';
 import { colors, fonts, radius, spacing } from '@/theme';
 import { GameButton, GlassCard } from '@/ui';
 
@@ -11,6 +21,10 @@ import { GameButton, GlassCard } from '@/ui';
  * here: the name of the deck, how many questions it holds, how many of them
  * are multiple choice and how many are self-graded, the first questions with
  * their choices, and everything that could not be read.
+ *
+ * The deck also lands in a class: the player picks one of the classes of
+ * the game (or creates a new one), so the deck shows up in the right pile
+ * of the home screen.
  *
  * Nothing is written in the game until the player taps **IMPORT**.
  */
@@ -29,6 +43,14 @@ export interface PreviewSheetProps {
   name: string;
   /** Called when the player renames the deck. */
   onChangeName: (name: string) => void;
+  /** The classes of the player. */
+  classes: readonly LocalClass[];
+  /** The class the deck lands in (`null` when it has none). */
+  classId: string | null;
+  /** Called when the player picks the class of the deck. */
+  onChangeClass: (classId: string | null) => void;
+  /** Called when the player wants a new class. */
+  onCreateClass: (name: string) => void;
   /** Called when the player closes the sheet. */
   onCancel: () => void;
   /** Called when the player confirms the import. */
@@ -42,6 +64,10 @@ export function PreviewSheet({
   deck,
   name,
   onChangeName,
+  classes,
+  classId,
+  onChangeClass,
+  onCreateClass,
   onCancel,
   onConfirm,
   busy,
@@ -49,6 +75,8 @@ export function PreviewSheet({
   const { total, multipleChoice, selfGrade } = deck.counts;
   const shown = deck.cards.slice(0, PREVIEW_CARDS);
   const title = name.trim() === '' ? deck.name : name.trim();
+  const [newClassOpen, setNewClassOpen] = useState(false);
+  const [newClassName, setNewClassName] = useState('');
 
   return (
     <Modal
@@ -74,6 +102,71 @@ export function PreviewSheet({
               <Text style={styles.chipText}>
                 ⚠ {selfGrade} question{selfGrade === 1 ? '' : 's'} will be self-graded
               </Text>
+            </View>
+          ) : null}
+
+          <Text style={styles.label}>CLASS</Text>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.classRow}
+          >
+            <ClassChip
+              name="Unsorted"
+              color={null}
+              selected={classId === null}
+              onPress={() => {
+                onChangeClass(null);
+              }}
+            />
+
+            {classes.map((entry) => (
+              <ClassChip
+                key={entry.id}
+                name={entry.name}
+                color={entry.color}
+                selected={entry.id === classId}
+                onPress={() => {
+                  onChangeClass(entry.id);
+                }}
+              />
+            ))}
+
+            <ClassChip
+              name="+ New class…"
+              color={null}
+              selected={false}
+              onPress={() => {
+                setNewClassOpen((open) => !open);
+              }}
+            />
+          </ScrollView>
+
+          {newClassOpen ? (
+            <View style={styles.newClass}>
+              <TextInput
+                value={newClassName}
+                onChangeText={setNewClassName}
+                placeholder="The name of the new class"
+                placeholderTextColor={colors.textDim}
+                style={styles.rename}
+                autoCapitalize="sentences"
+                autoCorrect={false}
+                accessibilityLabel="The name of the new class"
+                returnKeyType="done"
+              />
+              <GameButton
+                label="CREATE"
+                variant="secondary"
+                size="sm"
+                disabled={newClassName.trim() === ''}
+                onPress={() => {
+                  onCreateClass(newClassName.trim());
+                  setNewClassName('');
+                  setNewClassOpen(false);
+                }}
+              />
             </View>
           ) : null}
 
@@ -138,6 +231,37 @@ export function PreviewSheet({
   );
 }
 
+/** One chip of the class picker of the preview. */
+function ClassChip({
+  name,
+  color,
+  selected,
+  onPress,
+}: {
+  name: string;
+  color: string | null;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={name}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.classChip,
+        color === null ? null : { borderColor: color },
+        selected ? styles.classChipSelected : null,
+        pressed ? styles.classChipPressed : null,
+      ]}
+    >
+      {color === null ? null : <View style={[styles.classDot, { backgroundColor: color }]} />}
+      <Text style={styles.classChipText}>{name}</Text>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
@@ -175,6 +299,50 @@ const styles = StyleSheet.create({
     borderColor: colors.warning,
     paddingHorizontal: 10,
     paddingVertical: 6,
+  },
+  label: {
+    color: colors.textDim,
+    fontFamily: fonts.title,
+    fontSize: 10,
+    letterSpacing: 1.6,
+  },
+  classRow: {
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+    paddingRight: spacing.lg,
+  },
+  classChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.chip,
+    borderWidth: 2,
+    borderColor: colors.border,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  classChipSelected: {
+    borderColor: colors.primaryLight,
+    backgroundColor: 'rgba(123, 97, 255, 0.22)',
+  },
+  classChipPressed: {
+    opacity: 0.75,
+  },
+  classChipText: {
+    color: colors.text,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+  },
+  classDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  newClass: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
   },
   chipText: {
     color: colors.warning,

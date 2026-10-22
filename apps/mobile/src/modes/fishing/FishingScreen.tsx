@@ -1,4 +1,5 @@
 import {
+  buildDeckClassMap,
   buildQueue,
   computePayout,
   countStudyProgress,
@@ -121,6 +122,8 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
 
   const cardsRef = useRef<StudyCard[]>([]);
   const statesRef = useRef<Map<string, CardState>>(new Map());
+  /** The class of every deck (a class scope needs it). */
+  const deckClassesRef = useRef<ReadonlyMap<string, string | null>>(new Map());
   const questionStartedAt = useRef(Date.now());
   const persistedRef = useRef(0);
   const sessionIdRef = useRef(`fishing-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -137,6 +140,8 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         return { kind: 'all' };
       case 'topic':
         return { kind: 'topic', topicId: scope.id };
+      case 'class':
+        return { kind: 'class', classId: scope.id };
       case 'set':
         return { kind: 'set', setId: scope.id };
     }
@@ -146,6 +151,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     return buildQueue(cardsRef.current, statesRef.current, Date.now(), {
       newCap: NEW_CARD_CAP,
       scope: queueScope,
+      deckClasses: deckClassesRef.current,
     });
   }, [queueScope]);
 
@@ -182,11 +188,13 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         const store = await openLocalStore();
         const cards = await store.listCards();
         const states = await store.listCardStates();
+        const sets = await store.listSets();
         if (cancelled) {
           return;
         }
         cardsRef.current = buildQuestionCards(cards);
         statesRef.current = states;
+        deckClassesRef.current = buildDeckClassMap(sets);
         dispatch({ type: 'set_queue', queue: buildQueueNow() });
 
         // The collection knows which critters are already owned: a critter
@@ -723,7 +731,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
               {loading ? (
                 <CritterLoader emoji="🎣" size={24} style={styles.castLoader} />
               ) : (
-                <Text style={styles.castLabel}>{nothingToStudy ? 'NO CARDS YET' : 'CAST'}</Text>
+                <Text style={styles.castLabel}>{nothingToStudy ? 'NO QUESTIONS YET' : 'CAST'}</Text>
               )}
             </LinearGradient>
           </View>
@@ -733,7 +741,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       {machine.phase === 'question' && machine.question === null ? (
         <View style={styles.sheetBackdrop}>
           <GlassCard contentStyle={styles.sheet} tint={colors.ticket}>
-            <Text style={styles.sheetTitle}>No cards left</Text>
+            <Text style={styles.sheetTitle}>No questions left</Text>
             <Text style={styles.sheetBody}>
               There is nothing left to study in this scope. End the session to see the haul.
             </Text>

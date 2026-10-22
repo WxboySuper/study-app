@@ -30,7 +30,11 @@ export default function FishingRoute() {
 
   const scope: ScopeChoice = (() => {
     if (params.kind === 'set' && typeof params.id === 'string') {
-      return { kind: 'set', id: params.id, title: params.title ?? 'Set' };
+      return { kind: 'set', id: params.id, title: params.title ?? 'Deck' };
+    }
+    if (params.kind === 'class') {
+      const id = typeof params.id === 'string' && params.id !== '' ? params.id : null;
+      return { kind: 'class', id, title: params.title ?? 'Class' };
     }
     if (params.kind === 'topic' && typeof params.id === 'string') {
       return { kind: 'topic', id: params.id, title: params.title ?? 'Topic' };
