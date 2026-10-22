@@ -81,7 +81,7 @@ function event(
   id: string,
   seq: number,
   type = "review",
-  payload: unknown = { cardId: "c1" },
+  payload: unknown = { cardId: "c1", epoch: 2 },
 ) {
   return { id, seq, at: 1_700_000_000_000 + seq, type, payload };
 }
@@ -225,6 +225,29 @@ describe("pairing", () => {
 });
 
 describe("push and pull", () => {
+  it("drops scheduling events from before the Mastery reset", async () => {
+    const { env, raw } = await setup();
+    const phone = await registerPhone(env);
+    const events = [
+      event("evt-old-review", 1, "review", { cardId: "c1" }),
+      event("evt-old-kv", 2, "kv", {
+        key: "fishing.masteryCounts.v1",
+        value: "{}",
+      }),
+      event("evt-money", 3, "wallet_delta", { balance: 5 }),
+      event("evt-new-review", 4, "review", { cardId: "c1", epoch: 2 }),
+    ];
+    expect((await post(env, "/api/sync/push", { events }, phone)).status).toBe(
+      200,
+    );
+    const rows = raw
+      .prepare("SELECT type FROM sync_events ORDER BY seq")
+      .all() as {
+      type: string;
+    }[];
+    expect(rows.map((r) => r.type)).toEqual(["wallet_delta", "review"]);
+  });
+
   it("relays events between devices, idempotently", async () => {
     const { env } = await setup();
     const phone = await registerPhone(env);
@@ -259,7 +282,7 @@ describe("push and pull", () => {
     }>(await call(env, "/api/sync/pull?cursor=0", {}, web));
     expect(pulled.events.map((e) => e.id)).toEqual(["evt-00001", "evt-00002"]);
     expect(pulled.events[0]?.device_id).toBe("phone-0001");
-    expect(pulled.events[0]?.payload).toEqual({ cardId: "c1" });
+    expect(pulled.events[0]?.payload).toEqual({ cardId: "c1", epoch: 2 });
 
     const own = await json<{ events: unknown[]; cursor: number }>(
       await call(env, "/api/sync/pull?cursor=0", {}, phone),
