@@ -27,7 +27,6 @@ import { equippedBaitEffect, MAX_LURE_RANK, type EquippedBaits } from './lures';
 import {
   MAX_ROLL_RANK,
   clampRollRank,
-  wikiTierWeight,
   wikiTiersForRank,
 } from './wiki';
 
@@ -103,6 +102,25 @@ export interface TierOdds {
  */
 export const SPECIAL_SHARE_BY_RANK: readonly number[] = [5, 6, 7, 7, 8, 8];
 
+/**
+ * The weight of every tier at a lure rank (rank 1 = lure F, 2 = D, 3 = C,
+ * 4 = B, 5 = A/S, 6 = S+, the Frenzy).
+ *
+ * The wiki lists which lures can catch a tier (Trash F-C, Easy One D-B,
+ * Great Catch and Rare Find D-A, Epic Grab C-A, Catch of the Day B-S,
+ * Angler's Legend A-S+). The low lures are dominated by Trash, Easy One and
+ * Great Catch; Rare Find is a minority until the late lures and Epic Grab is
+ * rare at C. See docs/design/fishing.md §6.
+ */
+export const TIER_WEIGHTS_BY_RANK: readonly Readonly<Partial<Record<CatchTier, number>>>[] = [
+  { trash: 100 },
+  { trash: 30, easy: 45, great: 18, rare: 7 },
+  { trash: 15, easy: 40, great: 25, rare: 15, epic: 5 },
+  { easy: 25, great: 30, rare: 27, epic: 13, cotd: 5 },
+  { great: 25, rare: 35, epic: 25, cotd: 12, legend: 3 },
+  { great: 10, rare: 20, epic: 30, cotd: 30, legend: 10 },
+];
+
 /** The base odds of a lure rank. Unknown ranks fall back to rank 1. */
 export function baseTierOdds(rank: number): TierOdds {
   const rollRank = clampRollRank(rank);
@@ -110,10 +128,12 @@ export function baseTierOdds(rank: number): TierOdds {
   const odds = emptyTierOdds(rollRank);
   odds.special = special;
 
-  // The tier weights are the sums of the wiki row chances: the table is the
-  // source of truth, so the odds cannot drift away from the catches.
+  // The tier weights come from TIER_WEIGHTS_BY_RANK. The wiki chances are
+  // per Blook at the *first* lure that can catch it, so summing them per tier
+  // overweights the tiers with many rows (Rare Find sums to 43 % at lure D).
+  // The rows still pick the catch inside a tier.
   const tiers = wikiTiersForRank(rollRank);
-  const weights = tiers.map((tier) => wikiTierWeight(tier));
+  const weights = tiers.map((tier) => TIER_WEIGHTS_BY_RANK[rollRank - 1]?.[tier] ?? 0);
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   const catchShare = 100 - special;
   const divisor = total > 0 ? total : 1;
@@ -256,10 +276,49 @@ export const FRENZY_RANK_BONUS = 2;
 export const FRENZY_WEIGHT_MULTIPLIER = 2;
 
 /**
- * The correct answers after which a lure rank up is guaranteed
- * ("guaranteed by 5, 12, 22 and 35 correct answers at the latest").
+ * The correct answers after which a lure upgrade is offered at the latest
+ * (docs/design/fishing.md §8).
+ *
+ * In Blooket the lure upgrades are reeled in as a catch ("New Lure", a
+ * Special): they come from the catch roll, not from a timer. The roll alone
+ * gives roughly one upgrade every 40-70 catches, so these late safety
+ * nets only make sure a long session still reaches the Legend Lure. They are
+ * wide on purpose: reaching rank 5 takes a long session (100 correct answers
+ * at the latest).
  */
-export const LURE_GUARANTEE_THRESHOLDS: readonly number[] = [5, 12, 22, 35];
+export const LURE_GUARANTEE_THRESHOLDS: readonly number[] = [8, 25, 55, 100];
+
+/**
+ * Reels a lure upgrade in: the rank goes up by one (at most 5).
+ *
+ * The roll only *offers* a "New Lure!" catch; the rank moves when the player
+ * claims it on the reveal card, so a fish that got away never upgrades the lure.
+ */
+export function applySpecialReward(state: RollState, outcome: RolledCatch): RollState {
+  switch (outcome.kind) {
+    case 'new_lure':
+      return applyLureUpgrade(state);
+    case 'frenzy':
+      return { ...state, frenzyCatchesLeft: FRENZY_CATCHES };
+    case 'powerup':
+      return { ...state, powerup: outcome.powerup };
+    case 'pack_ticket':
+      return { ...state, packTicketsThisSession: state.packTicketsThisSession + 1 };
+    default:
+      return state;
+  }
+}
+
+/**
+ * The lure upgrade of a "New Lure" catch, applied when it is claimed.
+ */
+export function applyLureUpgrade(state: RollState): RollState {
+  return {
+    ...state,
+    lureRank: Math.min(MAX_LURE_RANK, state.lureRank + 1),
+    luresReeledUp: state.luresReeledUp + 1,
+  };
+}
 
 /**
  * How many lures have to be reeled up after `correctCount` correct answers.
@@ -542,14 +601,11 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
   };
 
   // The lure rank the tier is rolled at. The Frenzy lifts it by 2 (as high as
-  // the Frenzy rank, S+), bonus review cards never go above rank 1.
+  // the Frenzy rank, S+). Bonus review cards roll at the lure rank too (no
+  // Frenzy lift): v0.1.8 forced them to rank 1, which only holds Trash, so a
+  // mastery session full of repeats caught Trash at the Legend Lure.
   const frenzyActive = next.frenzyCatchesLeft > 0;
-  let rank = next.lureRank + (frenzyActive ? FRENZY_RANK_BONUS : 0);
-  rank = clampRollRank(rank);
-  if (bonus) {
-    // Bonus review cards roll at rank 1 at best.
-    rank = 1;
-  }
+  const rank = clampRollRank(next.lureRank + (frenzyActive && !bonus ? FRENZY_RANK_BONUS : 0));
 
   // The frenzy always lasts for FRENZY_CATCHES catches, no matter what came
   // out of the roll.
@@ -558,9 +614,8 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
   }
 
   // 1. The lure guarantee.
-  if (next.luresReeledUp < guaranteedLureCount(next.correctCount)) {
-    next.lureRank = Math.min(MAX_LURE_RANK, next.lureRank + 1);
-    next.luresReeledUp += 1;
+  // The rank itself moves when the catch is claimed (see applyLureUpgrade).
+  if (next.lureRank < MAX_LURE_RANK && next.luresReeledUp < guaranteedLureCount(next.correctCount)) {
     return { outcome: { kind: 'new_lure' }, state: next, rank, luckyCharmUsed: false, frenzyActive };
   }
 
@@ -691,12 +746,11 @@ function rollSpecial(
 
   switch (picked) {
     case 'newLure': {
-      next.lureRank = Math.min(MAX_LURE_RANK, next.lureRank + 1);
-      next.luresReeledUp += 1;
+      // The rank moves when the catch is claimed (see applyLureUpgrade).
       return { outcome: { kind: 'new_lure' }, state: next };
     }
     case 'frenzy': {
-      next.frenzyCatchesLeft = FRENZY_CATCHES;
+      // The Frenzy starts when the catch is claimed (see applySpecialReward).
       return { outcome: { kind: 'frenzy' }, state: next };
     }
     case 'powerup': {
@@ -705,7 +759,6 @@ function rollSpecial(
       if (powerup === undefined) {
         return null;
       }
-      next.powerup = powerup.id;
       return { outcome: { kind: 'powerup', powerup: powerup.id }, state: next };
     }
     case 'critter': {
@@ -725,7 +778,6 @@ function rollSpecial(
       };
     }
     case 'packTicket': {
-      next.packTicketsThisSession += 1;
       return { outcome: { kind: 'pack_ticket' }, state: next };
     }
   }

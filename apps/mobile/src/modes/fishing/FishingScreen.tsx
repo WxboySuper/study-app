@@ -1110,6 +1110,14 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       ? machine.currentItem?.state
       : (machine.session.cardStates.get(machine.question.cardId) ?? machine.currentItem?.state),
   );
+  // The streak of the question toward mastery, for the dev pill (mastery
+  // mode only). It drops back to 0 on a miss.
+  const currentDot =
+    mastery && machine.question !== null
+      ? progress.dots.find((dot) => dot.id === machine.question?.cardId)
+      : undefined;
+  const masteryStreak =
+    currentDot === undefined ? null : { correct: currentDot.correct, required: currentDot.required };
   // The queue of the machine holds one question at a time: the scope of the
   // session is what says whether there is something to study.
   const nothingToStudy = !loading && progress.total === 0;
@@ -1232,6 +1240,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
             locked={machine.phase === 'answered'}
             lockoutUntil={machine.lockoutUntil}
             mastery={currentMastery}
+            masteryStreak={masteryStreak}
             onAnswer={onAnswer}
             onSelfGrade={onSelfGrade}
             reduceMotion={reduceMotion}

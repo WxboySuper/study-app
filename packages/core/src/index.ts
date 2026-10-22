@@ -331,6 +331,8 @@ export {
   createRollState,
   createSeededRng,
   findPowerup,
+  applyLureUpgrade,
+  applySpecialReward,
   guaranteedLureCount,
   isCatchOutcome,
   pickWeightedCatch,
