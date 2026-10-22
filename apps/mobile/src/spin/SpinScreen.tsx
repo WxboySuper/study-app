@@ -22,6 +22,7 @@ import Animated, {
 import { openLocalStore } from '@/db/local';
 import { hapticImpact, hapticSuccess } from '@/haptics';
 import { playSfx, prepareSfx } from '@/modes/fishing/sfx';
+import { play } from '@/sound/sfx';
 import { colors, fonts, radius, spinSegmentColors } from '@/theme';
 import {
   GameBackground,
@@ -106,6 +107,7 @@ export function SpinScreen() {
 
     setSpinning(true);
     setMessage(null);
+    play('tap');
 
     try {
       const store = await openLocalStore();
@@ -145,6 +147,8 @@ export function SpinScreen() {
           withSpring(1, { damping: 11, stiffness: 170 }),
         );
         playSfx('coin');
+        play('spinWin');
+        play('coin');
         if (result.reward >= SPIN_JACKPOT) {
           hapticImpact('heavy');
           hapticSuccess();

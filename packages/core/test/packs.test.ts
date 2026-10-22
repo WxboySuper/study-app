@@ -5,6 +5,7 @@ import { createSeededRng, type Rng } from '../src/fishing/roll';
 import {
   PACKS,
   buyPack,
+  canOpenPack,
   findPackDef,
   openPack,
   packRarityOdds,
@@ -263,5 +264,86 @@ describe('buyPack', () => {
     buyPack(wallet, findPackDef(STARTER)!, INSIDE_THE_WINDOW, { rng: createSeededRng(3) });
     expect(wallet.balance).toBe(100);
     expect(wallet.packTickets).toBe(1);
+  });
+});
+
+describe('canOpenPack', () => {
+  it('allows a pack the player can pay for', () => {
+    const check = canOpenPack(walletWith(100), findPackDef(STARTER)!, INSIDE_THE_WINDOW);
+
+    expect(check.ok).toBe(true);
+    if (!check.ok) {
+      return;
+    }
+    expect(check.useTicket).toBe(false);
+    expect(check.priceTokens).toBe(20);
+  });
+
+  it('refuses a pack the player cannot pay for', () => {
+    const check = canOpenPack(walletWith(5), findPackDef(STARTER)!, INSIDE_THE_WINDOW);
+
+    expect(check.ok).toBe(false);
+    if (check.ok) {
+      return;
+    }
+    expect(check.error).toBe('insufficient_tokens');
+    expect(check.message.length).toBeGreaterThan(0);
+  });
+
+  it('falls back on a pack ticket when the tokens are not enough', () => {
+    const check = canOpenPack(walletWith(5, 1), findPackDef(STARTER)!, INSIDE_THE_WINDOW);
+
+    expect(check.ok).toBe(true);
+    if (!check.ok) {
+      return;
+    }
+    expect(check.useTicket).toBe(true);
+  });
+
+  it('does not fall back on a ticket when the fallback is off', () => {
+    const check = canOpenPack(walletWith(5, 1), findPackDef(STARTER)!, INSIDE_THE_WINDOW, {
+      ticketFallback: false,
+    });
+
+    expect(check.ok).toBe(false);
+    if (check.ok) {
+      return;
+    }
+    expect(check.error).toBe('insufficient_tokens');
+  });
+
+  it('refuses a pack that is not on sale', () => {
+    const check = canOpenPack(
+      walletWith(100),
+      findPackDef(SEASONAL)!,
+      INSIDE_THE_WINDOW + 40 * 24 * 3_600_000,
+    );
+
+    expect(check.ok).toBe(false);
+    if (check.ok) {
+      return;
+    }
+    expect(check.error).toBe('pack_unavailable');
+  });
+
+  it('refuses when a ticket is asked for and there is none', () => {
+    const check = canOpenPack(walletWith(100, 0), findPackDef(STARTER)!, INSIDE_THE_WINDOW, {
+      useTicket: true,
+    });
+
+    expect(check.ok).toBe(false);
+    if (check.ok) {
+      return;
+    }
+    expect(check.error).toBe('no_ticket');
+  });
+
+  it('agrees with the purchase it allows', () => {
+    const wallet = walletWith(20, 0);
+    const pack = findPackDef(STARTER)!;
+    const check = canOpenPack(wallet, pack, INSIDE_THE_WINDOW);
+    const purchase = buyPack(wallet, pack, INSIDE_THE_WINDOW, { rng: createSeededRng(1) });
+
+    expect(check.ok).toBe(purchase.ok);
   });
 });

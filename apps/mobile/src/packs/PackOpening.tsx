@@ -1,5 +1,5 @@
 import type { CritterDef, PackDef } from '@study-app/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
@@ -13,6 +13,7 @@ import Animated, {
 
 import { hapticImpact, hapticSuccess } from '@/haptics';
 import { useReduceMotion } from '@/settings';
+import { play } from '@/sound/sfx';
 import { colors, fonts, rarityColors } from '@/theme';
 import { GameButton, GlassCard, Glow, LightRays, Particles, RarityBadge } from '@/ui';
 
@@ -36,12 +37,27 @@ const FLASH_MS = 340;
 export interface PackOpeningProps {
   /** `true` while the opening is on the screen. */
   visible: boolean;
+  /**
+   * The number of the opening.
+   *
+   * It changes every time a pack is opened, so the show starts again from
+   * the beginning even when the overlay never left the screen ("Open
+   * another").
+   */
+  runId: number;
   /** The pack that was opened. */
   pack: PackDef;
   /** The critter that came out of the pack. */
   critter: CritterDef | null;
   /** `true` when the player already owned the critter. */
   duplicate: boolean;
+  /** `true` when the player can pay for another pack. */
+  canOpenAnother: boolean;
+  /**
+   * Changes when the player has to be told that the pack cannot be paid for:
+   * the reveal shakes and the button is dimmed.
+   */
+  shakeToken: number;
   /** Called when the player closes the reveal. */
   onContinue: () => void;
   /** Called when the player opens the same pack again. */
@@ -52,9 +68,12 @@ type OpeningPhase = 'idle' | 'fly' | 'shake' | 'flash' | 'reveal';
 
 export function PackOpening({
   visible,
+  runId,
   pack,
   critter,
   duplicate,
+  canOpenAnother,
+  shakeToken,
   onContinue,
   onOpenAnother,
 }: PackOpeningProps) {
@@ -70,12 +89,25 @@ export function PackOpening({
   const critterScale = useSharedValue(0);
   const labelScale = useSharedValue(0);
   const stampScale = useSharedValue(0);
+  const shakeX = useSharedValue(0);
 
   const rarity = critter?.rarity ?? 'common';
   const rarityColor = rarityColors[rarity];
   const legendary = rarity === 'legendary';
   const theme = packTheme(pack.id);
   const art = critter === null ? null : critterArt(critter);
+
+  /**
+   * The rarity of the opening.
+   *
+   * It is read through a ref, so the timeline is only restarted by a new
+   * pack: the critter of the pack that is being opened never changes the
+   * show that is already running.
+   */
+  const legendaryRef = useRef(legendary);
+  legendaryRef.current = legendary;
+  const rarityRef = useRef(rarity);
+  rarityRef.current = rarity;
 
   // The intensity of the show depends on the rarity.
   const show = useMemo(
@@ -86,7 +118,6 @@ export function PackOpening({
       colors: legendary
         ? [colors.gold, '#fff7d6', '#fbbf24', '#ffffff']
         : [rarityColor, '#ffffff', colors.gold],
-      haptics: legendary ? 'heavy' : rarity === 'epic' ? 'medium' : 'light',
     }),
     [legendary, rarity, rarityColor],
   );
@@ -120,6 +151,7 @@ export function PackOpening({
     fly.value = withSequence(
       withTiming(1, { duration: FLY_MS, easing: Easing.out(Easing.cubic) }),
     );
+    play('packShake');
 
     const flyTimer = setTimeout(() => {
       setPhase('shake');
@@ -132,13 +164,22 @@ export function PackOpening({
         withTiming(1, { duration: 140, easing: Easing.in(Easing.quad) }),
         withTiming(0, { duration: FLASH_MS - 140, easing: Easing.out(Easing.quad) }),
       );
-      hapticImpact(legendary ? 'heavy' : 'medium');
+      hapticImpact(legendaryRef.current ? 'heavy' : 'medium');
+      play('packBurst');
     }, FLY_MS + SHAKE_MS);
 
     const revealTimer = setTimeout(() => {
       setPhase('reveal');
       setBurst((current) => current + 1);
       hapticSuccess();
+      const opened = rarityRef.current;
+      play(
+        opened === 'legendary'
+          ? 'legendary'
+          : opened === 'rare' || opened === 'epic'
+            ? 'rare'
+            : 'reveal',
+      );
     }, FLY_MS + SHAKE_MS + FLASH_MS);
 
     return () => {
@@ -152,8 +193,8 @@ export function PackOpening({
     flash,
     fly,
     labelScale,
-    legendary,
     reduceMotion,
+    runId,
     shake,
     stampScale,
     visible,
@@ -214,6 +255,22 @@ export function PackOpening({
     return undefined;
   }, [critterScale, labelScale, phase, stampScale]);
 
+  // The "not enough tokens" shake: the reveal refuses the pack.
+  useEffect(() => {
+    if (shakeToken === 0) {
+      return undefined;
+    }
+
+    shakeX.value = withSequence(
+      withTiming(-1, { duration: 55, easing: Easing.in(Easing.quad) }),
+      withTiming(1, { duration: 65, easing: Easing.out(Easing.quad) }),
+      withTiming(-0.55, { duration: 65, easing: Easing.in(Easing.quad) }),
+      withTiming(0, { duration: 65, easing: Easing.out(Easing.quad) }),
+    );
+
+    return undefined;
+  }, [shakeToken, shakeX]);
+
   const backdropStyle = useAnimatedStyle(() => ({ opacity: backdrop.value }));
 
   const packStyle = useAnimatedStyle(() => ({
@@ -244,6 +301,10 @@ export function PackOpening({
   const stampStyle = useAnimatedStyle(() => ({
     opacity: phase === 'reveal' ? 1 : 0,
     transform: [{ rotate: '-9deg' }, { scale: stampScale.value }],
+  }));
+
+  const revealStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shakeX.value * 14 }],
   }));
 
   if (!visible) {
@@ -292,7 +353,7 @@ export function PackOpening({
       {phase === 'reveal' && critter !== null ? (
         <Animated.View
           entering={FadeIn.duration(220)}
-          style={styles.revealWrap}
+          style={[styles.revealWrap, revealStyle]}
           pointerEvents="box-none"
         >
           <Glow color={rarityColor} size={240} opacity={0.45} style={styles.critterGlow} />
@@ -334,12 +395,23 @@ export function PackOpening({
               />
               {onOpenAnother === undefined ? null : (
                 <GameButton
-                  label="OPEN ANOTHER"
+                  label={canOpenAnother ? 'OPEN ANOTHER' : 'NOT ENOUGH TOKENS'}
                   variant="secondary"
                   size="md"
+                  muted={!canOpenAnother}
                   onPress={onOpenAnother}
                   accessibilityLabel="Open another pack"
+                  accessibilityHint={
+                    canOpenAnother
+                      ? 'Opens the same pack again'
+                      : 'You need more tokens to open another pack'
+                  }
                 />
+              )}
+              {canOpenAnother ? null : (
+                <Text style={styles.notEnough}>
+                  Not enough tokens — spin the wheel or sell a duplicate.
+                </Text>
               )}
             </View>
           </GlassCard>
@@ -448,6 +520,12 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: 12,
     gap: 10,
+  },
+  notEnough: {
+    color: colors.danger,
+    fontFamily: fonts.bodyBold,
+    fontSize: 12,
+    textAlign: 'center',
   },
   flash: {
     backgroundColor: '#ffffff',

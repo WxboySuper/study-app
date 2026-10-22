@@ -1,4 +1,14 @@
-import { buildQueue, canSpin, findCritter, isPackAvailable, localDayKey, PACKS } from '@study-app/core';
+import {
+  buildQueue,
+  canSpin,
+  countScope,
+  findCritter,
+  isPackAvailable,
+  localDayKey,
+  PACKS,
+  type CardState,
+  type StudyCard,
+} from '@study-app/core';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
@@ -21,8 +31,12 @@ import {
 } from '@/db/local';
 import { critterArt } from '@/packs/critterArt';
 import { scopeTitle, useSettings } from '@/settings';
+import { play } from '@/sound/sfx';
+import { buildDecks, queueScopeOf, scopeOfDeck, selectedDeckId } from '@/study/decks';
+import { DeckPicker } from '@/study/DeckPicker';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
 import {
+  CritterLoader,
   GameBackground,
   GameButton,
   GlassCard,
@@ -63,7 +77,9 @@ export default function HomeScreen() {
 
   const [sets, setSets] = useState<LocalSet[]>([]);
   const [topics, setTopics] = useState<LocalTopic[]>([]);
-  const [status, setStatus] = useState('Loading…');
+  const [cards, setCards] = useState<StudyCard[]>([]);
+  const [cardStates, setCardStates] = useState<Map<string, CardState>>(new Map());
+  const [loading, setLoading] = useState(true);
   const [balance, setBalance] = useState<number | null>(null);
   const [packTickets, setPackTickets] = useState(0);
   const [critterCount, setCritterCount] = useState(0);
@@ -111,30 +127,23 @@ export default function HomeScreen() {
     void (async () => {
       try {
         const store = await openLocalStore();
-        const cards = await store.listCards();
-        const states = await store.listCardStates();
+        const localCards = await store.listCards();
+        const localStates = await store.listCardStates();
         const localSets = await store.listSets();
         const localTopics = await store.listTopics();
         if (cancelled) {
           return;
         }
 
+        setCards(localCards);
+        setCardStates(localStates);
         setSets(localSets);
         setTopics(localTopics);
-
-        const queue = buildQueue(cards, states, Date.now(), {
-          newCap: 20,
-          scope: { kind: 'all' },
-        });
-
-        setStatus(
-          queue.length === 0
-            ? 'No cards yet. Import a set to start studying.'
-            : `${queue.length} card${queue.length === 1 ? '' : 's'} queued.`,
-        );
-      } catch (error) {
+      } catch {
+        // The decks stay empty: the picker shows its empty state.
+      } finally {
         if (!cancelled) {
-          setStatus(error instanceof Error ? error.message : 'Could not read the local database.');
+          setLoading(false);
         }
       }
     })();
@@ -144,8 +153,54 @@ export default function HomeScreen() {
     };
   }, []);
 
+  // The decks of the picker, with the number of cards and the number of due
+  // cards of every one of them.
+  const decks = useMemo(
+    () => buildDecks(sets, topics, cards, cardStates, Date.now()),
+    [cardStates, cards, sets, topics],
+  );
+
+  const everything = useMemo(
+    () => countScope(cards, cardStates, Date.now()),
+    [cardStates, cards],
+  );
+
+  // The line under the play card: what the player is about to study.
+  const status = useMemo(() => {
+    const queue = buildQueue(cards, cardStates, Date.now(), {
+      newCap: 20,
+      scope: queueScopeOf(scope),
+    });
+    const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope)).due;
+
+    if (queue.length === 0) {
+      return due === 0
+        ? 'No cards yet. Import a set to start studying.'
+        : `${due} card${due === 1 ? '' : 's'} due right now.`;
+    }
+    return `${queue.length} card${queue.length === 1 ? '' : 's'} queued${
+      due > 0 ? ` · ${due} due` : ''
+    }.`;
+  }, [cardStates, cards, scope]);
+
+  const onSelectDeck = useCallback(
+    (id: string | null) => {
+      if (id === null) {
+        setScope({ kind: 'all' });
+        return;
+      }
+      const deck = decks.find((entry) => entry.id === id);
+      if (deck === undefined) {
+        return;
+      }
+      setScope(scopeOfDeck(deck));
+    },
+    [decks, setScope],
+  );
+
   const go = useCallback(() => {
     setScope(scope);
+    play('cast');
     router.push({
       pathname: '/fishing',
       params:
@@ -187,11 +242,14 @@ export default function HomeScreen() {
             </GlassCard>
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.springify().damping(16).delay(160)}>
+          <Animated.View
+            entering={FadeInDown.springify().damping(16).delay(160)}
+          >
             <PlayCard
               onPress={go}
               scopeTitle={scopeTitle(scope)}
               status={status}
+              loading={loading}
             />
           </Animated.View>
 
@@ -239,45 +297,13 @@ export default function HomeScreen() {
           </Animated.View>
 
           <Animated.View entering={FadeInDown.springify().damping(16).delay(320)} style={styles.section}>
-            <Text style={styles.sectionTitle}>Study</Text>
-
-            <View style={styles.choices}>
-              <Choice
-                label="All"
-                active={scope.kind === 'all'}
-                onPress={() => {
-                  setScope({ kind: 'all' });
-                }}
-              />
-
-              {topics.map((topic) => (
-                <Choice
-                  key={topic.id}
-                  label={`Topic: ${topic.name}`}
-                  active={scope.kind === 'topic' && scope.id === topic.id}
-                  onPress={() => {
-                    setScope({ kind: 'topic', id: topic.id, title: topic.name });
-                  }}
-                />
-              ))}
-
-              {sets.map((set) => (
-                <Choice
-                  key={set.id}
-                  label={`Set: ${set.title}`}
-                  active={scope.kind === 'set' && scope.id === set.id}
-                  onPress={() => {
-                    setScope({ kind: 'set', id: set.id, title: set.title });
-                  }}
-                />
-              ))}
-            </View>
-
-            {sets.length === 0 && topics.length === 0 ? (
-              <Text style={styles.hint}>
-                Only “All” is available until a set is imported. The last choice is remembered.
-              </Text>
-            ) : null}
+            <DeckPicker
+              decks={decks}
+              selectedId={selectedDeckId(scope)}
+              totalCards={everything.total}
+              totalDue={everything.due}
+              onSelect={onSelectDeck}
+            />
           </Animated.View>
 
           <Animated.View entering={FadeInDown.springify().damping(16).delay(380)} style={styles.section}>
@@ -304,10 +330,12 @@ function PlayCard({
   onPress,
   scopeTitle: currentScope,
   status,
+  loading,
 }: {
   onPress: () => void;
   scopeTitle: string;
   status: string;
+  loading: boolean;
 }) {
   const bob = useSharedValue(0);
   const critter = findCritter(HERO_CRITTER_ID);
@@ -358,7 +386,11 @@ function PlayCard({
 
           <GameButton label="START" variant="primary" size="lg" onPress={onPress} pulse />
 
-          <Text style={styles.playStatus}>{status}</Text>
+          {loading ? (
+            <CritterLoader art={art} emoji={critter?.emoji ?? '🐟'} label="Waking the critters…" />
+          ) : (
+            <Text style={styles.playStatus}>{status}</Text>
+          )}
         </GlassCard>
       </View>
     </Pressable>
@@ -453,32 +485,6 @@ function LinearGradientFace({ colors }: { colors: Gradient }) {
       end={gradientDirection.end}
       style={StyleSheet.absoluteFill}
     />
-  );
-}
-
-/** One of the choices of the scope (All, a topic or a set). */
-function Choice({
-  label,
-  active,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityState={{ selected: active }}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.choice,
-        active ? styles.choiceActive : null,
-        pressed ? styles.choicePressed : null,
-      ]}
-    >
-      <Text style={[styles.choiceLabel, active ? styles.choiceLabelActive : null]}>{label}</Text>
-    </Pressable>
   );
 }
 
@@ -706,40 +712,6 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
     textTransform: 'uppercase',
     marginBottom: spacing.xs,
-  },
-  choices: {
-    gap: spacing.sm,
-  },
-  choice: {
-    minHeight: 46,
-    justifyContent: 'center',
-    borderRadius: radius.tile,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: 'rgba(255,255,255,0.03)',
-    paddingHorizontal: spacing.md,
-  },
-  choiceActive: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(123,97,255,0.22)',
-  },
-  choicePressed: {
-    opacity: 0.75,
-  },
-  choiceLabel: {
-    color: colors.textMuted,
-    fontFamily: fonts.bodySemi,
-    fontSize: 14,
-  },
-  choiceLabelActive: {
-    color: colors.text,
-    fontFamily: fonts.bodyBold,
-  },
-  hint: {
-    color: colors.textDim,
-    fontFamily: fonts.body,
-    fontSize: 12,
-    lineHeight: 17,
   },
   toggleRow: {
     flexDirection: 'row',

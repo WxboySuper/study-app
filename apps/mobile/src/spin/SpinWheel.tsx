@@ -17,6 +17,7 @@ import Animated, {
 import Svg, { Circle, Defs, G, LinearGradient, Path, Stop, Text as SvgText } from 'react-native-svg';
 
 import { hapticImpact } from '@/haptics';
+import { play } from '@/sound/sfx';
 import { colors, fonts, shadow, spinSegmentColors } from '@/theme';
 import { Glow } from '@/ui';
 
@@ -117,6 +118,7 @@ export function SpinWheel({
       );
       if (ticking) {
         runOnJS(hapticImpact)('light');
+        runOnJS(play)('spinTick');
       }
     },
   );

@@ -5,6 +5,7 @@ import type { BaitId } from '@study-app/core';
 
 import { setHapticsEnabled } from './haptics';
 import { setSfxEnabled } from './modes/fishing/sfx';
+import { setSoundEnabled } from './sound/sfx';
 
 /**
  * The settings of the app.
@@ -84,6 +85,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setSfxEnabled(sound);
+    setSoundEnabled(sound);
   }, [sound]);
 
   useEffect(() => {

@@ -18,12 +18,13 @@ import {
 } from '@study-app/core';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { openLocalStore } from '@/db/local';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
+import { play } from '@/sound/sfx';
 import { colors, fonts, radius, shadow } from '@/theme';
-import { GameButton, GlassCard } from '@/ui';
+import { GameButton, GlassCard, CritterLoader } from '@/ui';
 
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
@@ -214,6 +215,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     switch (machine.phase) {
       case 'casting': {
         playSfx('cast');
+        play('cast');
         hapticCast();
         const timer = setTimeout(() => {
           dispatch({ type: 'cast_landed' });
@@ -255,9 +257,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         const tier = landed !== null && isCatchOutcome(landed) ? landed.tier : null;
         if (tier === 'cotd' || tier === 'legend') {
           playSfx('legend');
+          play('legendary');
           hapticLegend();
         } else {
           playSfx('reveal');
+          play('reveal');
         }
         return undefined;
       }
@@ -293,6 +297,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         break;
       case 'pack_ticket':
         playSfx('coin');
+        play('coin');
         break;
       default:
         break;
@@ -303,6 +308,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   useEffect(() => {
     if (machine.phase === 'hooked') {
       playSfx('bite');
+      play('hooked');
       hapticBite();
     }
   }, [machine.phase]);
@@ -391,9 +397,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     feedbackRef.current = feedback;
     if (feedback.correct) {
       playSfx('correct');
+      play('correct');
       hapticCorrect();
     } else {
       playSfx('wrong');
+      play('wrong');
       hapticWrong();
     }
   }, [feedback]);
@@ -667,7 +675,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
               style={styles.castFace}
             >
               {loading ? (
-                <ActivityIndicator color="#04252f" />
+                <CritterLoader emoji="🎣" size={24} style={styles.castLoader} />
               ) : (
                 <Text style={styles.castLabel}>{nothingToStudy ? 'NO CARDS YET' : 'CAST'}</Text>
               )}
@@ -742,6 +750,9 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontFamily: fonts.title,
     letterSpacing: 2,
+  },
+  castLoader: {
+    paddingVertical: 0,
   },
   gotAway: {
     ...StyleSheet.absoluteFill,

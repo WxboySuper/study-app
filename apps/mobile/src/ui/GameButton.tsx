@@ -95,6 +95,11 @@ export interface GameButtonProps {
   haptic?: boolean;
   /** `true` to make the button breathe (the play button of the home screen). */
   pulse?: boolean;
+  /**
+   * `true` to dim the button without switching it off: it still answers the
+   * press (the shop tells the player why the pack cannot be opened).
+   */
+  muted?: boolean;
 }
 
 /** A chunky 3D button of the game. */
@@ -111,6 +116,7 @@ export function GameButton({
   accessibilityHint,
   haptic = true,
   pulse = false,
+  muted = false,
 }: GameButtonProps) {
   const spec = VARIANTS[variant];
   const metrics = SIZES[size];
@@ -188,7 +194,7 @@ export function GameButton({
             borderRadius: radius.button,
             backgroundColor: spec.base,
             paddingBottom: BASE_DEPTH,
-            opacity: disabled ? 0.45 : 1,
+            opacity: disabled ? 0.45 : muted ? 0.62 : 1,
           },
         ]}
       >

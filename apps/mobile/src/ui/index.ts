@@ -11,6 +11,7 @@ export { GameButton, type GameButtonProps, type GameButtonSize, type GameButtonV
 export { GlassCard, type GlassCardProps } from './GlassCard';
 export { Glow, type GlowProps } from './Glow';
 export { LightRays, type LightRaysProps } from './LightRays';
+export { CritterLoader, Skeleton, type CritterLoaderProps, type SkeletonProps } from './Loader';
 export { Particles, type ParticlesProps } from './Particles';
 export { Coin, TokenCounter, type TokenCounterProps } from './TokenCounter';
 export { RarityBadge, type RarityBadgeProps } from './RarityBadge';

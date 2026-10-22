@@ -2,19 +2,30 @@ import {
   PACKS,
   collectionEntry,
   collectionProgress,
+  findCritter,
   localDayKey,
   type CritterDef,
   type WalletSnapshot,
 } from '@study-app/core';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, type HostInstance } from 'react-native';
+import { Image, ScrollView, StyleSheet, Text, View, type HostInstance } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { openLocalStore } from '@/db/local';
 import { hapticImpact, hapticSuccess } from '@/haptics';
-import { colors, fonts, radius } from '@/theme';
-import { GameBackground, GameButton, GlassCard, ScreenHeader, TokenCounter } from '@/ui';
+import { critterArt } from '@/packs/critterArt';
+import { play } from '@/sound/sfx';
+import { colors, fonts, radius, spacing } from '@/theme';
+import {
+  CritterLoader,
+  GameBackground,
+  GameButton,
+  GlassCard,
+  ScreenHeader,
+  Skeleton,
+  TokenCounter,
+} from '@/ui';
 
 import { CoinFlight } from './CoinFlight';
 import { CritterCard } from './CritterCard';
@@ -39,6 +50,7 @@ export function CollectionScreen() {
   const [packId, setPackId] = useState(PACKS[0]?.id ?? '');
   const [sheet, setSheet] = useState<CritterDef | null>(null);
   const [sellAll, setSellAll] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [flight, setFlight] = useState<{
     from: { x: number; y: number };
     to: { x: number; y: number };
@@ -53,6 +65,8 @@ export function CollectionScreen() {
       setWallet(await store.readWallet(localDayKey(new Date())));
     } catch {
       // The book stays empty when the local store cannot be read.
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -105,6 +119,7 @@ export function CollectionScreen() {
         const result = await store.sellDuplicates(critterId, qty);
         if (result.ok) {
           hapticSuccess();
+          play('coin');
           setWallet(result.wallet);
           setSheet(null);
           await refresh();
@@ -127,6 +142,7 @@ export function CollectionScreen() {
         }
 
         hapticImpact('heavy');
+        play('coin');
         setWallet(result.wallet);
         setSellAll(false);
         await refresh();
@@ -180,40 +196,57 @@ export function CollectionScreen() {
 
           <PackHeader pack={pack} owned={progress.owned} total={progress.total} />
 
-          <View style={styles.grid}>
-            {pack.critters.map((critter, index) => (
-              <CritterCard
-                key={critter.id}
-                critter={critter}
-                count={collection.get(critter.id) ?? 0}
-                index={index}
+          {loading ? (
+            <View style={styles.loading}>
+              <CritterLoader emoji="🐾" label="Opening the book…" />
+              <Skeleton width="92%" height={18} />
+              <Skeleton width="64%" height={18} />
+              <Skeleton width="78%" height={18} />
+            </View>
+          ) : collection.size === 0 ? (
+            <EmptyCollection />
+          ) : (
+            <>
+              <View style={styles.grid}>
+                {pack.critters.map((critter, index) => (
+                  <CritterCard
+                    key={critter.id}
+                    critter={critter}
+                    count={collection.get(critter.id) ?? 0}
+                    index={index}
+                    onPress={() => {
+                      hapticImpact('light');
+                      play('tap');
+                      setSheet(critter);
+                    }}
+                  />
+                ))}
+              </View>
+
+              <GameButton
+                label={
+                  duplicates.copies === 0
+                    ? 'NO DUPLICATES TO SELL'
+                    : `SELL ALL DUPES (${duplicates.copies})`
+                }
+                variant="collection"
+                size="lg"
+                disabled={duplicates.copies === 0}
                 onPress={() => {
-                  hapticImpact('light');
-                  setSheet(critter);
+                  hapticImpact('medium');
+                  play('tap');
+                  setSellAll(true);
                 }}
+                accessibilityLabel="Sell all duplicates"
               />
-            ))}
-          </View>
 
-          <GameButton
-            label={
-              duplicates.copies === 0 ? 'NO DUPLICATES TO SELL' : `SELL ALL DUPES (${duplicates.copies})`
-            }
-            variant="collection"
-            size="lg"
-            disabled={duplicates.copies === 0}
-            onPress={() => {
-              hapticImpact('medium');
-              setSellAll(true);
-            }}
-            accessibilityLabel="Sell all duplicates"
-          />
-
-          {duplicates.copies === 0 ? null : (
-            <Text style={styles.footnote}>
-              {duplicates.copies} duplicate{duplicates.copies === 1 ? '' : 's'} are worth{' '}
-              {duplicates.tokens} coins.
-            </Text>
+              {duplicates.copies === 0 ? null : (
+                <Text style={styles.footnote}>
+                  {duplicates.copies} duplicate{duplicates.copies === 1 ? '' : 's'} are worth{' '}
+                  {duplicates.tokens} coins.
+                </Text>
+              )}
+            </>
           )}
         </ScrollView>
 
@@ -260,6 +293,44 @@ export function CollectionScreen() {
   );
 }
 
+/**
+ * The empty book.
+ *
+ * The player has no critter at all: a critter waves at them and the shop is
+ * one tap away.
+ */
+function EmptyCollection() {
+  const router = useRouter();
+  const critter = findCritter('nibbles_the_notecard');
+  const art = critter === undefined ? null : critterArt(critter);
+
+  return (
+    <GlassCard style={styles.empty} contentStyle={styles.emptyContent}>
+      {art === null ? (
+        <Text style={styles.emptyEmoji}>{critter?.emoji ?? '🐾'}</Text>
+      ) : (
+        <Image source={art} style={styles.emptyArt} resizeMode="contain" />
+      )}
+
+      <Text style={styles.emptyTitle}>No critters yet</Text>
+      <Text style={styles.emptyText}>
+        Open a pack to catch your first critter — every one of them lands in this book.
+      </Text>
+
+      <GameButton
+        label="OPEN A PACK"
+        variant="shop"
+        size="lg"
+        onPress={() => {
+          hapticImpact('medium');
+          play('tap');
+          router.push('/packs');
+        }}
+      />
+    </GlassCard>
+  );
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -268,6 +339,38 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 48,
     gap: 14,
+  },
+  loading: {
+    gap: 10,
+    paddingVertical: spacing.lg,
+  },
+  empty: {
+    borderRadius: radius.card,
+  },
+  emptyContent: {
+    alignItems: 'center',
+    gap: 10,
+    padding: spacing.xl,
+  },
+  emptyArt: {
+    width: 128,
+    height: 128,
+  },
+  emptyEmoji: {
+    fontSize: 72,
+  },
+  emptyTitle: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 22,
+  },
+  emptyText: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 6,
   },
   headerChip: {
     flexDirection: 'row',

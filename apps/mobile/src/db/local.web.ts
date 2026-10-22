@@ -175,6 +175,44 @@ const DEMO_COLLECTION: Readonly<Record<string, number>> = {
   candy_corn_kid: 1,
 };
 
+/** The state of a card that was already reviewed (`State.Review` of ts-fsrs). */
+const REVIEW_STATE = 2;
+
+/**
+ * The scheduling states of the demo player.
+ *
+ * Some cards are due (the picker of the home screen shows them with their
+ * "due" badge), some are not due yet and the rest are new.
+ */
+function demoCardStates(): Map<string, CardState> {
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const states = new Map<string, CardState>();
+
+  const state = (cardId: string, due: number, stability: number): CardState => ({
+    cardId,
+    due,
+    stability,
+    difficulty: 5,
+    elapsedDays: 1,
+    scheduledDays: 0,
+    learningSteps: 0,
+    reps: 2,
+    lapses: 0,
+    state: REVIEW_STATE,
+    lastReview: now - day,
+  });
+
+  for (const id of ['card_cell_1', 'card_cell_3', 'card_cell_5', 'card_rev_1', 'card_rev_3']) {
+    states.set(id, state(id, now - day, 3));
+  }
+  for (const id of ['card_cell_2', 'card_rev_2', 'card_rev_5']) {
+    states.set(id, state(id, now + day, 12));
+  }
+
+  return states;
+}
+
 /** Creates the state of the demo player. */
 function createDemoState(): DemoState {
   return {
@@ -187,7 +225,7 @@ function createDemoState(): DemoState {
     },
     collection: new Map(Object.entries(DEMO_COLLECTION)),
     cards: DEMO_CARDS,
-    cardStates: new Map(),
+    cardStates: demoCardStates(),
     sets: DEMO_SETS,
     topics: DEMO_TOPICS,
     spins: new Map(),
@@ -203,6 +241,14 @@ let state: DemoState | null = null;
 function demo(): DemoState {
   if (state === null) {
     state = createDemoState();
+
+    // The demo of the web build can also show a player who cannot afford a
+    // pack (`?poor=1`): the shop then refuses to open another one.
+    const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
+    if (search.includes('poor=1')) {
+      state.wallet.balance = 5;
+      state.wallet.packTickets = 0;
+    }
   }
   return state;
 }

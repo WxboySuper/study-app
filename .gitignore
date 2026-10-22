@@ -25,3 +25,6 @@ web-build/
 .env
 .env.*
 !.env.example
+
+# Scratch files of the local sessions
+*.tmp.mjs
