@@ -2,6 +2,7 @@ import type { FishingSessionResult } from '@study-app/core';
 import { CATCH_TIERS, DEFAULT_PAYOUT_RULES, formatLbs } from '@study-app/core';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { colors, fonts, radius } from '@/theme';
@@ -70,10 +71,13 @@ export function PayoutScreen({
 
   const biggest = result.biggest;
 
+  const insets = useSafeAreaInsets();
+
   return (
     <GameBackground variant="ocean">
       <View style={styles.container}>
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={[styles.content, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 24 }]} showsVerticalScrollIndicator={false}>
           <LightRays color={colors.gold} count={16} size={760} opacity={0.22} style={styles.rays} />
 
           <Animated.View entering={undefined} style={[styles.titleWrap, cardStyle]}>

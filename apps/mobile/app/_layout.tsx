@@ -11,8 +11,9 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { View } from 'react-native';
+import { useEffect, type ReactNode } from 'react';
+import { Platform, View } from 'react-native';
+import { SafeAreaInsetsContext, SafeAreaProvider, type EdgeInsets } from 'react-native-safe-area-context';
 
 import { SettingsProvider } from '@/settings';
 import { startDeckSync } from '@/sync/syncDecks';
@@ -67,6 +68,8 @@ export default function RootLayout() {
   }
 
   return (
+    <SafeAreaProvider>
+    <SimulatedInsets>
     <SettingsProvider>
       <Stack
         screenOptions={{
@@ -99,5 +102,32 @@ export default function RootLayout() {
       </Stack>
       <StatusBar style="light" />
     </SettingsProvider>
+    </SimulatedInsets>
+    </SafeAreaProvider>
   );
+}
+
+/**
+ * The web build can fake the insets of a phone (`?insets=48,32` is a 48 px
+ * status bar and a 32 px gesture bar), so the screenshots show how the
+ * screens clear the system bars of Android.
+ */
+function SimulatedInsets({ children }: { children: ReactNode }) {
+  const simulated = readSimulatedInsets();
+  if (simulated === null) {
+    return <>{children}</>;
+  }
+  return <SafeAreaInsetsContext.Provider value={simulated}>{children}</SafeAreaInsetsContext.Provider>;
+}
+
+/** Reads `?insets=top,bottom` on the web (`null` elsewhere). */
+function readSimulatedInsets(): EdgeInsets | null {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') {
+    return null;
+  }
+  const match = /[?&]insets=(\d+),(\d+)/.exec(window.location.search);
+  if (match === null) {
+    return null;
+  }
+  return { top: Number(match[1]), bottom: Number(match[2]), left: 0, right: 0 };
 }

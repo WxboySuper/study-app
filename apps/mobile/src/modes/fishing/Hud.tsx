@@ -61,7 +61,7 @@ export interface HudProps {
 
 export function Hud({
   session,
-  remaining,
+  remaining: _remaining,
   mastery = false,
   mastered = 0,
   total = 0,
@@ -174,9 +174,7 @@ export function Hud({
                 {mastered}/{total} mastered
               </Text>
             )
-          ) : (
-            <Text style={styles.stat}>{remaining} left</Text>
-          )}
+          ) : null}
         </View>
       </View>
 
