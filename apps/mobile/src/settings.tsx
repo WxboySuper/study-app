@@ -40,7 +40,6 @@ export function scopeTitle(scope: ScopeChoice): string {
 interface SettingsContextValue {
   sound: boolean;
   haptics: boolean;
-  autoReel: boolean;
   /**
    * The mastery mode of the sessions.
    *
@@ -58,7 +57,6 @@ interface SettingsContextValue {
   systemReduceMotion: boolean;
   setSound: (value: boolean) => void;
   setHaptics: (value: boolean) => void;
-  setAutoReel: (value: boolean) => void;
   setMastery: (value: boolean) => void;
   setReduceMotion: (value: boolean | null) => void;
   setScope: (value: ScopeChoice) => void;
@@ -70,7 +68,6 @@ const SettingsContext = createContext<SettingsContextValue | null>(null);
 export function SettingsProvider({ children }: { children: ReactNode }) {
   const [sound, setSound] = useState(true);
   const [haptics, setHaptics] = useState(true);
-  const [autoReel, setAutoReel] = useState(true);
   const [mastery, setMastery] = useState(false);
   const [reduceMotion, setReduceMotion] = useState<boolean | null>(null);
   const [scope, setScope] = useState<ScopeChoice>({ kind: 'all' });
@@ -109,7 +106,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     () => ({
       sound,
       haptics,
-      autoReel,
       mastery,
       reduceMotion,
       scope,
@@ -117,13 +113,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       systemReduceMotion,
       setSound,
       setHaptics,
-      setAutoReel,
       setMastery,
       setReduceMotion,
       setScope,
       setBait,
     }),
-    [sound, haptics, autoReel, mastery, reduceMotion, scope, bait, systemReduceMotion],
+    [sound, haptics, mastery, reduceMotion, scope, bait, systemReduceMotion],
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

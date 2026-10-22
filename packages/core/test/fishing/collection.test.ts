@@ -45,6 +45,8 @@ function playSession(catches: number) {
   let state = createFishingState({
     rng: sequenceRng([0.5, 0.0, 0.5]),
     queue: Array.from({ length: catches }, (_, index) => makeQueueItem(`card-${index}`)),
+    // Rank 2 is the first lure that can catch an Easy One (a common critter).
+    startRank: 2,
     now: NOW,
   });
 

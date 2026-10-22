@@ -3,41 +3,51 @@ import {
   plainText,
   type FishingFeedback,
   type FishingQuestion,
+  type MasteryStatus,
 } from '@study-app/core';
-import { useEffect, useState } from 'react';
-import { ImageBackground, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  ImageBackground,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
   useSharedValue,
-  withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
 
 import { artFor } from '@/content/art';
 import { MathText } from '@/math/MathText';
-import { colors, fonts, radius } from '@/theme';
+import { fonts, radius } from '@/theme';
 import { GameButton, Particles } from '@/ui';
 
 /**
  * The question of the fishing mode (docs/design/fishing.md §4).
  *
- * The card lives *inside* the scene: a parchment note slides up from the
- * water and the answers sit below it as chunky buttons. The right answer
- * flashes green with a burst of sparks, the wrong one flashes red.
+ * The card lives *inside* the scene: a parchment note and four chunky,
+ * coloured answer tiles. The tiles follow Blooket's order (orange, blue,
+ * green, red) with a darker bottom edge, so the answer gate feels like a
+ * game board instead of a quiz.
  *
- * After the answer the note stays on the screen for a moment: the answer
- * the player picked and the right answer keep their colours, so the card
- * can be reread. The buttons are switched off while the answer is held.
+ * A correct answer shows a green banner, turns the picked tile green with a
+ * ✓ and greys the others out with a ✗. A wrong answer shows a red banner,
+ * keeps the right answer green and counts the three second lockout down;
+ * the tap that follows it is what makes the fish get away.
  *
  * A card without wrong answers of its own cannot be asked as a multiple
  * choice question: the note shows the question alone, the player taps to
  * reveal the answer and then grades itself ("Got it" / "Missed it").
  *
- * The answers are never cut off: a long answer gets a button of its own
- * width (one column) and a smaller font, and the math of a question is
- * drawn with KaTeX.
+ * The answers are never cut off: a long answer gets a tile of its own width
+ * (one column) and a smaller font, and the math of a question is drawn with
+ * KaTeX.
  */
 export interface QuestionNoteProps {
   /** `true` while the question is on the screen. */
@@ -53,6 +63,10 @@ export interface QuestionNoteProps {
    * a tap anywhere goes on.
    */
   locked?: boolean;
+  /** When the wrong-answer lockout ends (epoch milliseconds). */
+  lockoutUntil?: number | null;
+  /** The mastery state of the card that is on the screen. */
+  mastery?: MasteryStatus;
   /** Called when the player picks an answer. */
   onAnswer: (choiceIndex: number) => void;
   /** Called when the player grades a self-graded card. */
@@ -62,24 +76,44 @@ export interface QuestionNoteProps {
 }
 
 /**
- * An answer longer than this makes the buttons a single column.
+ * An answer longer than this makes the tiles a single column.
  *
- * The buttons of a 2x2 grid are wide enough for a short answer only: a long
+ * The tiles of a 2x2 board are wide enough for a short answer only: a long
  * one needs the whole width of the screen.
  */
 const LONG_ANSWER_CHARS = 24;
 
-/** The font size of the answer buttons. */
-const ANSWER_FONT = 15;
+/** The font size of the answer tiles. */
+const ANSWER_FONT = 16;
 
 /** How much the font shrinks when the answer is long. */
 const FONT_STEP = 2;
+
+/** The Blooket colours of the four tiles, with their darker bottom edge. */
+const TILE_COLORS = [
+  { face: '#f5a623', edge: '#b87400' },
+  { face: '#2f80ed', edge: '#1c4f96' },
+  { face: '#1fbf75', edge: '#0b7a45' },
+  { face: '#eb4335', edge: '#a3221c' },
+] as const;
+
+/** The colours of the feedback states. */
+const FEEDBACK_COLORS = {
+  good: '#1fbf75',
+  goodEdge: '#0b7a45',
+  bad: '#eb4335',
+  badEdge: '#a3221c',
+  muted: '#64748b',
+  mutedEdge: '#3f4a5c',
+} as const;
 
 export function QuestionNote({
   visible,
   question,
   feedback,
   locked = false,
+  lockoutUntil = null,
+  mastery = 'unknown',
   onAnswer,
   onSelfGrade,
   reduceMotion,
@@ -88,6 +122,10 @@ export function QuestionNote({
   const slide = useSharedValue(0);
   // The answer of a self-graded card is hidden until the player asks for it.
   const [revealed, setRevealed] = useState(false);
+  // The clock of the wrong-answer lockout.
+  const [clock, setClock] = useState(() => Date.now());
+  // The trigger of the confetti burst of a correct answer.
+  const [burst, setBurst] = useState(0);
   // The parchment of the question card (the art of the UI piece).
   const parchment = artFor('ui_parchment_note');
 
@@ -107,6 +145,29 @@ export function QuestionNote({
       : withTiming(0, { duration: 180, easing: Easing.in(Easing.quad) });
   }, [visible, reduceMotion, slide]);
 
+  // The lockout is on: count the seconds down (and refresh the clock when it
+  // starts, so a tap on a new wrong answer never shows a stale number).
+  useEffect(() => {
+    if (!locked || feedback?.correct !== false || lockoutUntil === null) {
+      return undefined;
+    }
+
+    setClock(Date.now());
+    const timer = setInterval(() => {
+      setClock(Date.now());
+    }, 200);
+
+    return () => {
+      clearInterval(timer);
+    };
+  }, [locked, feedback?.correct, lockoutUntil]);
+
+  useEffect(() => {
+    if (feedback?.correct === true) {
+      setBurst((current) => current + 1);
+    }
+  }, [feedback]);
+
   const noteStyle = useAnimatedStyle(() => ({
     opacity: slide.value,
     transform: [{ translateY: (1 - slide.value) * 60 }],
@@ -117,11 +178,15 @@ export function QuestionNote({
   }
 
   const fontSize = promptFontSize(question.prompt);
-  const promptMaxHeight = Math.max(110, Math.min(230, windowHeight * 0.27));
+  const promptMaxHeight = Math.max(100, Math.min(210, windowHeight * 0.24));
 
-  // The answers decide the layout of the buttons: a long answer needs the
+  // The answers decide the layout of the tiles: a long answer needs the
   // whole width of the screen and a smaller font.
   const layout = answerLayout(question.choices);
+  const secondsLeft =
+    lockoutUntil === null ? 0 : Math.max(0, Math.ceil((lockoutUntil - clock) / 1000));
+
+  const badge = <MasteryBadge status={mastery} />;
 
   const body = (
     <>
@@ -137,7 +202,7 @@ export function QuestionNote({
       >
         <MathText
           text={question.prompt}
-          style={[styles.prompt, { fontSize, lineHeight: Math.round(fontSize * 1.28) }]}
+          style={[styles.prompt, { fontSize, lineHeight: Math.round(fontSize * 1.24) }]}
           color="#3b2a12"
           fontSize={fontSize}
           center
@@ -152,6 +217,8 @@ export function QuestionNote({
   if (question.selfGrade) {
     return (
       <View style={styles.area} pointerEvents={locked ? 'none' : 'box-none'}>
+        <View style={styles.noteTop}>{badge}</View>
+
         <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
           {parchment === null ? (
             <View style={[styles.note, styles.notePlain]}>{body}</View>
@@ -227,8 +294,12 @@ export function QuestionNote({
     );
   }
 
+  const showFeedback = feedback !== null && !feedback.retry;
+
   return (
     <View style={styles.area} pointerEvents={locked ? 'none' : 'box-none'}>
+      <View style={styles.noteTop}>{badge}</View>
+
       <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
         {parchment === null ? (
           <View style={[styles.note, styles.notePlain]}>{body}</View>
@@ -244,9 +315,27 @@ export function QuestionNote({
         )}
       </Animated.View>
 
+      {showFeedback ? (
+        <View
+          style={[
+            styles.feedbackBanner,
+            feedback.correct ? styles.feedbackGood : styles.feedbackBad,
+          ]}
+          accessibilityLiveRegion="polite"
+        >
+          <Text style={styles.feedbackText}>
+            {feedback.correct
+              ? '✓  CORRECT!  TAP TO REEL'
+              : secondsLeft > 0
+                ? `✗  WRONG — WAIT ${secondsLeft} SECOND${secondsLeft === 1 ? '' : 'S'}`
+                : '✗  WRONG — TAP TO CONTINUE'}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={styles.answers} pointerEvents="box-none">
         {question.choices.slice(0, 4).map((choice, index) => (
-          <AnswerButton
+          <AnswerTile
             key={`${index}-${choice}`}
             label={choice}
             index={index}
@@ -260,6 +349,44 @@ export function QuestionNote({
           />
         ))}
       </View>
+
+      {feedback?.correct === true && !reduceMotion ? (
+        <Particles
+          trigger={burst}
+          count={34}
+          colors={['#f5a623', '#2f80ed', '#1fbf75', '#eb4335', '#ffffff']}
+          size={11}
+          distance={210}
+          gravity={280}
+          duration={1200}
+          style={styles.confetti}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** The small mastery badge of the card that is on the screen. */
+function MasteryBadge({ status }: { status: MasteryStatus }) {
+  const meta = useMemo(() => {
+    switch (status) {
+      case 'mastered':
+        return { label: 'Mastered', color: '#fbbf24', dot: '#f59e0b' };
+      case 'familiar':
+        return { label: 'Familiar', color: '#7dd3fc', dot: '#38bdf8' };
+      default:
+        return { label: 'Unknown', color: '#cbd5e1', dot: '#94a3b8' };
+    }
+  }, [status]);
+
+  return (
+    <View
+      style={styles.masteryBadge}
+      accessible
+      accessibilityLabel={`Mastery: ${meta.label}`}
+    >
+      <View style={[styles.masteryDot, { backgroundColor: meta.dot }]} />
+      <Text style={[styles.masteryText, { color: meta.color }]}>{meta.label}</Text>
     </View>
   );
 }
@@ -292,11 +419,11 @@ function promptFontSize(prompt: string): number {
 }
 
 /**
- * The layout of the answer buttons.
+ * The layout of the answer tiles.
  *
  * A short answer gets a 2x2 grid. An answer longer than
- * {@link LONG_ANSWER_CHARS} characters gets a button of its own (one
- * column), and the font shrinks a step for every 60 extra characters.
+ * {@link LONG_ANSWER_CHARS} characters gets a tile of its own (one column),
+ * and the font shrinks a step for every 60 extra characters.
  *
  * The length of an answer with math is the length of its text plus the
  * length of its LaTeX: a long formula is a long answer too.
@@ -324,7 +451,7 @@ function answerLength(answer: string): number {
   return plainText(answer).length + mathSources(answer).join(' ').length;
 }
 
-interface AnswerButtonProps {
+interface AnswerTileProps {
   label: string;
   index: number;
   feedback: FishingFeedback | null;
@@ -332,13 +459,19 @@ interface AnswerButtonProps {
   locked: boolean;
   /** The size of the label, in points. */
   fontSize: number;
-  /** `true` when the button takes the whole width (a long answer). */
+  /** `true` when the tile takes the whole width (a long answer). */
   wide: boolean;
   onPress: () => void;
 }
 
-/** One answer: a chunky button that flashes when it is right or wrong. */
-function AnswerButton({
+/**
+ * One answer: a chunky coloured tile with a darker bottom edge.
+ *
+ * The four tiles keep Blooket's colours until the answer comes in. Then the
+ * right answer turns green with a ✓, and (after a correct answer) every
+ * other tile turns grey with a ✗ so the board reads at a glance.
+ */
+function AnswerTile({
   label,
   index,
   feedback,
@@ -346,116 +479,72 @@ function AnswerButton({
   fontSize,
   wide,
   onPress,
-}: AnswerButtonProps) {
-  const [burst, setBurst] = useState(0);
-  const shake = useSharedValue(0);
-  const flash = useSharedValue(0);
-  const press = useSharedValue(0);
+}: AnswerTileProps) {
+  const answered = feedback !== null && !feedback.retry;
+  const isCorrect = feedback !== null && answered && index === feedback.answerIndex;
+  const isWrong =
+    feedback !== null && answered && !feedback.correct && index === feedback.choiceIndex;
+  const correctAnswer = feedback !== null && feedback.correct;
+  const palette = TILE_COLORS[index % TILE_COLORS.length]!;
 
-  const isCorrect = feedback !== null && index === feedback.answerIndex;
-  const isWrong = feedback !== null && !feedback.correct && index === feedback.choiceIndex;
-  const answered = feedback !== null;
+  let face: string = palette.face;
+  let edge: string = palette.edge;
+  let mark: string | null = null;
 
-  useEffect(() => {
-    if (feedback === null) {
-      shake.value = 0;
-      flash.value = 0;
-      return;
+  if (answered) {
+    if (isCorrect) {
+      face = FEEDBACK_COLORS.good;
+      edge = FEEDBACK_COLORS.goodEdge;
+      mark = '✓';
+    } else if (correctAnswer) {
+      face = FEEDBACK_COLORS.muted;
+      edge = FEEDBACK_COLORS.mutedEdge;
+      mark = '✗';
+    } else if (isWrong) {
+      face = FEEDBACK_COLORS.bad;
+      edge = FEEDBACK_COLORS.badEdge;
+      mark = '✗';
+    } else {
+      face = FEEDBACK_COLORS.muted;
+      edge = FEEDBACK_COLORS.mutedEdge;
     }
-
-    if (isWrong) {
-      shake.value = withSequence(
-        withTiming(-8, { duration: 55 }),
-        withTiming(8, { duration: 55 }),
-        withTiming(-4, { duration: 55 }),
-        withTiming(0, { duration: 55 }),
-      );
-    }
-
-    if (isCorrect || isWrong) {
-      flash.value = withSequence(
-        withTiming(1, { duration: 90 }),
-        withTiming(0, { duration: 520 }),
-      );
-      setBurst((current) => current + 1);
-    }
-  }, [feedback, isCorrect, isWrong, shake, flash]);
-
-  const shakeStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: shake.value }, { scale: 1 - press.value * 0.04 }],
-  }));
-
-  const flashStyle = useAnimatedStyle(() => ({
-    opacity: flash.value * 0.85,
-  }));
+  }
 
   return (
-    <Animated.View style={[styles.answer, wide === true ? styles.answerWide : null, shakeStyle]}>
-      <GameButton
-        variant={answered ? 'ghost' : 'primary'}
-        size="md"
-        wrap
-        disabled={locked || (answered && !feedback.retry)}
-        onPress={onPress}
-        textStyle={[styles.answerLabel, { fontSize }]}
-        accessibilityLabel={label}
-      >
-        <MathText
-          text={label}
-          style={[styles.answerLabel, { fontSize }]}
-          color="#ffffff"
-          fontSize={fontSize}
-          center
-        />
-      </GameButton>
-
-      {/*
-        The colour of the answer: it stays on the screen while the answer is
-        held, so the player can reread the card.
-      */}
-      {isCorrect ? <View style={[styles.tint, styles.tintGood]} pointerEvents="none" /> : null}
-      {isWrong ? <View style={[styles.tint, styles.tintBad]} pointerEvents="none" /> : null}
-      {isCorrect ? <View style={[styles.outline, styles.outlineGood]} pointerEvents="none" /> : null}
-      {isWrong ? <View style={[styles.outline, styles.outlineBad]} pointerEvents="none" /> : null}
-
-      {isCorrect ? (
-        <>
-          <Animated.View style={[styles.flash, styles.flashGood, flashStyle]} pointerEvents="none" />
-          <View style={styles.markGood} pointerEvents="none">
-            <Text style={styles.markText}>✓</Text>
-          </View>
-          <Particles
-            trigger={burst}
-            count={16}
-            colors={['#86efac', '#22c55e', '#ffffff']}
-            size={10}
-            distance={110}
-            gravity={240}
-            duration={800}
-            style={styles.burst}
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{
+        disabled: locked || (feedback !== null && !feedback.retry),
+        selected: isCorrect,
+      }}
+      disabled={locked || (feedback !== null && !feedback.retry)}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.answer,
+        wide ? styles.answerWide : null,
+        { backgroundColor: face, borderBottomColor: edge },
+        answered && !isCorrect && !isWrong ? styles.answerDimmed : null,
+        pressed && !(locked || answered) ? styles.answerPressed : null,
+      ]}
+    >
+      <View style={styles.answerRow}>
+        <View style={styles.answerLabelWrap}>
+          <MathText
+            text={label}
+            style={[styles.answerLabel, { fontSize }]}
+            color="#ffffff"
+            fontSize={fontSize}
+            center
           />
-        </>
-      ) : null}
-
-      {isWrong ? (
-        <>
-          <Animated.View style={[styles.flash, styles.flashBad, flashStyle]} pointerEvents="none" />
-          <View style={styles.markBad} pointerEvents="none">
-            <Text style={styles.markText}>✗</Text>
-          </View>
-          <Particles
-            trigger={burst}
-            count={14}
-            colors={['#fda4af', '#ef476f', '#ffffff']}
-            size={9}
-            distance={100}
-            gravity={260}
-            duration={800}
-            style={styles.burst}
-          />
-        </>
-      ) : null}
-    </Animated.View>
+        </View>
+        {mark === null ? null : (
+          <Text style={styles.markText} pointerEvents="none">
+            {mark}
+          </Text>
+        )}
+      </View>
+    </Pressable>
   );
 }
 
@@ -463,9 +552,38 @@ const styles = StyleSheet.create({
   area: {
     width: '100%',
     alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 14,
-    paddingBottom: 10,
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  noteTop: {
+    width: '100%',
+    maxWidth: 520,
+    minHeight: 22,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  masteryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: 'rgba(8, 16, 34, 0.68)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
+  },
+  masteryDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  masteryText: {
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    letterSpacing: 1.1,
+    textTransform: 'uppercase',
   },
   noteWrap: {
     width: '100%',
@@ -475,14 +593,15 @@ const styles = StyleSheet.create({
   note: {
     width: '100%',
     maxWidth: 520,
-    minHeight: 220,
-    // The parchment art has a transparent, torn border: the inner padding
-    // has to clear it, or the text ends up on the ragged edge of the paper.
-    paddingLeft: 56,
-    paddingRight: 56,
-    paddingTop: 40,
-    paddingBottom: 30,
-    gap: 8,
+    minHeight: 150,
+    // The parchment art has a transparent, torn border (roughly a tenth of
+    // its width on each side): the inner padding has to clear it, or the
+    // text ends up on the ragged edge of the paper.
+    paddingLeft: 52,
+    paddingRight: 52,
+    paddingTop: 30,
+    paddingBottom: 24,
+    gap: 6,
     overflow: 'hidden',
   },
   noteImage: {
@@ -501,15 +620,15 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   pin: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: '#8d5b34',
   },
   noteLabel: {
     color: '#7a5a2e',
     fontFamily: fonts.titleSemi,
-    fontSize: 10,
+    fontSize: 9,
     letterSpacing: 2,
   },
   promptScroll: {
@@ -519,7 +638,7 @@ const styles = StyleSheet.create({
   promptContent: {
     flexGrow: 1,
     justifyContent: 'center',
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   prompt: {
     width: '100%',
@@ -529,11 +648,39 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   bonus: {
-    marginTop: 6,
+    marginTop: 4,
     color: '#6b4f22',
     fontFamily: fonts.bodySemi,
-    fontSize: 11,
+    fontSize: 10,
     fontStyle: 'italic',
+  },
+  feedbackBanner: {
+    width: '100%',
+    maxWidth: 520,
+    borderRadius: radius.chip,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedbackGood: {
+    backgroundColor: FEEDBACK_COLORS.good,
+    borderBottomWidth: 5,
+    borderBottomColor: FEEDBACK_COLORS.goodEdge,
+  },
+  feedbackBad: {
+    backgroundColor: FEEDBACK_COLORS.bad,
+    borderBottomWidth: 5,
+    borderBottomColor: FEEDBACK_COLORS.badEdge,
+  },
+  feedbackText: {
+    color: '#ffffff',
+    fontFamily: fonts.title,
+    fontSize: 13,
+    letterSpacing: 0.8,
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.28)',
+    textShadowRadius: 3,
   },
   answers: {
     width: '100%',
@@ -543,20 +690,55 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   answer: {
+    position: 'relative',
     width: '48%',
     flexGrow: 1,
+    minHeight: 74,
+    borderRadius: 12,
+    borderBottomWidth: 8,
+    alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    overflow: 'hidden',
   },
   answerWide: {
     width: '100%',
     flexGrow: 0,
   },
+  answerDimmed: {
+    opacity: 0.72,
+  },
+  answerPressed: {
+    transform: [{ translateY: 4 }],
+    borderBottomWidth: 4,
+  },
+  answerRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  answerLabelWrap: {
+    flexShrink: 1,
+  },
   answerLabel: {
+    color: '#ffffff',
     fontFamily: fonts.title,
-    letterSpacing: 1,
-    fontSize: 15,
+    letterSpacing: 0.6,
     textAlign: 'center',
     flexShrink: 1,
+    textShadowColor: 'rgba(0,0,0,0.24)',
+    textShadowRadius: 3,
+  },
+  markText: {
+    flexShrink: 0,
+    color: '#ffffff',
+    fontFamily: fonts.title,
+    fontSize: 19,
+    textShadowColor: 'rgba(0,0,0,0.4)',
+    textShadowRadius: 4,
   },
   revealScroll: {
     width: '100%',
@@ -581,56 +763,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
   },
-  tint: {
+  confetti: {
     ...StyleSheet.absoluteFill,
-    borderRadius: radius.button,
-  },
-  tintGood: {
-    backgroundColor: 'rgba(34, 197, 94, 0.22)',
-  },
-  tintBad: {
-    backgroundColor: 'rgba(239, 71, 111, 0.22)',
-  },
-  outline: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: radius.button,
-    borderWidth: 3,
-  },
-  outlineGood: {
-    borderColor: '#4ade80',
-  },
-  outlineBad: {
-    borderColor: '#fb7185',
-  },
-  flash: {
-    ...StyleSheet.absoluteFill,
-    borderRadius: radius.button,
-  },
-  flashGood: {
-    backgroundColor: colors.success,
-  },
-  flashBad: {
-    backgroundColor: colors.danger,
-  },
-  markGood: {
-    position: 'absolute',
-    right: 8,
-    top: 4,
-  },
-  markBad: {
-    position: 'absolute',
-    right: 8,
-    top: 4,
-  },
-  markText: {
-    color: '#ffffff',
-    fontFamily: fonts.title,
-    fontSize: 20,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowRadius: 4,
-  },
-  burst: {
-    top: -20,
-    bottom: -20,
   },
 });

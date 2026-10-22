@@ -153,7 +153,7 @@ const SHOTS = [
     wait: 12_000,
     timeout: 120_000,
   },
-  { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'CONTINUE', wait: 700, timeout: 60_000 },
+  { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'TAP TO CLAIM', wait: 700, timeout: 60_000 },
   { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'PLAY AGAIN', wait: 1400, timeout: 90_000 },
   // The frames of the catch: the answer that is held on the screen, the dip
   // of the bobber, the tug of the fish, the breach of the catch and the
@@ -185,7 +185,57 @@ const SHOTS = [
   {
     name: 'fishing-seq-reveal',
     path: '/fishing?demo=seq-reveal',
-    waitFor: 'CONTINUE',
+    waitFor: 'TAP TO CLAIM',
+    wait: 700,
+    timeout: 60_000,
+  },
+  // The pass-2 flow, photographed on a 390x844 phone: the cast, the hooked
+  // sign, the question, the correct and wrong feedback and the claim card.
+  {
+    name: 'ff2-cast',
+    path: '/fishing?demo=ff2-cast',
+    viewport: { width: 390, height: 844 },
+    waitForTestId: 'fishing-demo-ff2-cast',
+    wait: 350,
+    timeout: 60_000,
+  },
+  {
+    name: 'ff2-hooked',
+    path: '/fishing?demo=ff2-hooked',
+    viewport: { width: 390, height: 844 },
+    waitForTestId: 'fishing-demo-ff2-hooked',
+    wait: 500,
+    timeout: 60_000,
+  },
+  {
+    name: 'ff2-question',
+    path: '/fishing?demo=ff2-question',
+    viewport: { width: 390, height: 844 },
+    waitForTestId: 'fishing-demo-ff2-question',
+    wait: 500,
+    timeout: 60_000,
+  },
+  {
+    name: 'ff2-correct',
+    path: '/fishing?demo=ff2-correct',
+    viewport: { width: 390, height: 844 },
+    waitForTestId: 'fishing-demo-ff2-correct',
+    wait: 550,
+    timeout: 60_000,
+  },
+  {
+    name: 'ff2-wrong',
+    path: '/fishing?demo=ff2-wrong',
+    viewport: { width: 390, height: 844 },
+    waitForTestId: 'fishing-demo-ff2-wrong',
+    wait: 500,
+    timeout: 60_000,
+  },
+  {
+    name: 'ff2-reveal',
+    path: '/fishing?demo=ff2-reveal',
+    viewport: { width: 390, height: 844 },
+    waitForTestId: 'fishing-demo-ff2-reveal',
     wait: 700,
     timeout: 60_000,
   },

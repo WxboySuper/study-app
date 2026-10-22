@@ -5,8 +5,12 @@ import {
   CATCH_TIER_ORDER,
   CATCH_TIERS,
   CRITTER_TIER,
+  LEGEND_MAX_SHARE,
   SPECIAL_COLOR,
+  WIKI_ROW_COUNT,
+  catchOddsForRank,
   catchPool,
+  catchesForRank,
   catchesOfTier,
   findCatch,
   findCritterCatch,
@@ -20,6 +24,7 @@ import { CRITTERS } from '../../src/content/critters';
 import { JUNK } from '../../src/content/junk';
 import { FISHES } from '../../src/content/fish';
 import { HEAVY } from '../../src/content/heavy';
+import { WIKI_TABLE, isTierAvailableAt, wikiRowByName } from '../../src/fishing/wiki';
 
 /** Oct 21 2026: inside the window of the seasonal pack. */
 const INSIDE_THE_WINDOW = Date.UTC(2026, 9, 21, 12, 0, 0);
@@ -27,7 +32,7 @@ const INSIDE_THE_WINDOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 const OUTSIDE_THE_WINDOW = Date.UTC(2026, 11, 24, 12, 0, 0);
 
 describe('the catch tiers (§6)', () => {
-  it('has the eight tiers of the design doc', () => {
+  it('has the seven tiers of the Blooket wiki', () => {
     expect(CATCH_TIER_ORDER).toEqual([
       'trash',
       'easy',
@@ -36,9 +41,8 @@ describe('the catch tiers (§6)', () => {
       'epic',
       'cotd',
       'legend',
-      'heavy',
     ]);
-    expect(CATCH_TIERS).toHaveLength(8);
+    expect(CATCH_TIERS).toHaveLength(7);
   });
 
   it('uses the documented names, colours and weight ranges', () => {
@@ -50,7 +54,6 @@ describe('the catch tiers (§6)', () => {
       'Epic Grab',
       'Catch of the Day',
       "Angler's Legend",
-      'Heavy Catch',
     ]);
 
     expect(tierDefinition('trash')).toEqual({
@@ -58,19 +61,11 @@ describe('the catch tiers (§6)', () => {
       name: 'Trash',
       color: '#8d6e63',
       minLbs: 1,
-      maxLbs: 3,
+      maxLbs: 10,
     });
     expect(tierDefinition('legend').color).toBe('#8e24aa');
-    expect(tierDefinition('legend').maxLbs).toBe(40);
-  });
-
-  it('gives the heavy tier a haul of its own', () => {
-    const heavy = tierDefinition('heavy');
-    const legend = tierDefinition('legend');
-
-    expect(heavy.name).toBe('Heavy Catch');
-    expect(heavy.minLbs).toBeGreaterThanOrEqual(legend.maxLbs);
-    expect(heavy.maxLbs).toBeGreaterThan(legend.maxLbs);
+    expect(tierDefinition('legend').minLbs).toBe(500_000);
+    expect(tierDefinition('legend').maxLbs).toBe(2_500_000);
   });
 
   it('grows the weight ladder tier by tier', () => {
@@ -92,7 +87,7 @@ describe('the catch tiers (§6)', () => {
 });
 
 describe('the catch list (§7)', () => {
-  it('has the nine junk catches of the design doc', () => {
+  it('has the junk of the Trash tier, all 1-10 lbs', () => {
     const junk = catchesOfTier('trash');
     expect(junk.map((entry) => entry.name)).toEqual([
       'Old Sneaker',
@@ -107,7 +102,7 @@ describe('the catch list (§7)', () => {
     ]);
     for (const entry of junk) {
       expect(entry.minLbs).toBe(1);
-      expect(entry.maxLbs).toBe(3);
+      expect(entry.maxLbs).toBe(10);
       expect(entry.joke).toBeDefined();
       expect(entry.contentType).toBe('junk');
     }
@@ -132,7 +127,6 @@ describe('the catch list (§7)', () => {
     expect(winter.map((entry) => entry.name)).toContain('Snowy Mittens');
     expect(winter.map((entry) => entry.name)).not.toContain('Pumpkin Carving');
 
-    // Without a season only the junk that is always there swims up.
     expect(catchesOfTier('trash').map((entry) => entry.name)).not.toContain('Pumpkin Carving');
   });
 
@@ -145,14 +139,11 @@ describe('the catch list (§7)', () => {
   });
 
   it('builds the catalogue from the registries', () => {
-    // A fish of the (empty) fish registry would be a catch of its own, so
-    // adding one is a data change.
     expect(CATCHES).toHaveLength(JUNK.length + FISHES.length + HEAVY.length + CRITTERS.length);
   });
 
   it('fills every rarity tier with the critters of that rarity', () => {
-    const easy = catchesOfTier('easy', { now: INSIDE_THE_WINDOW });
-    expect(easy.map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('easy', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
       'Nibbles the Notecard',
       'Pip Pencil',
       'Doodle Moth',
@@ -182,28 +173,19 @@ describe('the catch list (§7)', () => {
       'The Witching Hour Owl',
     ]);
 
-    expect(catchesOfTier('legend', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('cotd', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
       'Gigabrain Golem',
       'Headless Homework Horseman',
     ]);
   });
 
   it('only swims up the critters of the packs that are on sale', () => {
-    const easy = catchesOfTier('easy', { now: OUTSIDE_THE_WINDOW });
-    expect(easy.map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('easy', { now: OUTSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
       'Nibbles the Notecard',
       'Pip Pencil',
       'Doodle Moth',
       'Sir Highlighter',
     ]);
-  });
-
-  it('keeps the tier weights of the design doc', () => {
-    const easy = catchesOfTier('easy', { now: INSIDE_THE_WINDOW })[0]!;
-    expect([easy.minLbs, easy.maxLbs]).toEqual([3, 7]);
-
-    const legend = catchesOfTier('legend', { now: INSIDE_THE_WINDOW })[0]!;
-    expect([legend.minLbs, legend.maxLbs]).toEqual([32, 40]);
   });
 
   it('keeps every catch inside the weight range of its tier', () => {
@@ -215,11 +197,28 @@ describe('the catch list (§7)', () => {
     }
   });
 
+  it('keeps every catch inside the range of the wiki row it is mapped to', () => {
+    for (const entry of CATCHES) {
+      const row = wikiRowByName(entry.wikiName);
+      expect(entry.minLbs).toBeGreaterThanOrEqual(row.minLbs);
+      expect(entry.maxLbs).toBeLessThanOrEqual(row.maxLbs);
+      expect(entry.chance).toBe(row.chance);
+      expect(entry.tier).toBe(
+        CATCH_TIERS.find((tier) => tier.name === row.tier)?.id ?? entry.tier,
+      );
+    }
+  });
+
   it('gives every catch a sprite id and an emoji', () => {
     for (const entry of CATCHES) {
       expect(entry.assetId.length).toBeGreaterThan(0);
       expect(entry.emoji.length).toBeGreaterThan(0);
     }
+  });
+
+  it('maps every wiki row of the table', () => {
+    expect(WIKI_ROW_COUNT).toBe(WIKI_TABLE.length);
+    expect(WIKI_TABLE).toHaveLength(37);
   });
 });
 
@@ -242,14 +241,14 @@ describe('the critter catches', () => {
       uncommon: 'great',
       rare: 'rare',
       epic: 'epic',
-      legendary: 'legend',
+      legendary: 'cotd',
     });
   });
 
   it('has the critter catches in the pools of their tier', () => {
     for (const tier of CATCH_TIER_ORDER) {
       for (const entry of catchesOfTier(tier, { now: INSIDE_THE_WINDOW })) {
-        if (tier === 'trash' || tier === 'heavy') {
+        if (tier === 'trash' || tier === 'legend') {
           expect(entry.critterId).toBeUndefined();
         } else {
           expect(entry.critterId).toBeDefined();
@@ -284,6 +283,8 @@ describe('the critter catches', () => {
       maxLbs: 10,
       assetId: 'junk_timed',
       emoji: '⏳',
+      wikiName: 'Old Boot',
+      chance: 15,
       contentType: 'junk',
       availableFrom: 100,
       availableUntil: 200,
@@ -297,8 +298,8 @@ describe('the critter catches', () => {
 });
 
 describe('the heavy catches', () => {
-  it('fills the heavy tier with the registry', () => {
-    const heavy = catchesOfTier('heavy');
+  it('fills the Angler’s Legend tier with the registry', () => {
+    const heavy = catchesOfTier('legend');
 
     expect(heavy.map((entry) => entry.name)).toEqual([
       'Galaxy Fish',
@@ -311,20 +312,17 @@ describe('the heavy catches', () => {
     ]);
     for (const entry of heavy) {
       expect(entry.contentType).toBe('heavy');
+      expect(entry.tier).toBe('legend');
       expect(entry.assetId).toMatch(/^catch_heavy_/);
       expect(entry.emoji.length).toBeGreaterThan(0);
     }
   });
 
-  it('weighs more than any critter tier', () => {
-    const legend = tierDefinition('legend');
-    const heavy = tierDefinition('heavy');
-
-    for (const entry of catchesOfTier('heavy')) {
-      expect(entry.minLbs).toBeGreaterThanOrEqual(heavy.minLbs);
-      expect(entry.maxLbs).toBeLessThanOrEqual(heavy.maxLbs);
-      expect(entry.minLbs).toBeGreaterThan(legend.maxLbs);
-    }
+  it('maps the swamp monster and the treasure chest to their wiki rows', () => {
+    expect(findCatch('heavy_swamp_monster')?.wikiName).toBe('Swamp Monster');
+    expect(findCatch('heavy_swamp_monster')?.chance).toBe(0.1);
+    expect(findCatch('heavy_treasure_chest')?.wikiName).toBe('Tim the Alien');
+    expect(findCatch('heavy_treasure_chest')?.chance).toBe(0.05);
   });
 
   it('reads the catches from the heavy registry', () => {
@@ -332,26 +330,52 @@ describe('the heavy catches', () => {
       const catchDef = findCatch(`heavy_${heavy.id}`);
       expect(catchDef?.name).toBe(heavy.name);
       expect(catchDef?.assetId).toBe(heavy.assetId);
-      expect(catchDef?.tier).toBe('heavy');
+      expect(catchDef?.tier).toBe('legend');
     }
   });
 });
 
-describe('the pool of a tier', () => {
-  it('falls back to the closest tier when a tier has no catch', () => {
-    // The "Catch of the Day" tier has no critter: the pool is the legends.
-    expect(catchesOfTier('cotd', { now: INSIDE_THE_WINDOW })).toHaveLength(0);
+describe('the pool and the odds of a rank', () => {
+  it('only includes the tiers the rank can catch', () => {
+    expect(catchesForRank(1).every((entry) => entry.tier === 'trash')).toBe(true);
+    expect(catchesForRank(5).some((entry) => entry.tier === 'legend')).toBe(true);
 
-    const pool = catchPool('cotd', { now: INSIDE_THE_WINDOW });
-    expect(pool.map((entry) => entry.name)).toEqual([
-      'Gigabrain Golem',
-      'Headless Homework Horseman',
-    ]);
+    // Seasonal catches are only in the pool of their season, so they are
+    // checked against the plain tier availability.
+    for (const entry of CATCHES.filter((catchDef) => catchDef.seasonal === undefined)) {
+      expect(catchesForRank(1).includes(entry)).toBe(isTierAvailableAt(entry.tier, 1));
+    }
   });
 
-  it('falls back to the heavy catches when no critter is left', () => {
+  it('falls back to the closest tier when a tier has no catch', () => {
     const pool = catchPool('cotd', { now: INSIDE_THE_WINDOW, includeCritters: false });
     expect(pool.map((entry) => entry.name)).toContain('Galaxy Fish');
+  });
+
+  it('gives the catches of a rank the wiki chance as their weight', () => {
+    const odds = catchOddsForRank(2, { now: INSIDE_THE_WINDOW });
+    expect(odds.length).toBeGreaterThan(0);
+    for (const entry of odds) {
+      expect(entry.chance).toBe(entry.catch.chance);
+      expect(entry.probability).toBeGreaterThan(0);
+    }
+    expect(odds.reduce((sum, entry) => sum + entry.probability, 0)).toBeCloseTo(100, 8);
+  });
+
+  it('adds up to 100 % at rank 1', () => {
+    const odds = catchOddsForRank(1);
+    expect(odds.reduce((sum, entry) => sum + entry.probability, 0)).toBeCloseTo(100, 8);
+    expect(odds.every((entry) => entry.catch.tier === 'trash')).toBe(true);
+  });
+
+  it('keeps the Legend share at the cap at rank 5', () => {
+    const odds = catchOddsForRank(5);
+    const legend = odds
+      .filter((entry) => entry.catch.tier === 'legend')
+      .reduce((sum, entry) => sum + entry.probability, 0);
+
+    expect(legend).toBeLessThanOrEqual(LEGEND_MAX_SHARE + 1e-9);
+    expect(legend).toBeGreaterThan(0);
   });
 });
 
@@ -361,7 +385,11 @@ describe('the catch helpers', () => {
     expect(findCatch('nope')).toBeUndefined();
   });
 
-  it('formats a weight', () => {
-    expect(formatLbs(1234.6)).toBe('1,235 lbs');
+  it('formats a weight compactly', () => {
+    expect(formatLbs(999)).toBe('999 lbs');
+    expect(formatLbs(1234.6)).toBe('1.2k lbs');
+    expect(formatLbs(3_300)).toBe('3.3k lbs');
+    expect(formatLbs(1_000_000)).toBe('1M lbs');
+    expect(formatLbs(1_234_567)).toBe('1.2M lbs');
   });
 });

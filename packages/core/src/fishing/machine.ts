@@ -7,18 +7,24 @@
  *
  * ```
  * IDLE ─cast─▶ CASTING ─cast_landed─▶ WAITING ─bite─▶ HOOKED
- * HOOKED ─reel─▶ QUESTION ─answer─▶ ANSWERED ─hold_done─▶ REELING
- * REELING ─reel_finished─▶ REVEAL ─continue─▶ IDLE
- * REELING ─reel_finished─▶ GOT_AWAY ─continue─▶ IDLE (the answer was wrong)
+ * HOOKED ─reel─▶ QUESTION ─answer (right)─▶ ANSWERED ─tap─▶ REELING
+ * REELING ─reel_finished─▶ REVEAL ─claim (continue)─▶ IDLE
+ * QUESTION ─answer (wrong)─▶ ANSWERED (3s lockout) ─tap─▶ GOT_AWAY
+ * GOT_AWAY ─continue─▶ IDLE
  * any ─request_end─▶ END_CONFIRM ─confirm_end─▶ (payout)
  * ```
  *
- * The `ANSWERED` phase is the hold after the answer: the right answer turns
- * green, the wrong one turns red and the player gets a moment to reread the
- * card before the scene takes over. A tap anywhere skips the wait.
+ * The `ANSWERED` phase waits for a tap. A correct answer turns the picked
+ * tile green with a ✓, the other tiles grey with a ✗ and the catch comes out
+ * of the water after the tap. A wrong answer turns the right answer green and
+ * locks the note for {@link WRONG_LOCKOUT_MS}: after the lockout a tap shows
+ * the "Fish Lost!" bubble, then the player is back on the dock.
+ *
+ * The haul is committed when the catch is claimed (a tap on the reveal card),
+ * so the counter ticks up at the moment of the claim, not before.
  */
 
-import { Rating, type Grade } from 'ts-fsrs';
+import { Rating, State, type Grade } from 'ts-fsrs';
 
 import type { QueueItem, QueueItemKind } from '../queue';
 import { autoRating } from '../rating';
@@ -51,13 +57,16 @@ export type FishingPhase =
   | 'end_confirm';
 
 /**
- * How long the answer is held on the screen after the player taps it.
+ * How long the wrong answer stays locked before the player may tap on.
  *
- * The right answer turns green and the wrong one turns red: the player gets
- * a moment to reread the question and the answers before the scene takes
- * over. A tap anywhere skips the wait.
+ * The right answer turns green, the picked one turns red and the note counts
+ * the lockout down ("Wait 3 seconds"). A tap before the lockout is over is
+ * ignored.
  */
-export const ANSWER_HOLD_MS = 1_800;
+export const WRONG_LOCKOUT_MS = 3_000;
+
+/** How long the "Fish Lost!" bubble stays on the screen after the lockout. */
+export const FISH_LOST_MS = 900;
 
 /** How long the lead-up before the reveal card lasts for a big catch. */
 export const LEAD_UP_FULL_MS = 2_500;
@@ -218,6 +227,11 @@ export interface FishingState {
   reveal: RolledCatch | null;
   /** The feedback of the last answer. */
   feedback: FishingFeedback | null;
+  /**
+   * When the wrong-answer lockout ends (epoch milliseconds), or `null` when
+   * there is no lockout.
+   */
+  lockoutUntil: number | null;
   /** `true` once the player confirmed the end of the session. */
   ended: boolean;
   /** Called when the queue runs dry, so the session can continue. */
@@ -247,12 +261,12 @@ export type FishingEvent =
       selfGrade?: boolean;
     }
   /**
-   * The hold after the answer is over.
+   * The player tapped on after an answer.
    *
-   * The timer of the hold ran out or the player tapped the screen to go on
-   * before it did.
+   * `now` is the time of the tap: a wrong answer is ignored until its
+   * lockout is over. A correct answer goes on to the reel at once.
    */
-  | { type: 'answer_hold_done' }
+  | { type: 'answer_hold_done'; now?: number }
   /** The fish was dragged out of the water. */
   | { type: 'reel_finished' }
   /** The reveal (or the "it got away" bubble) is dismissed. */
@@ -337,6 +351,7 @@ export function createFishingState(options: FishingMachineOptions): FishingState
     landing: [],
     reveal: null,
     feedback: null,
+    lockoutUntil: null,
     ended: false,
     refillQueue: options.refillQueue ?? null,
   };
@@ -353,7 +368,14 @@ export function fishingReducer(state: FishingState, event: FishingEvent): Fishin
   switch (event.type) {
     case 'cast':
       return state.phase === 'idle'
-        ? { ...state, phase: 'casting', onTheLine: null, landing: [], feedback: null }
+        ? {
+            ...state,
+            phase: 'casting',
+            onTheLine: null,
+            landing: [],
+            feedback: null,
+            lockoutUntil: null,
+          }
         : state;
 
     case 'cast_landed':
@@ -369,22 +391,26 @@ export function fishingReducer(state: FishingState, event: FishingEvent): Fishin
       return state.phase === 'question' ? handleAnswer(state, event) : state;
 
     case 'answer_hold_done':
-      return state.phase === 'answered' ? handleAnswerHoldDone(state) : state;
+      return state.phase === 'answered' ? handleAnswerHoldDone(state, event.now) : state;
 
     case 'reel_finished':
       return state.phase === 'reeling' ? handleReelFinished(state) : state;
 
     case 'continue':
       if (state.phase === 'reveal' || state.phase === 'got_away') {
+        const session =
+          state.phase === 'reveal' ? commitLanding(state.session, state.landing) : state.session;
         return {
           ...state,
           phase: 'idle',
+          session,
           currentItem: null,
           question: null,
           onTheLine: null,
           landing: [],
           reveal: null,
           feedback: null,
+          lockoutUntil: null,
         };
       }
       return state;
@@ -517,6 +543,8 @@ function handleAnswer(
           roll: { ...session.roll, powerup: null },
         },
         feedback: { ...feedback, retry: true },
+        landing: [],
+        lockoutUntil: null,
       };
     }
 
@@ -526,6 +554,7 @@ function handleAnswer(
       session,
       feedback,
       landing: [],
+      lockoutUntil: event.now + WRONG_LOCKOUT_MS,
     };
   }
 
@@ -554,31 +583,63 @@ function handleAnswer(
     session: nextSession,
     landing,
     feedback,
+    lockoutUntil: null,
   };
 }
 
 /**
- * The hold after the answer is over.
+ * The player tapped on after an answer.
  *
  * The Second Chance puts the player back on the same card (the answers are
- * live again), every other answer goes on to the lead-up before the reveal.
+ * live again). A correct answer goes on to the lead-up before the reveal. A
+ * wrong answer waits for the 3 second lockout: a tap before it is over is
+ * ignored, a tap after it shows the "Fish Lost!" bubble.
  */
-function handleAnswerHoldDone(state: FishingState): FishingState {
+function handleAnswerHoldDone(state: FishingState, now?: number): FishingState {
   if (state.feedback?.retry === true) {
-    return { ...state, phase: 'question' };
+    return { ...state, phase: 'question', lockoutUntil: null };
   }
-  return { ...state, phase: 'reeling' };
+
+  if (state.feedback?.correct === true) {
+    return { ...state, phase: 'reeling', lockoutUntil: null };
+  }
+
+  if (now !== undefined && state.lockoutUntil !== null && now < state.lockoutUntil) {
+    return state;
+  }
+
+  return { ...state, phase: 'got_away', landing: [], lockoutUntil: null };
 }
 
-/** The fish was dragged out of the water: the catches land on the dock. */
+/**
+ * The fish was dragged out of the water.
+ *
+ * Nothing is added to the haul yet: the reveal card shows the catch and the
+ * haul ticks up when the player claims it (`continue`).
+ */
 function handleReelFinished(state: FishingState): FishingState {
   if (state.landing.length === 0) {
     // Nothing came out of the water: the line snapped and the catch is
-    // gone. The bubble of the "it got away" takes over from here.
-    return { ...state, phase: 'got_away' };
+    // gone. The bubble of the "it lost" takes over from here.
+    return { ...state, phase: 'got_away', lockoutUntil: null };
   }
 
-  const session = state.session;
+  return {
+    ...state,
+    phase: 'reveal',
+    reveal: pickReveal(state.landing),
+    lockoutUntil: null,
+  };
+}
+
+/**
+ * Adds the catches of the reveal to the session.
+ *
+ * The landing holds every catch of the answer (the Double Hook can land two)
+ * and the special that came with it (a pack ticket). The claim is the moment
+ * the haul, the log, the critter list and the ticket count move.
+ */
+function commitLanding(session: FishingSession, landing: readonly RolledCatch[]): FishingSession {
   let haulLbs = session.haulLbs;
   let catches = session.catches;
   const byTier = { ...session.byTier };
@@ -587,9 +648,9 @@ function handleReelFinished(state: FishingState): FishingState {
   let packTickets = session.packTickets;
   let biggest = session.biggest;
 
-  for (const landing of state.landing) {
-    if (isCatchOutcome(landing)) {
-      const caught = toCaughtCatch(landing);
+  for (const entry of landing) {
+    if (isCatchOutcome(entry)) {
+      const caught = toCaughtCatch(entry);
       haulLbs += caught.lbs;
       catches += 1;
       /* v8 ignore next -- every tier starts at zero */
@@ -598,36 +659,31 @@ function handleReelFinished(state: FishingState): FishingState {
       if (biggest === null || caught.lbs > biggest.lbs) {
         biggest = caught;
       }
-      if (landing.kind === 'critter') {
+      if (entry.kind === 'critter') {
         critters.push({
-          critterId: landing.critter.id,
-          name: landing.critter.name,
-          rarity: landing.critter.rarity,
-          tier: landing.tier,
-          lbs: landing.lbs,
-          emoji: landing.critter.emoji,
-          assetId: landing.critter.assetId,
+          critterId: entry.critter.id,
+          name: entry.critter.name,
+          rarity: entry.critter.rarity,
+          tier: entry.tier,
+          lbs: entry.lbs,
+          emoji: entry.critter.emoji,
+          assetId: entry.critter.assetId,
         });
       }
-    } else if (landing.kind === 'pack_ticket') {
+    } else if (entry.kind === 'pack_ticket') {
       packTickets += 1;
     }
   }
 
   return {
-    ...state,
-    phase: 'reveal',
-    reveal: pickReveal(state.landing),
-    session: {
-      ...session,
-      haulLbs,
-      catches,
-      byTier,
-      log,
-      critters,
-      packTickets,
-      biggest,
-    },
+    ...session,
+    haulLbs,
+    catches,
+    byTier,
+    log,
+    critters,
+    packTickets,
+    biggest,
   };
 }
 
@@ -778,6 +834,30 @@ export interface FishingSessionResult {
   reviews: FishingReview[];
 }
 
+/** How well the player knows the card that is on the note. */
+export type MasteryStatus = 'unknown' | 'familiar' | 'mastered';
+
+/**
+ * The small mastery badge of the question note.
+ *
+ * The status comes from the FSRS state of the card: a card that was never
+ * reviewed is unknown, a card in the learning steps (or a young review card)
+ * is familiar, and a review card with a stability of at least three weeks is
+ * mastered. A session never invents a status of its own.
+ */
+export function masteryStatusOf(state: CardState | null | undefined): MasteryStatus {
+  if (state === null || state === undefined) {
+    return 'unknown';
+  }
+  if (state.state === State.New && state.reps === 0) {
+    return 'unknown';
+  }
+  if (state.state === State.Review && state.stability >= 21) {
+    return 'mastered';
+  }
+  return 'familiar';
+}
+
 /** Builds the result of the session for the payout screen and the API. */
 export function toSessionResult(state: FishingState): FishingSessionResult {
   return {
@@ -790,7 +870,7 @@ export function toSessionResult(state: FishingState): FishingSessionResult {
     biggest: state.session.biggest,
     critters: [...state.session.critters],
     packTickets: state.session.packTickets,
-    heavyCatches: state.session.byTier.heavy ?? 0,
+    heavyCatches: state.session.log.filter((entry) => entry.kind === 'heavy').length,
     lureRank: state.session.roll.lureRank,
     log: [...state.session.log],
     reviews: [...state.session.reviews],

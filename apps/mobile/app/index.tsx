@@ -102,8 +102,6 @@ export default function HomeScreen() {
     setSound,
     haptics,
     setHaptics,
-    autoReel,
-    setAutoReel,
     mastery,
     setMastery,
     reduceMotion,
@@ -627,7 +625,6 @@ export default function HomeScreen() {
             <Text style={styles.sectionTitle}>Settings</Text>
             <Toggle label="Sound" value={sound} onChange={setSound} />
             <Toggle label="Haptics" value={haptics} onChange={setHaptics} />
-            <Toggle label="Auto reel" value={autoReel} onChange={setAutoReel} />
             <Toggle
               label="Reduce motion"
               value={reduceMotion ?? systemReduceMotion}

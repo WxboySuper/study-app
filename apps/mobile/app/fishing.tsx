@@ -18,6 +18,12 @@ const FishingDemos = [
   'seq-tug',
   'seq-breach',
   'seq-reveal',
+  'ff2-cast',
+  'ff2-hooked',
+  'ff2-question',
+  'ff2-correct',
+  'ff2-wrong',
+  'ff2-reveal',
 ] as const;
 
 /**
@@ -28,7 +34,8 @@ const FishingDemos = [
  * with one tap. The web build can also jump to a state of the mode with
  * `?demo=cast`, `?demo=question`, `?demo=reveal` or `?demo=payout`, and to
  * a frame of the catch with `?demo=seq-highlight`, `?demo=seq-dip`,
- * `?demo=seq-tug`, `?demo=seq-breach` or `?demo=seq-reveal`.
+ * `?demo=seq-tug`, `?demo=seq-breach` or `?demo=seq-reveal`. The `ff2-*`
+ * demos play the pass-2 flow from the cast to the claim card.
  */
 export default function FishingRoute() {
   const router = useRouter();
