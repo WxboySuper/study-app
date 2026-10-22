@@ -145,16 +145,14 @@ export default function ImportScreen() {
                 <Text style={styles.counts}>
                   {preview.counts.total} question{preview.counts.total === 1 ? '' : 's'} ·{' '}
                   {preview.counts.multipleChoice} multiple choice · {preview.counts.selfGrade}{' '}
-                  without wrong answers
-                  {preview.counts.selfGrade === 1 ? '' : 's'}
+                  without wrong answers (will be self-graded)
                 </Text>
               ) : null}
 
               {selfGradeCount > 0 ? (
                 <View style={styles.chip}>
                   <Text style={styles.chipText}>
-                    ⚠ {selfGradeCount} card{selfGradeCount === 1 ? '' : 's'} without wrong answers
-                    will be self-graded
+                    ⚠ {selfGradeCount} card{selfGradeCount === 1 ? '' : 's'} will be self-graded
                   </Text>
                 </View>
               ) : null}

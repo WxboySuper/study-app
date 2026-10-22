@@ -27,6 +27,8 @@ export function fixedRng(value: number): Rng {
 
 /**
  * A queue item for the tests: a multiple choice card with four answers.
+ *
+ * The wrong answers of the card are the ones the author wrote for it.
  */
 export function makeQueueItem(
   id: string,

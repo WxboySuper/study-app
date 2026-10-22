@@ -18,8 +18,8 @@ import { GameButton, Particles } from '@/ui';
  * The question of the fishing mode (docs/design/fishing.md §4).
  *
  * The card lives *inside* the scene: a parchment note slides up from the
- * water and the four answers sit below it as chunky buttons. The right
- * answer flashes green with a burst of sparks, the wrong one flashes red.
+ * water and the answers sit below it as chunky buttons. The right answer
+ * flashes green with a burst of sparks, the wrong one flashes red.
  *
  * A card without wrong answers of its own cannot be asked as a multiple
  * choice question: the note shows the question alone, the player taps to
