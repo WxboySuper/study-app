@@ -1,4 +1,5 @@
 import {
+  ANSWER_HOLD_MS,
   buildDeckClassMap,
   buildQueue,
   computePayout,
@@ -9,6 +10,7 @@ import {
   createRandomRng,
   createSeededRng,
   fishingReducer,
+  leadUpOf,
   remainingCards,
   toSessionResult,
   type CardState,
@@ -31,7 +33,7 @@ import { GameButton, GlassCard, CritterLoader } from '@/ui';
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
 import { hapticBite, hapticCast, hapticCorrect, hapticHeavy, hapticLegend, hapticReel, hapticWrong } from './haptics';
-import { LakeScene } from './LakeScene';
+import { LakeScene, type LeadUpStage } from './LakeScene';
 import { PayoutScreen } from './PayoutScreen';
 import { QuestionNote } from './QuestionNote';
 import { RevealCard } from './RevealCard';
@@ -53,7 +55,6 @@ const CAST_DURATION_MS = 600;
 const BITE_MIN_MS = 800;
 const BITE_MAX_MS = 2_500;
 const HOOKED_AUTO_REEL_MS = 600;
-const REELING_DURATION_MS = 900;
 const GOT_AWAY_MS = 1_500;
 const NEW_CARD_CAP = 20;
 
@@ -70,6 +71,11 @@ const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
   question: 1,
   reveal: 1,
   payout: 3,
+  'seq-highlight': 1,
+  'seq-dip': 1,
+  'seq-tug': 1,
+  'seq-breach': 1,
+  'seq-reveal': 1,
 };
 
 /**
@@ -78,8 +84,38 @@ const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
  * The screenshots of the game need the mode in a state that takes a while
  * to reach by hand (a question, a catch, the end of the session), so the
  * route can ask for one of them.
+ *
+ * The `seq-*` demos are the frames of the catch: the answer that is held on
+ * the screen, the dip of the bobber, the tug of the fish, the breach of the
+ * catch and the reveal card that comes after them.
  */
-export type FishingDemo = 'scene' | 'cast' | 'question' | 'reveal' | 'payout';
+export type FishingDemo =
+  | 'scene'
+  | 'cast'
+  | 'question'
+  | 'reveal'
+  | 'payout'
+  | 'seq-highlight'
+  | 'seq-dip'
+  | 'seq-tug'
+  | 'seq-breach'
+  | 'seq-reveal';
+
+/**
+ * `true` when the demo freezes the game on a frame of the sequence.
+ *
+ * The frames are held still (the hold of the answer never ends and the
+ * lead-up never finishes), so the screenshot shows exactly one moment of
+ * the catch.
+ */
+function isSequenceDemo(demo: FishingDemo | null): boolean {
+  return (
+    demo === 'seq-highlight' ||
+    demo === 'seq-dip' ||
+    demo === 'seq-tug' ||
+    demo === 'seq-breach'
+  );
+}
 
 export interface FishingScreenProps {
   /** What is being studied. */
@@ -223,6 +259,14 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     void prepareSfx();
   }, []);
 
+  /**
+   * The lead-up before the reveal card.
+   *
+   * A critter (or a heavy catch) gets the full show, a junk catch and a
+   * wrong answer get the short one.
+   */
+  const leadUp = useMemo(() => leadUpOf(machine), [machine]);
+
   // The phase drives the sound, the haptics and the delays.
   useEffect(() => {
     switch (machine.phase) {
@@ -260,12 +304,31 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         questionStartedAt.current = Date.now();
         return undefined;
       }
+      case 'answered': {
+        // The answer is held on the screen: the right answer turns green,
+        // the wrong one turns red and the player can reread the card. A tap
+        // anywhere goes on before the wait is over.
+        if (isSequenceDemo(demo)) {
+          return undefined;
+        }
+        const timer = setTimeout(() => {
+          dispatch({ type: 'answer_hold_done' });
+        }, ANSWER_HOLD_MS);
+        return () => {
+          clearTimeout(timer);
+        };
+      }
       case 'reeling': {
+        // The lead-up before the reveal card: the bobber dips, the fish
+        // pulls on the line and the catch comes out of the water.
         playSfx('reel');
         hapticReel();
+        if (isSequenceDemo(demo)) {
+          return undefined;
+        }
         const timer = setTimeout(() => {
           dispatch({ type: 'reel_finished' });
-        }, REELING_DURATION_MS);
+        }, leadUp.durationMs);
         return () => {
           clearTimeout(timer);
         };
@@ -299,7 +362,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       default:
         return undefined;
     }
-  }, [demo, machine.phase, machine.reveal]);
+  }, [demo, leadUp.durationMs, machine.phase, machine.reveal]);
 
   // The sound of the catch that is on the line.
   useEffect(() => {
@@ -392,6 +455,16 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
 
   const onReel = useCallback(() => {
     dispatch({ type: 'reel' });
+  }, []);
+
+  /**
+   * The hold of the answer ends before the wait is over.
+   *
+   * The player taps anywhere to go on: the answer was on the screen long
+   * enough to be read.
+   */
+  const onSkipHold = useCallback(() => {
+    dispatch({ type: 'answer_hold_done' });
   }, []);
 
   // A card without wrong answers is graded by the player itself: "Got it" is
@@ -513,6 +586,23 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       );
     };
 
+    /** Waits for the reveal card and calls the callback. */
+    const whenRevealed = (attempt: number, then?: () => void) => {
+      if (then === undefined) {
+        return;
+      }
+      if (machineRef.current.phase === 'reveal') {
+        then();
+        return;
+      }
+      if (attempt > 60) {
+        return;
+      }
+      later(120, () => {
+        whenRevealed(attempt + 1, then);
+      });
+    };
+
     // One catch: cast, bite, reel and (when the demo needs it) answer.
     const catchAt = (at: number, answer: boolean, then?: () => void) => {
       later(at, () => {
@@ -542,10 +632,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
           now: Date.now(),
         });
       });
-      later(at + 2150, () => {
-        if (then !== undefined) {
-          then();
-        }
+      // The lead-up before the reveal card lasts longer for a critter than
+      // for a junk catch, so the demo waits for the card instead of
+      // guessing how long it takes.
+      later(at + 980 + ANSWER_HOLD_MS, () => {
+        whenRevealed(0, then);
       });
     };
 
@@ -561,7 +652,49 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       catchAt(0, false);
     }
 
-    if (demo === 'reveal') {
+    if (isSequenceDemo(demo)) {
+      // The frames of the sequence: the demo answers the card and then
+      // stops on the frame the screenshot asks for.
+      later(0, () => {
+        dispatch({ type: 'cast' });
+      });
+      later(120, () => {
+        dispatch({ type: 'cast_landed' });
+      });
+      later(280, () => {
+        dispatch({ type: 'bite' });
+      });
+      later(460, () => {
+        dispatch({ type: 'reel' });
+      });
+      later(980, () => {
+        const question = machineRef.current.question;
+        if (question === null) {
+          return;
+        }
+        // The frame of the answer shows both highlights: the answer the
+        // player picked (red) and the right one (green). The frames of the
+        // lead-up need a catch, so they answer correctly.
+        const choiceIndex =
+          demo === 'seq-highlight'
+            ? (question.answerIndex + 1) % Math.max(question.choices.length, 1)
+            : question.answerIndex;
+        dispatch({
+          type: 'answer',
+          choiceIndex,
+          durationMs: 800,
+          now: Date.now(),
+        });
+      });
+      if (demo !== 'seq-highlight') {
+        // The hold of the answer ends and the lead-up starts.
+        later(980 + ANSWER_HOLD_MS, () => {
+          dispatch({ type: 'answer_hold_done' });
+        });
+      }
+    }
+
+    if (demo === 'reveal' || demo === 'seq-reveal') {
       // The demo keeps fishing until a critter comes out of the water and
       // then keeps the reveal card on the screen (for the picture).
       const tryCatch = (attempt: number) => {
@@ -627,6 +760,43 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   const hintTier = onTheLine !== null && isCatchOutcome(onTheLine) ? onTheLine.tier : null;
   const nothingToStudy = !loading && machine.session.queue.length === 0;
 
+  /** The frame of the sequence the demo freezes the scene on. */
+  const freezeStage = useMemo<LeadUpStage | null>(() => {
+    switch (demo) {
+      case 'seq-dip':
+        return 'dip';
+      case 'seq-tug':
+        return 'tug';
+      case 'seq-breach':
+        return 'breach';
+      default:
+        return null;
+    }
+  }, [demo]);
+
+  /**
+   * The frame of the sequence the demo is on.
+   *
+   * The screenshots of the web build wait for it, so the picture is taken
+   * at the right moment of the catch.
+   */
+  const demoFrame = useMemo<string | null>(() => {
+    switch (demo) {
+      case 'seq-highlight':
+        return machine.phase === 'answered' ? 'highlight' : null;
+      case 'seq-dip':
+        return machine.phase === 'reeling' ? 'dip' : null;
+      case 'seq-tug':
+        return machine.phase === 'reeling' ? 'tug' : null;
+      case 'seq-breach':
+        return machine.phase === 'reeling' ? 'breach' : null;
+      case 'seq-reveal':
+        return machine.phase === 'reveal' ? 'reveal' : null;
+      default:
+        return null;
+    }
+  }, [demo, machine.phase]);
+
   // The session is over: the payout screen takes over.
   if (machine.ended) {
     return (
@@ -649,15 +819,9 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         reduceMotion={reduceMotion}
         landed={machine.phase === 'reeling' ? machine.onTheLine : machine.reveal}
         frozen={demo === 'cast'}
-      />
-
-      <Hud
-        session={machine.session}
-        remaining={remainingCards(machine)}
-        biggestTier={biggestTier}
-        tokens={balance}
-        onEnd={onRequestEnd}
-        reduceMotion={reduceMotion}
+        leadUpMs={leadUp.durationMs}
+        escaped={leadUp.escaped}
+        freezeStage={freezeStage}
       />
 
       <HookedBanner
@@ -667,11 +831,37 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       />
 
       <QuestionNote
-        visible={machine.phase === 'question' || machine.phase === 'reeling'}
+        visible={machine.phase === 'question' || machine.phase === 'answered'}
         question={machine.question}
         feedback={machine.feedback}
+        locked={machine.phase === 'answered'}
         onAnswer={onAnswer}
         onSelfGrade={onSelfGrade}
+        reduceMotion={reduceMotion}
+      />
+
+      {/*
+        The hold of the answer: a tap anywhere goes on before the wait is
+        over. It sits above the note (so the note cannot swallow the tap)
+        and below the HUD (so the "End" button keeps working).
+      */}
+      {machine.phase === 'answered' ? (
+        <Pressable
+          testID="fishing-hold"
+          accessibilityRole="button"
+          accessibilityLabel="Continue"
+          accessibilityHint="Tap to continue before the answer is held any longer"
+          style={StyleSheet.absoluteFill}
+          onPress={onSkipHold}
+        />
+      ) : null}
+
+      <Hud
+        session={machine.session}
+        remaining={remainingCards(machine)}
+        biggestTier={biggestTier}
+        tokens={balance}
+        onEnd={onRequestEnd}
         reduceMotion={reduceMotion}
       />
 
@@ -752,6 +942,14 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
           </GlassCard>
         </View>
       ) : null}
+
+      {/*
+        The marker of the frame of the sequence the demo is on. It is
+        invisible: the screenshots of the web build wait for it.
+      */}
+      {demoFrame === null ? null : (
+        <View testID={`fishing-demo-${demoFrame}`} style={styles.demoMarker} pointerEvents="none" />
+      )}
     </View>
   );
 }
@@ -760,6 +958,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#0b1020',
+  },
+  demoMarker: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: 0,
+    height: 0,
   },
   castWrap: {
     position: 'absolute',

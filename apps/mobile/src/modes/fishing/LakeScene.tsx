@@ -7,6 +7,7 @@ import Animated, {
   useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withSpring,
@@ -42,6 +43,12 @@ import { tierColor } from './assets';
  *
  * Every animation runs on the UI thread (Reanimated shared values), so the
  * scene stays smooth while the JS thread is busy with the next card.
+ *
+ * The lead-up before the reveal card is the heart of the scene: the bobber
+ * dips and jerks on the water, the fish pulls on the line (the rod bends and
+ * the bobber comes closer to the boat) and the catch comes out of the water
+ * with a big splash. The line always goes from the tip of the rod to the
+ * bobber and the bobber stays in the water.
  */
 
 /** How big the shadow of a catch is, per tier (a rough 10x ladder). */
@@ -88,6 +95,24 @@ const ROD_TIP_Y = -160;
 const ROD_TIP_DX = ROD_TIP_X - ROD_HAND_X;
 const ROD_TIP_DY = ROD_TIP_Y - ROD_HAND_Y;
 
+/** The butt of the rod, in the frame of the rod. */
+const ROD_BASE_DX = -13;
+const ROD_BASE_DY = 9;
+
+/**
+ * The joint of the rod.
+ *
+ * A rod is not a stick: it bends. The tip turns on the joint while the fish
+ * pulls on the line, so the joint is the point the bend happens on.
+ */
+const ROD_JOINT_T = 0.55;
+const ROD_JOINT_DX = ROD_BASE_DX + (ROD_TIP_DX - ROD_BASE_DX) * ROD_JOINT_T;
+const ROD_JOINT_DY = ROD_BASE_DY + (ROD_TIP_DY - ROD_BASE_DY) * ROD_JOINT_T;
+
+/** The tip of the rod, in the frame of the joint. */
+const ROD_JOINT_TIP_DX = ROD_TIP_DX - ROD_JOINT_DX;
+const ROD_JOINT_TIP_DY = ROD_TIP_DY - ROD_JOINT_DY;
+
 /** The size of the view of the boat (the origin is in its middle). */
 const BOAT_W = 230;
 const BOAT_H = 260;
@@ -95,6 +120,22 @@ const BOAT_H = 260;
 /** The size of the view of the rod (the origin, the hands, is in its middle). */
 const ROD_W = 230;
 const ROD_H = 230;
+
+/** The size of the view of the tip of the rod. */
+const ROD_TIP_W = 90;
+const ROD_TIP_H = 90;
+
+/**
+ * The joint of the rod, in the view of the tip.
+ *
+ * The joint is the pivot of the bend, so it sits inside the view of the tip
+ * (the view reaches above it, because the tip of the rod points up).
+ */
+const ROD_TIP_JOINT_X = 40;
+const ROD_TIP_JOINT_Y = 70;
+
+/** The frame of the view of the tip of the rod (the joint is at 40, 70). */
+const ROD_TIP_VIEWBOX = `-40 -70 ${ROD_TIP_W} ${ROD_TIP_H}`;
 
 /** The number of pieces the fishing line is made of. */
 const LINE_SEGMENTS = 14;
@@ -119,6 +160,17 @@ const CAST_FROZEN = 0.44;
 /** The size of the bobber. */
 const BOBBER = 30;
 
+/** How far the fish pulls the bobber towards the boat during the tug. */
+const TUG_PULL = 92;
+
+/**
+ * The stages of the lead-up before the reveal card.
+ *
+ * The screenshots of the web build freeze the scene on one of them, so the
+ * sequence can be reviewed frame by frame.
+ */
+export type LeadUpStage = 'dip' | 'tug' | 'breach';
+
 export interface LakeSceneProps {
   /** Where the mode is right now. */
   phase: FishingPhase;
@@ -132,6 +184,12 @@ export interface LakeSceneProps {
   landed?: RolledCatch | null;
   /** `true` when the scene is frozen (the screenshots of the cast). */
   frozen?: boolean;
+  /** How long the lead-up before the reveal card lasts. */
+  leadUpMs?: number;
+  /** `true` when the catch gets away during the lead-up. */
+  escaped?: boolean;
+  /** Holds the lead-up on a stage (the frames of the sequence). */
+  freezeStage?: LeadUpStage | null;
   /** The overlays (HUD, question note, reveal card...). */
   children?: React.ReactNode;
 }
@@ -143,6 +201,9 @@ export function LakeScene({
   reduceMotion,
   landed = null,
   frozen = false,
+  leadUpMs = 2_500,
+  escaped = false,
+  freezeStage = null,
   children,
 }: LakeSceneProps) {
   const { width, height } = useWindowDimensions();
@@ -162,13 +223,18 @@ export function LakeScene({
    * The surface of the lake is not a straight line on the screen: it falls
    * a little towards the right, where the bobber waits.
    */
-  const waterLineAt = (x: number) => waterY + 20 + Math.sin((x / Math.max(width, 1)) * Math.PI) * 8;
+  const waterLineAt = (x: number) => {
+    'worklet';
+    return waterY + 20 + Math.sin((x / Math.max(width, 1)) * Math.PI) * 8;
+  };
 
   // The bobber floats on the water, half of it in the lake.
   const bobHomeY = waterLineAt(bobHomeX) - 4;
 
   const bobX = useSharedValue(bobHomeX);
   const bobY = useSharedValue(bobHomeY);
+  /** How much of the bobber is under the water (it fades when it dips). */
+  const bobAlpha = useSharedValue(1);
   /** The progress of the cast (0 is the rod, 1 is the water). */
   const castP = useSharedValue(0);
   /** `1` while the bobber flies along the arc of the cast. */
@@ -183,17 +249,25 @@ export function LakeScene({
   const drift4 = useSharedValue(0);
   /** The swing of the rod, in degrees. */
   const rodSwing = useSharedValue(0);
+  /** The bend of the rod, in degrees (the fish pulls on the line). */
+  const bend = useSharedValue(0);
   /** How much the line sags (a fraction of the length of the line). */
   const sag = useSharedValue(SAG_SLACK);
   /** The progress of the ripples of the bobber. */
   const rippleT = useSharedValue(0);
+  /** The small splashes of the bobber (the dip of the lead-up). */
   const splashScale = useSharedValue(0.2);
   const splashOpacity = useSharedValue(0);
+  /** The big splash of the catch that comes out of the water. */
+  const bigSplashScale = useSharedValue(0.4);
+  const bigSplashOpacity = useSharedValue(0);
   const shadowScale = useSharedValue(0.4);
   const shadowOpacity = useSharedValue(0);
   const shadowX = useSharedValue(bobHomeX);
   const catchPop = useSharedValue(0);
   const catchOpacity = useSharedValue(0);
+  /** How high the catch leaps out of the water. */
+  const catchRise = useSharedValue(0);
   const frenzyGlow = useSharedValue(0);
 
   const hintSize = hintTier === null ? 60 : (SHADOW_SIZES[hintTier] ?? 60);
@@ -259,6 +333,7 @@ export function LakeScene({
         castOn.value = 0;
         bobX.value = withTiming(bobHomeX, { duration: 140 });
         bobY.value = withTiming(bobHomeY, { duration: 140 });
+        bobAlpha.value = 1;
         sag.value = withTiming(SAG_SLACK, { duration: 400 });
         splashScale.value = withSequence(withTiming(1, { duration: 220 }), withTiming(1.9, { duration: 420 }));
         splashOpacity.value = withSequence(withTiming(0.95, { duration: 90 }), withTiming(0, { duration: 520 }));
@@ -281,6 +356,10 @@ export function LakeScene({
           withTiming(bobHomeY + 30, { duration: 130, easing: Easing.in(Easing.quad) }),
           withTiming(bobHomeY - 2, { duration: 300, easing: Easing.out(Easing.quad) }),
         );
+        bobAlpha.value = withSequence(
+          withTiming(0.25, { duration: 130 }),
+          withTiming(1, { duration: 300 }),
+        );
         sag.value = withTiming(SAG_TAUT, { duration: 180 });
         splashScale.value = withSequence(withTiming(1, { duration: 220 }), withTiming(1.8, { duration: 420 }));
         splashOpacity.value = withSequence(withTiming(0.9, { duration: 80 }), withTiming(0, { duration: 520 }));
@@ -292,6 +371,7 @@ export function LakeScene({
         // The line stays taut and the fish thrashes.
         castOn.value = 0;
         bobY.value = withTiming(bobHomeY + 12, { duration: 220 });
+        bobAlpha.value = 1;
         sag.value = withTiming(SAG_TAUT, { duration: 200 });
         shadowX.value = withRepeat(
           withSequence(
@@ -303,25 +383,201 @@ export function LakeScene({
         );
         break;
       }
-      case 'reeling': {
-        // The catch comes out of the water.
+      case 'answered': {
+        // The answer is on the screen: the fish struggles on the line.
         castOn.value = 0;
-        bobX.value = withTiming(width * 0.52, { duration: 900, easing: Easing.inOut(Easing.quad) });
-        bobY.value = withTiming(height * 0.36, { duration: 900, easing: Easing.inOut(Easing.quad) });
-        sag.value = withTiming(0.06, { duration: 300 });
-        shadowOpacity.value = withTiming(0, { duration: 700 });
-        catchOpacity.value = withTiming(1, { duration: 260 });
-        catchPop.value = withSequence(
-          withTiming(1.18, { duration: 220, easing: Easing.out(Easing.quad) }),
-          withSpring(1, { damping: 9, stiffness: 150 }),
+        bobY.value = withTiming(bobHomeY + 14, { duration: 240 });
+        bobAlpha.value = 1;
+        sag.value = withTiming(SAG_TAUT, { duration: 200 });
+        break;
+      }
+      case 'reeling': {
+        // The lead-up before the reveal card: the bobber dips and jerks, the
+        // fish pulls on the line and the catch comes out of the water.
+        castOn.value = 0;
+        const lead = Math.max(500, leadUpMs);
+        const dipMs = Math.round(lead * 0.36);
+        const tugMs = Math.round(lead * 0.34);
+        const breachMs = Math.max(200, lead - dipMs - tugMs);
+
+        if (freezeStage !== null) {
+          // The pose of the stage, held still for the screenshot.
+          bobAlpha.value = 1;
+          sag.value = SAG_TAUT;
+          if (freezeStage === 'dip') {
+            bobX.value = bobHomeX;
+            bobY.value = bobHomeY + 24;
+            bobAlpha.value = 0.35;
+            bend.value = 4;
+            rodSwing.value = 0;
+            splashScale.value = 0.7;
+            splashOpacity.value = 0.8;
+            shadowOpacity.value = 0.8;
+          } else if (freezeStage === 'tug') {
+            bobX.value = bobHomeX - TUG_PULL * 0.85;
+            bobY.value = bobHomeY + 6;
+            bend.value = 14;
+            rodSwing.value = 6;
+            splashOpacity.value = 0;
+            shadowOpacity.value = 0.6;
+          } else {
+            bobX.value = bobHomeX - TUG_PULL;
+            bobY.value = bobHomeY + 4;
+            bend.value = 11;
+            rodSwing.value = 5;
+            splashOpacity.value = 0;
+            catchOpacity.value = 1;
+            catchPop.value = 1;
+            catchRise.value = -58;
+            bigSplashScale.value = 2.2;
+            bigSplashOpacity.value = 0.85;
+            shadowOpacity.value = 0;
+          }
+          break;
+        }
+
+        if (reduceMotion) {
+          // Without motion the catch is simply there.
+          bobX.value = bobHomeX - 60;
+          bobY.value = bobHomeY;
+          bobAlpha.value = 1;
+          sag.value = SAG_TAUT;
+          catchOpacity.value = 1;
+          catchPop.value = 1;
+          break;
+        }
+
+        if (escaped) {
+          // The catch gets away: the bobber dips, the line snaps and the
+          // shadow swims off.
+          bobY.value = withSequence(
+            withTiming(bobHomeY + 24, { duration: dipMs * 0.45, easing: Easing.in(Easing.quad) }),
+            withTiming(bobHomeY + 6, { duration: dipMs * 0.25, easing: Easing.out(Easing.quad) }),
+            withTiming(bobHomeY - 26, { duration: dipMs * 0.3, easing: Easing.out(Easing.quad) }),
+          );
+          bobAlpha.value = withSequence(
+            withTiming(0.3, { duration: dipMs * 0.45 }),
+            withTiming(1, { duration: dipMs * 0.55 }),
+          );
+          splashScale.value = withSequence(
+            withTiming(0.6, { duration: dipMs * 0.2 }),
+            withTiming(1.15, { duration: dipMs * 0.3 }),
+          );
+          splashOpacity.value = withSequence(
+            withTiming(0.9, { duration: dipMs * 0.15 }),
+            withTiming(0, { duration: dipMs * 0.85 }),
+          );
+          // The line snaps: the rod springs back and the bobber pops up.
+          bend.value = withSequence(
+            withTiming(16, { duration: 170, easing: Easing.out(Easing.quad) }),
+            withTiming(-3, { duration: 260, easing: Easing.inOut(Easing.quad) }),
+          );
+          rodSwing.value = withSequence(
+            withTiming(12, { duration: 170, easing: Easing.out(Easing.quad) }),
+            withTiming(-4, { duration: 300, easing: Easing.inOut(Easing.quad) }),
+          );
+          sag.value = withTiming(SAG_SLACK, { duration: 260 });
+          shadowX.value = withTiming(width * 1.25, { duration: 460, easing: Easing.out(Easing.quad) });
+          shadowOpacity.value = withTiming(0, { duration: 460 });
+          catchOpacity.value = 0;
+          break;
+        }
+
+        // 1. The dip: the bobber goes under the water and jerks.
+        bobY.value = withSequence(
+          withTiming(bobHomeY + 26, { duration: dipMs * 0.34, easing: Easing.in(Easing.quad) }),
+          withTiming(bobHomeY - 8, { duration: dipMs * 0.2, easing: Easing.out(Easing.quad) }),
+          withTiming(bobHomeY + 20, { duration: dipMs * 0.24, easing: Easing.in(Easing.quad) }),
+          withTiming(bobHomeY + 2, { duration: dipMs * 0.22, easing: Easing.out(Easing.quad) }),
+          // 2. The tug: the fish pulls the bobber towards the boat.
+          withTiming(bobHomeY + 6, { duration: tugMs, easing: Easing.inOut(Easing.quad) }),
+          // 3. The breach: the bobber stays in the water.
+          withTiming(bobHomeY + 2, { duration: breachMs, easing: Easing.inOut(Easing.quad) }),
         );
-        splashScale.value = withSequence(withTiming(1.2, { duration: 240 }), withTiming(2, { duration: 440 }));
-        splashOpacity.value = withSequence(withTiming(1, { duration: 80 }), withTiming(0, { duration: 600 }));
+        bobAlpha.value = withSequence(
+          withTiming(0.35, { duration: dipMs * 0.34 }),
+          withTiming(1, { duration: dipMs * 0.2 }),
+          withTiming(0.35, { duration: dipMs * 0.24 }),
+          withTiming(1, { duration: dipMs * 0.22 }),
+        );
+        bobX.value = withSequence(
+          withTiming(bobHomeX, { duration: dipMs }),
+          withTiming(bobHomeX - TUG_PULL, { duration: tugMs, easing: Easing.inOut(Easing.quad) }),
+          withTiming(bobHomeX - TUG_PULL - 6, { duration: breachMs, easing: Easing.out(Easing.quad) }),
+        );
+        // The small splashes of the jerks of the bobber.
+        splashScale.value = withSequence(
+          withTiming(0.6, { duration: dipMs * 0.12 }),
+          withTiming(1.2, { duration: dipMs * 0.2 }),
+          withTiming(0.7, { duration: dipMs * 0.12 }),
+          withTiming(1.35, { duration: dipMs * 0.56 }),
+        );
+        splashOpacity.value = withSequence(
+          withTiming(0.9, { duration: dipMs * 0.12 }),
+          withTiming(0, { duration: dipMs * 0.2 }),
+          withTiming(0.9, { duration: dipMs * 0.12 }),
+          withTiming(0, { duration: dipMs * 0.56 }),
+        );
+        // The line goes tight and the rod bends under the pull.
+        sag.value = withTiming(SAG_TAUT, { duration: 200 });
+        bend.value = withSequence(
+          withTiming(2, { duration: dipMs * 0.5 }),
+          withTiming(14, { duration: tugMs * 0.5, easing: Easing.out(Easing.quad) }),
+          withTiming(11, { duration: tugMs * 0.5, easing: Easing.inOut(Easing.quad) }),
+          withTiming(12, { duration: breachMs, easing: Easing.out(Easing.quad) }),
+        );
+        rodSwing.value = withSequence(
+          withTiming(0, { duration: dipMs * 0.5 }),
+          withTiming(7, { duration: tugMs * 0.5, easing: Easing.out(Easing.quad) }),
+          withTiming(4, { duration: tugMs * 0.5, easing: Easing.inOut(Easing.quad) }),
+          withTiming(5, { duration: breachMs, easing: Easing.out(Easing.quad) }),
+        );
+        // The shadow of the catch follows the bobber and goes under.
+        shadowX.value = withSequence(
+          withTiming(bobHomeX, { duration: dipMs }),
+          withTiming(bobHomeX - TUG_PULL, { duration: tugMs, easing: Easing.inOut(Easing.quad) }),
+          withTiming(bobHomeX - TUG_PULL - 6, { duration: breachMs, easing: Easing.out(Easing.quad) }),
+        );
+        shadowOpacity.value = withSequence(
+          withTiming(0.8, { duration: dipMs }),
+          withTiming(0.8, { duration: tugMs * 0.6 }),
+          withTiming(0, { duration: breachMs }),
+        );
+        // 3. The breach: the catch comes out of the water with a big splash.
+        catchOpacity.value = withDelay(dipMs + tugMs, withTiming(1, { duration: 160 }));
+        catchPop.value = withDelay(
+          dipMs + tugMs,
+          withSequence(
+            withTiming(1.25, { duration: 220, easing: Easing.out(Easing.quad) }),
+            withSpring(1, { damping: 8, stiffness: 140 }),
+          ),
+        );
+        catchRise.value = withDelay(
+          dipMs + tugMs,
+          withSequence(
+            withTiming(-64, { duration: breachMs * 0.45, easing: Easing.out(Easing.quad) }),
+            withTiming(-6, { duration: breachMs * 0.55, easing: Easing.in(Easing.quad) }),
+          ),
+        );
+        bigSplashScale.value = withDelay(
+          dipMs + tugMs,
+          withSequence(
+            withTiming(1.4, { duration: 200, easing: Easing.out(Easing.quad) }),
+            withTiming(2.1, { duration: 520 }),
+          ),
+        );
+        bigSplashOpacity.value = withDelay(
+          dipMs + tugMs,
+          withSequence(withTiming(1, { duration: 90 }), withTiming(0, { duration: 620 })),
+        );
         break;
       }
       case 'reveal': {
         // The card of the catch takes over from the scene.
         catchOpacity.value = withTiming(0, { duration: 260 });
+        catchRise.value = withTiming(0, { duration: 260 });
+        bend.value = withTiming(0, { duration: 300 });
+        rodSwing.value = withSpring(0, { damping: 14, stiffness: 90 });
         break;
       }
       case 'got_away': {
@@ -329,6 +585,7 @@ export function LakeScene({
         shadowX.value = withTiming(width * 1.2, { duration: 700, easing: Easing.out(Easing.quad) });
         shadowOpacity.value = withTiming(0, { duration: 700 });
         bobY.value = withTiming(bobHomeY - 30, { duration: 200 });
+        bobAlpha.value = 1;
         sag.value = withTiming(SAG_SLACK, { duration: 400 });
         catchOpacity.value = withTiming(0, { duration: 260 });
         break;
@@ -338,12 +595,16 @@ export function LakeScene({
         castOn.value = 0;
         bobX.value = withTiming(bobHomeX, { duration: 300 });
         bobY.value = withTiming(bobHomeY, { duration: 300 });
+        bobAlpha.value = 1;
         shadowOpacity.value = withTiming(0, { duration: 300 });
         shadowScale.value = withTiming(0.4, { duration: 300 });
         splashOpacity.value = 0;
+        bigSplashOpacity.value = 0;
         catchOpacity.value = 0;
         catchPop.value = 0;
+        catchRise.value = 0;
         rodSwing.value = withSpring(0, { damping: 14, stiffness: 90 });
+        bend.value = withSpring(0, { damping: 14, stiffness: 90 });
         sag.value = withTiming(SAG_SLACK, { duration: 400 });
         break;
       }
@@ -354,8 +615,12 @@ export function LakeScene({
     phase,
     frozen,
     reduceMotion,
+    leadUpMs,
+    escaped,
+    freezeStage,
     bobX,
     bobY,
+    bobAlpha,
     castP,
     castOn,
     sag,
@@ -364,9 +629,13 @@ export function LakeScene({
     shadowOpacity,
     splashScale,
     splashOpacity,
+    bigSplashScale,
+    bigSplashOpacity,
     catchPop,
     catchOpacity,
+    catchRise,
     rodSwing,
+    bend,
     bobHomeX,
     bobHomeY,
     width,
@@ -376,26 +645,35 @@ export function LakeScene({
   /**
    * The tip of the rod, on the screen.
    *
-   * The rod swings on the hands of the fisher and the boat rocks on the
-   * waves, so the tip moves a little all the time.
+   * The rod swings on the hands of the fisher, it bends on its joint when
+   * the fish pulls on the line and the boat rocks on the waves, so the tip
+   * moves a little all the time.
    */
   const rodTipX = useDerivedValue(() => {
     const swing = (rodSwing.value * Math.PI) / 180;
+    const flex = swing + (bend.value * Math.PI) / 180;
     const rock = (boatRock.value * Math.PI) / 180;
-    const dx = ROD_TIP_DX * Math.cos(swing) - ROD_TIP_DY * Math.sin(swing);
-    const dy = ROD_TIP_DX * Math.sin(swing) + ROD_TIP_DY * Math.cos(swing);
-    const localX = ROD_HAND_X + dx;
-    const localY = ROD_HAND_Y + dy;
+    // The joint turns with the rod...
+    const jx = ROD_JOINT_DX * Math.cos(swing) - ROD_JOINT_DY * Math.sin(swing);
+    const jy = ROD_JOINT_DX * Math.sin(swing) + ROD_JOINT_DY * Math.cos(swing);
+    // ... and the tip of the rod bends on the joint.
+    const tx = ROD_JOINT_TIP_DX * Math.cos(flex) - ROD_JOINT_TIP_DY * Math.sin(flex);
+    const ty = ROD_JOINT_TIP_DX * Math.sin(flex) + ROD_JOINT_TIP_DY * Math.cos(flex);
+    const localX = ROD_HAND_X + jx + tx;
+    const localY = ROD_HAND_Y + jy + ty;
     return boatX + localX * Math.cos(rock) - localY * Math.sin(rock);
   });
 
   const rodTipY = useDerivedValue(() => {
     const swing = (rodSwing.value * Math.PI) / 180;
+    const flex = swing + (bend.value * Math.PI) / 180;
     const rock = (boatRock.value * Math.PI) / 180;
-    const dx = ROD_TIP_DX * Math.cos(swing) - ROD_TIP_DY * Math.sin(swing);
-    const dy = ROD_TIP_DX * Math.sin(swing) + ROD_TIP_DY * Math.cos(swing);
-    const localX = ROD_HAND_X + dx;
-    const localY = ROD_HAND_Y + dy;
+    const jx = ROD_JOINT_DX * Math.cos(swing) - ROD_JOINT_DY * Math.sin(swing);
+    const jy = ROD_JOINT_DX * Math.sin(swing) + ROD_JOINT_DY * Math.cos(swing);
+    const tx = ROD_JOINT_TIP_DX * Math.cos(flex) - ROD_JOINT_TIP_DY * Math.sin(flex);
+    const ty = ROD_JOINT_TIP_DX * Math.sin(flex) + ROD_JOINT_TIP_DY * Math.cos(flex);
+    const localX = ROD_HAND_X + jx + tx;
+    const localY = ROD_HAND_Y + jy + ty;
     return boatWaterY + boatBob.value + localX * Math.sin(rock) + localY * Math.cos(rock);
   });
 
@@ -415,7 +693,22 @@ export function LakeScene({
     return bobY.value + Math.sin(waveT.value) * 3.2;
   });
 
+  /**
+   * The surface of the water under the bobber.
+   *
+   * The ripples and the splashes sit on it, not on the bobber: the bobber
+   * dips under the water while the rings stay on the surface.
+   */
+  const surfaceY = useDerivedValue(() => {
+    const x = castOn.value === 1 ? bobHomeX : bobPosX.value;
+    return waterLineAt(x) + Math.sin(waveT.value) * 3.2;
+  });
+
+  /** Where the ripples and the splashes are: on the bobber, or where it was. */
+  const anchorX = useDerivedValue(() => (castOn.value === 1 ? bobHomeX : bobPosX.value));
+
   const bobberStyle = useAnimatedStyle(() => ({
+    opacity: bobAlpha.value,
     transform: [
       { translateX: bobPosX.value - BOBBER / 2 },
       { translateY: bobPosY.value - BOBBER / 2 },
@@ -433,11 +726,16 @@ export function LakeScene({
     transform: [{ rotate: `${rodSwing.value}deg` }],
   }));
 
+  /** The tip of the rod turns on the joint while the rod bends. */
+  const rodTipStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${bend.value}deg` }],
+  }));
+
   const shadowStyle = useAnimatedStyle(() => ({
     opacity: shadowOpacity.value,
     transform: [
       { translateX: shadowX.value - hintSize / 2 },
-      { translateY: bobHomeY + 44 - hintSize / 6 },
+      { translateY: surfaceY.value + 44 - hintSize / 6 },
       { scaleX: shadowScale.value },
       { scaleY: shadowScale.value },
     ],
@@ -446,25 +744,34 @@ export function LakeScene({
   const splashStyle = useAnimatedStyle(() => ({
     opacity: splashOpacity.value,
     transform: [
-      { translateX: bobPosX.value - 40 },
-      { translateY: bobPosY.value - 46 },
+      { translateX: anchorX.value - 40 },
+      { translateY: surfaceY.value - 46 },
       { scale: splashScale.value },
     ],
   }));
 
+  const bigSplashStyle = useAnimatedStyle(() => ({
+    opacity: bigSplashOpacity.value,
+    transform: [
+      { translateX: anchorX.value - 55 },
+      { translateY: surfaceY.value - 60 },
+      { scale: bigSplashScale.value },
+    ],
+  }));
+
   /**
-   * The ripples stay on the water, where the bobber landed.
+   * The ripples stay on the water, where the bobber is.
    *
-   * They follow the bobber while it waits (it bobs with the waves) and they
-   * stay where the bobber was when it flies away.
+   * They follow the bobber while it waits and while it is pulled towards
+   * the boat, and they stay where the bobber was when it flies away.
    */
   const rippleStyle = useAnimatedStyle(() => {
     const t = rippleT.value;
     return {
       opacity: (1 - t) * 0.5,
       transform: [
-        { translateX: bobHomeX - 60 },
-        { translateY: bobHomeY - 60 + Math.sin(waveT.value) * 3.2 },
+        { translateX: anchorX.value - 60 },
+        { translateY: surfaceY.value - 60 },
         { scale: 0.22 + t * 1.25 },
       ],
     };
@@ -475,8 +782,8 @@ export function LakeScene({
     return {
       opacity: (1 - t) * 0.35,
       transform: [
-        { translateX: bobHomeX - 60 },
-        { translateY: bobHomeY - 60 + Math.sin(waveT.value) * 3.2 },
+        { translateX: anchorX.value - 60 },
+        { translateY: surfaceY.value - 60 },
         { scale: 0.22 + t * 1.25 },
       ],
     };
@@ -485,8 +792,8 @@ export function LakeScene({
   const catchStyle = useAnimatedStyle(() => ({
     opacity: catchOpacity.value,
     transform: [
-      { translateX: bobPosX.value - 70 },
-      { translateY: bobPosY.value - 96 + catchPop.value * 8 },
+      { translateX: anchorX.value - 70 },
+      { translateY: surfaceY.value - 118 + catchRise.value + catchPop.value * 6 },
       { scale: catchPop.value },
     ],
   }));
@@ -598,6 +905,21 @@ export function LakeScene({
         <WaveBand width={width} height={78} amplitude={15} wavelength={280} phase={3.9} color="#1c5ea6" opacity={0.8} />
       </Animated.View>
 
+      {/*
+        The big splash of the catch that comes out of the water. It is drawn
+        before the boat: the catch comes out of the lake behind the boat, so
+        the splash never hides the fisher.
+      */}
+      <Animated.View pointerEvents="none" style={[styles.splash, bigSplashStyle]}>
+        <Svg width={110} height={110} viewBox="0 0 110 110">
+          <Path
+            d="M 55 10 Q 71 35 85 26 Q 74 51 92 53 Q 71 69 76 94 Q 55 80 34 94 Q 39 69 18 53 Q 36 51 25 26 Q 39 35 55 10 Z"
+            fill="#eaf6ff"
+            opacity={0.9}
+          />
+        </Svg>
+      </Animated.View>
+
       {/* The boat and the fisher: they float on the waves. */}
       <Animated.View
         pointerEvents="none"
@@ -649,7 +971,8 @@ export function LakeScene({
           </G>
         </Svg>
 
-        {/* The rod: it swings on the hands of the fisher. */}
+        {/* The rod: it swings on the hands of the fisher and it bends on its
+            joint when the fish pulls on the line. */}
         <Animated.View
           pointerEvents="none"
           style={[
@@ -660,14 +983,36 @@ export function LakeScene({
         >
           <Svg width={ROD_W} height={ROD_H} viewBox={`0 0 ${ROD_W} ${ROD_H}`}>
             <G transform={`translate(${ROD_W / 2} ${ROD_H / 2})`}>
-              <Path d={taperedPath(-13, 9, ROD_TIP_DX, ROD_TIP_DY, 3.4, 0.8)} fill="#4a3122" />
-              <Path d={taperedPath(-13, 9, -2, 1, 4.2, 3.2)} fill="#a97142" />
+              <Path
+                d={taperedPath(ROD_BASE_DX, ROD_BASE_DY, ROD_JOINT_DX, ROD_JOINT_DY, 3.4, 2)}
+                fill="#4a3122"
+              />
+              <Path d={taperedPath(ROD_BASE_DX, ROD_BASE_DY, -2, 1, 4.2, 3.2)} fill="#a97142" />
               <Circle cx={2} cy={6} r={5.5} fill="#64748b" />
               <Circle cx={2} cy={6} r={2.4} fill="#334155" />
               <Path d="M 2 11 L 2 14.5" stroke="#475569" strokeWidth={2.2} strokeLinecap="round" />
-              <Circle cx={ROD_TIP_DX} cy={ROD_TIP_DY} r={2.2} fill="#e2e8f0" />
             </G>
           </Svg>
+
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.rodTip,
+              {
+                left: ROD_W / 2 + ROD_JOINT_DX - ROD_TIP_JOINT_X,
+                top: ROD_H / 2 + ROD_JOINT_DY - ROD_TIP_JOINT_Y,
+              },
+              rodTipStyle,
+            ]}
+          >
+            <Svg width={ROD_TIP_W} height={ROD_TIP_H} viewBox={ROD_TIP_VIEWBOX}>
+              <Path
+                d={taperedPath(0, 0, ROD_JOINT_TIP_DX, ROD_JOINT_TIP_DY, 2, 0.8)}
+                fill="#4a3122"
+              />
+              <Circle cx={ROD_JOINT_TIP_DX} cy={ROD_JOINT_TIP_DY} r={2.2} fill="#e2e8f0" />
+            </Svg>
+          </Animated.View>
         </Animated.View>
       </Animated.View>
 
@@ -956,6 +1301,13 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: ROD_W,
     height: ROD_H,
+  },
+  rodTip: {
+    position: 'absolute',
+    width: ROD_TIP_W,
+    height: ROD_TIP_H,
+    // The joint of the rod is the pivot of the bend.
+    transformOrigin: '44.44% 77.78%',
   },
   shadow: {
     position: 'absolute',

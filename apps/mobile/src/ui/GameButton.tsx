@@ -87,6 +87,13 @@ export interface GameButtonProps {
   style?: StyleProp<ViewStyle>;
   /** The style of the label. */
   textStyle?: StyleProp<TextStyle>;
+  /**
+   * How many lines the label may take.
+   *
+   * `0` lets the label wrap: the answers of the fishing mode are whole
+   * sentences, so they are never cut off.
+   */
+  labelLines?: number;
   /** The label the screen reader reads. */
   accessibilityLabel?: string;
   /** What the screen reader announces about the action. */
@@ -112,6 +119,7 @@ export function GameButton({
   icon,
   style,
   textStyle,
+  labelLines = 1,
   accessibilityLabel,
   accessibilityHint,
   haptic = true,
@@ -223,7 +231,7 @@ export function GameButton({
                 },
                 textStyle,
               ]}
-              numberOfLines={1}
+              numberOfLines={labelLines}
             >
               {label}
             </Text>

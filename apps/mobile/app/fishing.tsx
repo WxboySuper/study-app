@@ -5,13 +5,29 @@ import { StyleSheet, View } from 'react-native';
 import { FishingScreen, type FishingDemo } from '@/modes/fishing/FishingScreen';
 import type { ScopeChoice } from '@/settings';
 
+/** The demos the route understands. */
+const FishingDemos = [
+  'scene',
+  'cast',
+  'question',
+  'reveal',
+  'payout',
+  'seq-highlight',
+  'seq-dip',
+  'seq-tug',
+  'seq-breach',
+  'seq-reveal',
+] as const;
+
 /**
  * The route of the fishing mode.
  *
  * The scope comes from the query (`?kind=all`, `?kind=set&id=...`), so the
  * "Play again" button of the payout screen can start the same session again
  * with one tap. The web build can also jump to a state of the mode with
- * `?demo=cast`, `?demo=question`, `?demo=reveal` or `?demo=payout`.
+ * `?demo=cast`, `?demo=question`, `?demo=reveal` or `?demo=payout`, and to
+ * a frame of the catch with `?demo=seq-highlight`, `?demo=seq-dip`,
+ * `?demo=seq-tug`, `?demo=seq-breach` or `?demo=seq-reveal`.
  */
 export default function FishingRoute() {
   const router = useRouter();
@@ -23,10 +39,9 @@ export default function FishingRoute() {
   }>();
   const [session, setSession] = useState(0);
 
-  const demo: FishingDemo | null =
-    params.demo === 'cast' || params.demo === 'question' || params.demo === 'reveal' || params.demo === 'payout'
-      ? params.demo
-      : null;
+  const demo: FishingDemo | null = (FishingDemos as readonly string[]).includes(params.demo ?? '')
+    ? (params.demo as FishingDemo)
+    : null;
 
   const scope: ScopeChoice = (() => {
     if (params.kind === 'set' && typeof params.id === 'string') {
