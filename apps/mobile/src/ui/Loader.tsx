@@ -76,7 +76,16 @@ export function CritterLoader({
 
   return (
     <View style={[styles.root, style]}>
-      <View style={styles.halo}>
+      <View
+        style={[
+          styles.halo,
+          {
+            width: size + 24,
+            height: size + 24,
+            borderRadius: (size + 24) / 2,
+          },
+        ]}
+      >
         <Animated.View style={bobStyle}>
           {art === null ? (
             <Text style={[styles.emoji, { fontSize: size * 0.8 }]}>{emoji}</Text>
@@ -151,11 +160,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   halo: {
-    width: 96,
-    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 48,
     backgroundColor: 'rgba(123, 97, 255, 0.18)',
     borderWidth: 1,
     borderColor: 'rgba(167, 139, 255, 0.45)',

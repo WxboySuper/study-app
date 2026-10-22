@@ -205,6 +205,42 @@ bring the fish back:
    soon as it is listed: it swims up on its tier, with the weight range of
    the entry.
 
+## Adding a sound
+
+The game has **named sounds**: every moment that makes a noise has a name
+(`tap`, `cast`, `hooked`, `correct`, `wrong`, `reveal`, `rare`, `legendary`,
+`coin`, `spinTick`, `spinWin`, `packShake`, `packBurst`). The names live in
+the registry of `apps/mobile/src/sound/sfx.ts`, and every screen calls
+`play('name')` next to its haptics.
+
+**Every asset of the registry is `null` for now, so the game is silent**: the
+calls are already everywhere, they simply have nothing to play yet.
+
+To add a sound:
+
+1. Drop the file in `apps/mobile/assets/audio/` (the sounds of the fishing
+   mode live in `assets/audio/fishing/`). Short files work best: a tap is
+   under 200 ms.
+2. Import the file and point the event at it in `SFX_REGISTRY`:
+
+   ```ts
+   import tap from '../assets/audio/tap.mp3';
+
+   export const SFX_REGISTRY: Record<SfxEvent, SfxAsset> = {
+     // ...
+     tap: { source: tap, volume: 0.5 },
+   };
+   ```
+
+   `source` is the file (a Metro asset) and `volume` is between 0 and 1.
+3. The sound plays the next time the event happens — nothing else to do.
+   The player can turn the sound off with the switch of the home screen
+   (the setting also drives the sounds of the fishing mode).
+
+The sounds of the fishing mode are a separate registry
+(`apps/mobile/src/modes/fishing/sfx.ts`), because that mode already has its
+own files (see `assets/CREDITS.md` for their license).
+
 ## The rules that must hold
 
 - The **sell values follow the Blooket scale**: Common 5, Uncommon 10, Rare

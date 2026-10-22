@@ -54,15 +54,30 @@ export default function RootLayout() {
 
   return (
     <SettingsProvider>
-      <Stack>
-        <Stack.Screen name="index" options={{ title: 'Blookless', headerShown: false }} />
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          // The screens are dark: the content keeps the deep background, so
+          // the app never flashes white between two screens.
+          contentStyle: { backgroundColor: colors.backgroundDeep },
+          animation: 'fade_from_bottom',
+          animationDuration: 260,
+          gestureEnabled: true,
+          gestureDirection: 'vertical',
+          fullScreenGestureEnabled: true,
+        }}
+      >
+        <Stack.Screen name="index" options={{ title: 'Blookless', animation: 'fade' }} />
         <Stack.Screen
           name="fishing"
-          options={{ title: 'Fishing', headerShown: false, animation: 'fade' }}
+          options={{ title: 'Fishing', animation: 'fade_from_bottom' }}
         />
-        <Stack.Screen name="packs" options={{ title: 'Pack Shop', headerShown: false }} />
-        <Stack.Screen name="collection" options={{ title: 'Collection', headerShown: false }} />
-        <Stack.Screen name="spin" options={{ title: 'Daily Spin', headerShown: false }} />
+        <Stack.Screen name="packs" options={{ title: 'Pack Shop', animation: 'slide_from_right' }} />
+        <Stack.Screen
+          name="collection"
+          options={{ title: 'Collection', animation: 'slide_from_right' }}
+        />
+        <Stack.Screen name="spin" options={{ title: 'Daily Spin', animation: 'slide_from_right' }} />
       </Stack>
       <StatusBar style="light" />
     </SettingsProvider>
