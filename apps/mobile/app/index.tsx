@@ -1,4 +1,5 @@
 import {
+  buildDeckClassMap,
   buildQueue,
   canSpin,
   countScope,
@@ -33,15 +34,32 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
   openLocalStore,
+  type LocalClass,
   type LocalSet,
-  type LocalTopic,
 } from '@/db/local';
 import { critterArt } from '@/packs/critterArt';
 import { scopeTitle, useSettings } from '@/settings';
 import { play } from '@/sound/sfx';
-import { buildDecks, queueScopeOf, scopeOfDeck, selectedDeckId, type DeckCard } from '@/study/decks';
+import {
+  buildClassChips,
+  buildDecks,
+  queueScopeOf,
+  scopeOfChip,
+  scopeOfDeck,
+  type ClassChip,
+  type ClassFilter,
+  type DeckCard,
+} from '@/study/decks';
 import { DeckPicker } from '@/study/DeckPicker';
+import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
+import {
+  dismissUpdate,
+  isUpdateDismissed,
+  subscribeToUpdate,
+  type AvailableUpdate,
+} from '@/update/checkForUpdate';
+import { UpdateBanner } from '@/update/UpdateBanner';
 import {
   CritterLoader,
   GameBackground,
@@ -83,7 +101,7 @@ export default function HomeScreen() {
   } = useSettings();
 
   const [sets, setSets] = useState<LocalSet[]>([]);
-  const [topics, setTopics] = useState<LocalTopic[]>([]);
+  const [classes, setClasses] = useState<LocalClass[]>([]);
   const [cards, setCards] = useState<StudyCard[]>([]);
   const [cardStates, setCardStates] = useState<Map<string, CardState>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -92,6 +110,16 @@ export default function HomeScreen() {
   const [critterCount, setCritterCount] = useState(0);
   const [spinReady, setSpinReady] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<DeckCard | null>(null);
+  /** The class whose decks are shown below the chips (`null` means "All"). */
+  const [filter, setFilter] = useState<ClassFilter>({ kind: 'all' });
+  /** The sheet of a new class. */
+  const [creatingClass, setCreatingClass] = useState(false);
+  /** The class that is renamed (or deleted). */
+  const [editingClass, setEditingClass] = useState<ClassChip | null>(null);
+  /** The deck that moves to another class. */
+  const [movingDeck, setMovingDeck] = useState<DeckCard | null>(null);
+  /** The release of the game that is newer than the app. */
+  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
 
   const totalCritters = PACKS.reduce((sum, pack) => sum + pack.critters.length, 0);
   const cheapestPack = useMemo(() => {
@@ -137,12 +165,12 @@ export default function HomeScreen() {
       const localCards = await store.listCards();
       const localStates = await store.listCardStates();
       const localSets = await store.listSets();
-      const localTopics = await store.listTopics();
+      const localClasses = await store.listClasses();
 
       setCards(localCards);
       setCardStates(localStates);
       setSets(localSets);
-      setTopics(localTopics);
+      setClasses(localClasses);
     } catch {
       // The decks stay empty: the picker shows its empty state.
     } finally {
@@ -156,49 +184,199 @@ export default function HomeScreen() {
     }, [loadDecks]),
   );
 
-  // The decks of the picker, with the number of cards and the number of due
-  // cards of every one of them.
-  const decks = useMemo(
-    () => buildDecks(sets, topics, cards, cardStates, Date.now()),
-    [cardStates, cards, sets, topics],
+  // The banner of the update: the app tells the player when a new release is
+  // ready.
+  useEffect(() => {
+    return subscribeToUpdate((release) => {
+      setUpdate(release);
+    });
+  }, []);
+
+  // A release the player already dismissed never shows up again.
+  useEffect(() => {
+    if (update === null) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const dismissed = await isUpdateDismissed(update.version);
+      if (!cancelled && dismissed) {
+        setUpdate(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [update]);
+
+  const onDismissUpdate = useCallback((version: string) => {
+    setUpdate(null);
+    void dismissUpdate(version);
+  }, []);
+
+  // The chips of the class row, with the number of questions and the number
+  // of due questions of every class.
+  const chips = useMemo(
+    () => buildClassChips(classes, sets, cards, cardStates, Date.now()),
+    [cardStates, cards, classes, sets],
   );
 
-  const everything = useMemo(
-    () => countScope(cards, cardStates, Date.now()),
-    [cardStates, cards],
+  // The decks of the picker, with the number of questions and the number of
+  // due questions of every one of them.
+  const decks = useMemo(
+    () => buildDecks(sets, classes, cards, cardStates, Date.now(), filter),
+    [cardStates, cards, classes, filter, sets],
   );
 
   // The line under the play card: what the player is about to study.
   const status = useMemo(() => {
+    const deckClasses = buildDeckClassMap(sets);
     const queue = buildQueue(cards, cardStates, Date.now(), {
       newCap: 20,
       scope: queueScopeOf(scope),
+      deckClasses,
     });
-    const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope)).due;
+    const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope), deckClasses).due;
 
     if (queue.length === 0) {
       return due === 0
-        ? 'No cards yet. Import a set to start studying.'
-        : `${due} card${due === 1 ? '' : 's'} due right now.`;
+        ? 'No questions yet. Import a deck to start studying.'
+        : `${due} question${due === 1 ? '' : 's'} due right now.`;
     }
-    return `${queue.length} card${queue.length === 1 ? '' : 's'} queued${
+    return `${queue.length} question${queue.length === 1 ? '' : 's'} queued${
       due > 0 ? ` · ${due} due` : ''
     }.`;
-  }, [cardStates, cards, scope]);
+  }, [cardStates, cards, scope, sets]);
 
-  const onSelectDeck = useCallback(
-    (id: string | null) => {
-      if (id === null) {
+  // The chip of the class row that is selected.
+  const selectedChip = useMemo(() => {
+    if (scope.kind === 'all') {
+      return 'all';
+    }
+    if (scope.kind === 'class') {
+      return scope.id === null ? 'unsorted' : `class:${scope.id}`;
+    }
+    if (scope.kind === 'set') {
+      const deck = decks.find((entry) => entry.id === scope.id);
+      if (deck === undefined) {
+        return 'all';
+      }
+      return deck.classId === null ? 'unsorted' : `class:${deck.classId}`;
+    }
+    return 'all';
+  }, [decks, scope]);
+
+  const onSelectChip = useCallback(
+    (chip: ClassChip) => {
+      if (chip.kind === 'all') {
+        setFilter({ kind: 'all' });
         setScope({ kind: 'all' });
         return;
       }
-      const deck = decks.find((entry) => entry.id === id);
-      if (deck === undefined) {
+      if (chip.kind === 'unsorted') {
+        setFilter({ kind: 'class', classId: null });
+        setScope({ kind: 'class', id: null, title: 'Unsorted' });
         return;
       }
+      setFilter({ kind: 'class', classId: chip.id });
+      setScope(scopeOfChip(chip));
+    },
+    [setScope],
+  );
+
+  const onSelectDeck = useCallback(
+    (deck: DeckCard) => {
       setScope(scopeOfDeck(deck));
     },
-    [decks, setScope],
+    [setScope],
+  );
+
+  const onCreateClass = useCallback((name: string, color: string) => {
+    setCreatingClass(false);
+
+    void (async () => {
+      try {
+        const store = await openLocalStore();
+        const created = await store.createClass(name, color);
+        await loadDecks();
+        setFilter({ kind: 'class', classId: created.id });
+        setScope({ kind: 'class', id: created.id, title: created.name });
+      } catch {
+        // The class stays as it is.
+      }
+    })();
+  }, [loadDecks, setScope]);
+
+  const onRenameClass = useCallback(
+    (name: string) => {
+      const chip = editingClass;
+      const classId = chip?.id ?? null;
+      setEditingClass(null);
+      if (chip === null || classId === null) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const store = await openLocalStore();
+          await store.renameClass(classId, name);
+          await loadDecks();
+          if (scope.kind === 'class' && scope.id === classId) {
+            setScope({ kind: 'class', id: classId, title: name });
+          }
+        } catch {
+          // The class stays as it is.
+        }
+      })();
+    },
+    [editingClass, loadDecks, scope, setScope],
+  );
+
+  const onDeleteClass = useCallback(() => {
+    const chip = editingClass;
+    const classId = chip?.id ?? null;
+    setEditingClass(null);
+    if (chip === null || classId === null) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const store = await openLocalStore();
+        await store.deleteClass(classId);
+        await loadDecks();
+        if (scope.kind === 'class' && scope.id === classId) {
+          setScope({ kind: 'all' });
+          setFilter({ kind: 'all' });
+        }
+      } catch {
+        // The class stays as it is.
+      }
+    })();
+  }, [editingClass, loadDecks, scope, setScope]);
+
+  const onMoveDeck = useCallback(
+    (classId: string | null) => {
+      const deck = movingDeck;
+      setMovingDeck(null);
+      if (deck === null) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          const store = await openLocalStore();
+          await store.assignDeckToClass(deck.id, classId);
+          await loadDecks();
+        } catch {
+          // The deck stays where it is.
+        }
+      })();
+    },
+    [loadDecks, movingDeck],
   );
 
   const go = useCallback(() => {
@@ -209,7 +387,7 @@ export default function HomeScreen() {
       params:
         scope.kind === 'all'
           ? { kind: 'all' }
-          : { kind: scope.kind, id: scope.id, title: scope.title },
+          : { kind: scope.kind, id: scope.id ?? '', title: scope.title },
     });
   }, [router, scope, setScope]);
 
@@ -244,10 +422,14 @@ export default function HomeScreen() {
     <GameBackground variant="home">
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {update === null ? null : (
+            <UpdateBanner update={update} onDismiss={onDismissUpdate} />
+          )}
+
           <Animated.View style={styles.header}>
             <Wordmark size={44} />
             <Text style={styles.tagline}>
-              Endless, untimed study. The scheduler picks the cards, the game picks the vibe.
+              Endless, untimed study. The scheduler picks the questions, the game picks the vibe.
             </Text>
           </Animated.View>
 
@@ -326,11 +508,24 @@ export default function HomeScreen() {
 
           <Animated.View style={styles.section}>
             <DeckPicker
+              chips={chips}
               decks={decks}
-              selectedId={selectedDeckId(scope)}
-              totalCards={everything.total}
-              totalDue={everything.due}
-              onSelect={onSelectDeck}
+              selectedChip={selectedChip}
+              selectedDeckId={scope.kind === 'set' ? scope.id : null}
+              onSelectChip={onSelectChip}
+              onSelectDeck={onSelectDeck}
+              onCreateClass={() => {
+                play('tap');
+                setCreatingClass(true);
+              }}
+              onEditClass={(chip) => {
+                play('tap');
+                setEditingClass(chip);
+              }}
+              onMoveDeck={(deck) => {
+                play('tap');
+                setMovingDeck(deck);
+              }}
               onImport={goImport}
               onDelete={(deck) => {
                 play('tap');
@@ -368,8 +563,8 @@ export default function HomeScreen() {
             <GlassCard style={styles.modalCard} contentStyle={styles.modalContent} tint={colors.danger}>
               <Text style={styles.modalTitle}>DELETE THIS DECK?</Text>
               <Text style={styles.modalText}>
-                “{pendingDelete.title}” and its {pendingDelete.cards} card
-                {pendingDelete.cards === 1 ? '' : 's'} leave the game. This cannot be undone.
+                “{pendingDelete.title}” and its {pendingDelete.questions} question
+                {pendingDelete.questions === 1 ? '' : 's'} leave the game. This cannot be undone.
               </Text>
 
               <GameButton
@@ -384,6 +579,46 @@ export default function HomeScreen() {
             </GlassCard>
           </View>
         </Modal>
+      )}
+
+      {creatingClass ? (
+        <CreateClassSheet
+          onCancel={() => {
+            setCreatingClass(false);
+          }}
+          onCreate={onCreateClass}
+        />
+      ) : null}
+
+      {editingClass === null ? null : (
+        <EditClassSheet
+          entry={
+            classes.find((entry) => entry.id === editingClass.id) ?? {
+              id: editingClass.id ?? '',
+              name: editingClass.name,
+              color: editingClass.color,
+              sort: 0,
+              createdAt: 0,
+            }
+          }
+          onCancel={() => {
+            setEditingClass(null);
+          }}
+          onRename={onRenameClass}
+          onDelete={onDeleteClass}
+        />
+      )}
+
+      {movingDeck === null ? null : (
+        <MoveDeckSheet
+          deckTitle={movingDeck.title}
+          classes={classes}
+          currentClassId={movingDeck.classId}
+          onCancel={() => {
+            setMovingDeck(null);
+          }}
+          onPick={onMoveDeck}
+        />
       )}
     </GameBackground>
   );

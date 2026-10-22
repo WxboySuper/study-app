@@ -151,6 +151,50 @@ describe('buildQueue', () => {
     expect(queue).toEqual([]);
   });
 
+  it('filters by class scope', () => {
+    const cards = [card('a1', 'set-a'), card('b1', 'set-b'), card('c1', 'set-c')];
+    const deckClasses = new Map<string, string | null>([
+      ['set-a', 'class-1'],
+      ['set-b', 'class-1'],
+      ['set-c', 'class-2'],
+    ]);
+
+    const queue = buildQueue(cards, new Map(), NOW, {
+      newCap: 10,
+      scope: { kind: 'class', classId: 'class-1' },
+      deckClasses,
+    });
+
+    expect(ids(queue)).toEqual(['a1', 'b1']);
+  });
+
+  it('puts the decks without a class in the unsorted bucket', () => {
+    const cards = [card('a1', 'set-a'), card('b1', 'set-b')];
+    const deckClasses = new Map<string, string | null>([
+      ['set-a', 'class-1'],
+      ['set-b', null],
+    ]);
+
+    const queue = buildQueue(cards, new Map(), NOW, {
+      newCap: 10,
+      scope: { kind: 'class', classId: null },
+      deckClasses,
+    });
+
+    expect(ids(queue)).toEqual(['b1']);
+  });
+
+  it('puts every deck in the unsorted bucket when the classes are unknown', () => {
+    const cards = [card('a1', 'set-a'), card('b1', 'set-b')];
+
+    const queue = buildQueue(cards, new Map(), NOW, {
+      newCap: 10,
+      scope: { kind: 'class', classId: null },
+    });
+
+    expect(ids(queue)).toEqual(['a1', 'b1']);
+  });
+
   it('scopes to everything by default', () => {
     const cards = [card('a1', 'set-a'), card('b1', 'set-b')];
 
@@ -267,5 +311,21 @@ describe('countScope', () => {
 
   it('counts a card without a state as new, not as due', () => {
     expect(countScope([card('c1', 's1')], new Map(), NOW)).toEqual({ total: 1, due: 0 });
+  });
+
+  it('counts the questions of a class and the ones that are due', () => {
+    const cards = [card('a1', 'set-a'), card('a2', 'set-a'), card('b1', 'set-b')];
+    const states = new Map<string, CardState>([['a1', state('a1', NOW - 10)]]);
+    const deckClasses = new Map<string, string | null>([
+      ['set-a', 'class-1'],
+      ['set-b', null],
+    ]);
+
+    expect(
+      countScope(cards, states, NOW, { kind: 'class', classId: 'class-1' }, deckClasses),
+    ).toEqual({ total: 2, due: 1 });
+    expect(
+      countScope(cards, states, NOW, { kind: 'class', classId: null }, deckClasses),
+    ).toEqual({ total: 1, due: 0 });
   });
 });

@@ -35,6 +35,24 @@ export interface LocalSet {
   id: string;
   topicId: string | null;
   title: string;
+  /** The id of the class of the deck (`null` when it has none). */
+  classId: string | null;
+}
+
+/**
+ * A class of the local store.
+ *
+ * A class groups the decks of the player (a class per subject, per exam,
+ * per week...). A deck without a class is in the "Unsorted" bucket.
+ */
+export interface LocalClass {
+  id: string;
+  name: string;
+  color: string | null;
+  /** The order of the class in the picker. */
+  sort: number;
+  /** Epoch milliseconds. */
+  createdAt: number;
 }
 
 /** A topic of the local store. */
@@ -161,6 +179,8 @@ export interface ImportDeckResult {
   setId: string | null;
   /** The id of the topic of the new set (`null` when it has none). */
   topicId: string | null;
+  /** The id of the class of the new set (`null` when it has none). */
+  classId: string | null;
   /** How many cards were imported. */
   cards: number;
   /** A message for the player when the import failed. */
@@ -184,14 +204,39 @@ export interface LocalStore {
   listSets(): Promise<LocalSet[]>;
   /** Reads every locally known topic, sorted by name. */
   listTopics(): Promise<LocalTopic[]>;
+  /** Reads every class of the player, in the order of the picker. */
+  listClasses(): Promise<LocalClass[]>;
+  /** Creates a class (the decks of the player are not touched). */
+  createClass(name: string, color?: string | null): Promise<LocalClass>;
+  /** Renames a class. */
+  renameClass(id: string, name: string): Promise<void>;
+  /**
+   * Deletes a class.
+   *
+   * The decks inside it are never deleted: they go back to the "Unsorted"
+   * bucket.
+   */
+  deleteClass(id: string): Promise<void>;
+  /** Moves a deck to a class (`null` sends it back to the unsorted bucket). */
+  assignDeckToClass(setId: string, classId: string | null): Promise<void>;
   /** Imports a new deck: a set, its cards and their fresh scheduling state. */
-  importDeck(name: string, cards: readonly ImportCard[]): Promise<ImportDeckResult>;
+  importDeck(
+    name: string,
+    cards: readonly ImportCard[],
+    classId?: string | null,
+  ): Promise<ImportDeckResult>;
   /** Deletes a deck with its cards, their states and their pending reviews. */
   deleteDeck(setId: string): Promise<void>;
   /** Inserts or updates the scheduling state of a card. */
   upsertCardState(state: CardState): Promise<void>;
   /** Queues a review for the next sync. */
   enqueueReview(review: PendingReview): Promise<void>;
+
+  // --- the small key/value store ---
+  /** Reads a value of the key/value store (`null` when the key is unknown). */
+  readKv(key: string): Promise<string | null>;
+  /** Writes a value in the key/value store. */
+  writeKv(key: string, value: string): Promise<void>;
 
   // --- the wallet and the collection ---
   /** Reads the wallet (with the daily counters rolled over to `today`). */

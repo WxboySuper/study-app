@@ -18,6 +18,7 @@ import {
 import type {
   DailySpin,
   ImportDeckResult,
+  LocalClass,
   LocalSet,
   LocalStore,
   LocalTopic,
@@ -29,7 +30,7 @@ import type {
   SpinResult,
 } from './types';
 
-export type { LocalSet, LocalTopic, PendingReview } from './types';
+export type { LocalClass, LocalSet, LocalTopic, PendingReview } from './types';
 
 /**
  * The local store of the web build.
@@ -54,6 +55,9 @@ interface DemoState {
   cardStates: Map<string, CardState>;
   sets: LocalSet[];
   topics: LocalTopic[];
+  classes: LocalClass[];
+  /** The small key/value store of the app. */
+  kv: Map<string, string>;
   /** The reward of every spin, by local day. */
   spins: Map<string, number>;
   /** The reviews that wait for the server. */
@@ -68,10 +72,26 @@ const DEMO_TOPICS: LocalTopic[] = [
   { id: 'topic_history', name: 'History', color: '#f472b6' },
 ];
 
+/** The classes of the demo player. */
+const DEMO_CLASSES: LocalClass[] = [
+  { id: 'class_science', name: 'Science', color: '#22d3ee', sort: 1, createdAt: 0 },
+  { id: 'class_humanities', name: 'Humanities', color: '#f472b6', sort: 2, createdAt: 0 },
+];
+
 /** The sets of the demo player. */
 const DEMO_SETS: LocalSet[] = [
-  { id: 'set_cells', topicId: 'topic_biology', title: 'Cell biology' },
-  { id: 'set_revolution', topicId: 'topic_history', title: 'Industrial revolution' },
+  {
+    id: 'set_cells',
+    topicId: 'topic_biology',
+    title: 'Cell biology',
+    classId: 'class_science',
+  },
+  {
+    id: 'set_revolution',
+    topicId: 'topic_history',
+    title: 'Industrial revolution',
+    classId: 'class_humanities',
+  },
 ];
 
 /**
@@ -246,6 +266,8 @@ function createDemoState(): DemoState {
     cardStates: demoCardStates(),
     sets: DEMO_SETS,
     topics: DEMO_TOPICS,
+    classes: DEMO_CLASSES,
+    kv: new Map(),
     spins: new Map(),
     outbox: [],
     settled: new Set(),
@@ -278,13 +300,36 @@ export async function openLocalStore(): Promise<LocalStore> {
     listCardStates: async () => new Map(demo().cardStates),
     listSets: async () => [...demo().sets],
     listTopics: async () => [...demo().topics],
-    importDeck: async (name, cards) => importDeckOfDemo(name, cards),
+    listClasses: async () => [...demo().classes],
+    createClass: async (name, color) => createClassOfDemo(name, color),
+    renameClass: async (id, name) => {
+      demo().classes = demo().classes.map((entry) =>
+        entry.id === id ? { ...entry, name: name.trim() } : entry,
+      );
+    },
+    deleteClass: async (id) => {
+      const current = demo();
+      current.classes = current.classes.filter((entry) => entry.id !== id);
+      // The decks of the class are never deleted: they go back to the
+      // "Unsorted" bucket.
+      current.sets = current.sets.map((set) =>
+        set.classId === id ? { ...set, classId: null } : set,
+      );
+    },
+    assignDeckToClass: async (setId, classId) => {
+      demo().sets = demo().sets.map((set) => (set.id === setId ? { ...set, classId } : set));
+    },
+    importDeck: async (name, cards, classId) => importDeckOfDemo(name, cards, classId),
     deleteDeck: async (setId) => deleteDeckOfDemo(setId),
     upsertCardState: async (cardState) => {
       demo().cardStates.set(cardState.cardId, cardState);
     },
     enqueueReview: async (review) => {
       demo().outbox.push(review);
+    },
+    readKv: async (key) => demo().kv.get(key) ?? null,
+    writeKv: async (key, value) => {
+      demo().kv.set(key, value);
     },
     readWallet: async (today) => {
       const current = demo();
@@ -337,6 +382,26 @@ export async function openLocalStore(): Promise<LocalStore> {
 }
 
 /**
+ * Creates a class in the demo store.
+ *
+ * The new class goes to the end of the picker, like in the SQLite store.
+ */
+async function createClassOfDemo(name: string, color?: string | null): Promise<LocalClass> {
+  const current = demo();
+  const sort = current.classes.reduce((highest, entry) => Math.max(highest, entry.sort), 0) + 1;
+  const created: LocalClass = {
+    id: `class_${Date.now().toString(36)}_${Math.floor(Math.random() * 1_000_000).toString(36)}`,
+    name: name.trim(),
+    color: color ?? null,
+    sort,
+    createdAt: Date.now(),
+  };
+
+  current.classes = [...current.classes, created];
+  return created;
+}
+
+/**
  * Imports a deck into the demo store.
  *
  * The web build has no transactions, but the rules are the same as the ones
@@ -345,16 +410,17 @@ export async function openLocalStore(): Promise<LocalStore> {
 async function importDeckOfDemo(
   name: string,
   cards: readonly ImportCard[],
+  classId: string | null = null,
 ): Promise<ImportDeckResult> {
   const current = demo();
   const title = name.trim();
 
   if (title === '') {
-    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck needs a name.' };
+    return { ok: false, setId: null, topicId: null, classId: null, cards: 0, message: 'The deck needs a name.' };
   }
 
   if (cards.length === 0) {
-    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck has no cards.' };
+    return { ok: false, setId: null, topicId: null, classId: null, cards: 0, message: 'The deck has no questions.' };
   }
 
   const setId = `set_import_${Date.now().toString(36)}_${Math.floor(
@@ -362,7 +428,7 @@ async function importDeckOfDemo(
   ).toString(36)}`;
   const now = Date.now();
 
-  current.sets = [...current.sets, { id: setId, topicId: null, title }];
+  current.sets = [...current.sets, { id: setId, topicId: null, classId, title }];
 
   for (const [index, card] of cards.entries()) {
     const cardId = `${setId}_card_${index + 1}`;
@@ -381,7 +447,7 @@ async function importDeckOfDemo(
     current.cardStates.set(cardId, createInitialState(cardId, new Date(now)));
   }
 
-  return { ok: true, setId, topicId: null, cards: cards.length, message: null };
+  return { ok: true, setId, topicId: null, classId, cards: cards.length, message: null };
 }
 
 /** Deletes a deck (with its cards, states and pending reviews) in the demo store. */

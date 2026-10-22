@@ -166,7 +166,7 @@ function parseJsonDeck(text: string, fallbackName: string): ParsedDeck {
   });
 
   if (list.length > MAX_IMPORT_CARDS) {
-    errors.push(`Only the first ${MAX_IMPORT_CARDS} cards were imported.`);
+    errors.push(`Only the first ${MAX_IMPORT_CARDS} questions were imported.`);
   }
 
   return { name, cards, format: 'json', counts: countsOf(cards), errors };
@@ -275,7 +275,7 @@ function checked(
 
   if (answers.length > MAX_WRONG_ANSWERS) {
     return {
-      error: `Question ${number}: too many wrong answers (a card has one correct answer and at most ${MAX_WRONG_ANSWERS} wrong ones).`,
+      error: `Question ${number}: too many wrong answers (a question has one correct answer and at most ${MAX_WRONG_ANSWERS} wrong ones).`,
     };
   }
 
@@ -334,7 +334,7 @@ function parseTextDeck(text: string, fallbackName: string): ParsedDeck {
 
     if (fields.length > MAX_WRONG_ANSWERS + 2) {
       errors.push(
-        `Line ${number}: too many answers (a card has one correct answer and at most ${MAX_WRONG_ANSWERS} wrong ones).`,
+        `Line ${number}: too many answers (a question has one correct answer and at most ${MAX_WRONG_ANSWERS} wrong ones).`,
       );
       return;
     }
@@ -366,7 +366,7 @@ function parseTextDeck(text: string, fallbackName: string): ParsedDeck {
   });
 
   if (overflow) {
-    errors.push(`Only the first ${MAX_IMPORT_CARDS} cards were imported.`);
+    errors.push(`Only the first ${MAX_IMPORT_CARDS} questions were imported.`);
   }
 
   return { name: fallbackName, cards, format, counts: countsOf(cards), errors };

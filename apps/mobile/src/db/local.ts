@@ -11,6 +11,7 @@ import {
 } from './packs';
 import type {
   ImportDeckResult,
+  LocalClass,
   LocalSet,
   LocalTopic,
   LocalStore,
@@ -18,7 +19,7 @@ import type {
 } from './types';
 import { readCollection, readWallet, settleLocalSession } from './wallet';
 
-export type { LocalSet, LocalTopic, PendingReview } from './types';
+export type { LocalClass, LocalSet, LocalTopic, PendingReview } from './types';
 
 /** The name of the local (on device) SQLite database. */
 export const LOCAL_DATABASE_NAME = 'study-app.db';
@@ -30,7 +31,7 @@ export const LOCAL_DATABASE_NAME = 'study-app.db';
  * the migrations below, which run once, in a transaction, when the database
  * is opened.
  */
-export const LOCAL_SCHEMA_VERSION = 2;
+export const LOCAL_SCHEMA_VERSION = 3;
 
 /**
  * The schema of the local database.
@@ -55,8 +56,22 @@ CREATE TABLE IF NOT EXISTS local_topics (
 CREATE TABLE IF NOT EXISTS local_sets (
   id         TEXT PRIMARY KEY NOT NULL,
   topic_id   TEXT,
+  class_id   TEXT,
   title      TEXT NOT NULL,
   updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS local_classes (
+  id         TEXT PRIMARY KEY NOT NULL,
+  name       TEXT NOT NULL,
+  color      TEXT,
+  sort       INTEGER,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS local_kv (
+  key   TEXT PRIMARY KEY NOT NULL,
+  value TEXT
 );
 
 CREATE TABLE IF NOT EXISTS local_cards (
@@ -142,8 +157,47 @@ async function migrateLocalDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     if (version < 2) {
       await migrateChoicesToWrongAnswers(db);
     }
+    if (version < 3) {
+      await migrateClasses(db);
+    }
     await db.execAsync(`PRAGMA user_version = ${LOCAL_SCHEMA_VERSION}`);
   });
+}
+
+/**
+ * Migration 3: the classes of the player.
+ *
+ * The classes are a new table, the decks get a `class_id` and a tiny
+ * key/value store holds the small things of the app (the update the player
+ * dismissed, for instance).
+ *
+ * The migration never deletes anything: the decks of the player that had no
+ * class simply have a `NULL` class, which is the "Unsorted" bucket.
+ */
+async function migrateClasses(db: SQLite.SQLiteDatabase): Promise<void> {
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS local_classes (
+      id         TEXT PRIMARY KEY NOT NULL,
+      name       TEXT NOT NULL,
+      color      TEXT,
+      sort       INTEGER,
+      created_at INTEGER NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS local_kv (
+      key   TEXT PRIMARY KEY NOT NULL,
+      value TEXT
+    );
+  `);
+
+  // The column is added only when it is missing: the migration runs on every
+  // database that is older than the version 3, and it has to be idempotent.
+  const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(local_sets)');
+  const hasClassColumn = columns.some((column) => column.name === 'class_id');
+
+  if (!hasClassColumn) {
+    await db.execAsync('ALTER TABLE local_sets ADD COLUMN class_id TEXT');
+  }
 }
 
 /** The version of the local schema. */
@@ -224,10 +278,17 @@ export async function openLocalStore(): Promise<LocalStore> {
     listCardStates: () => listLocalCardStates(db),
     listSets: () => listLocalSets(db),
     listTopics: () => listLocalTopics(db),
-    importDeck: (name, cards) => importLocalDeck(db, name, cards),
+    listClasses: () => listLocalClasses(db),
+    createClass: (name, color) => createLocalClass(db, name, color),
+    renameClass: (id, name) => renameLocalClass(db, id, name),
+    deleteClass: (id) => deleteLocalClass(db, id),
+    assignDeckToClass: (setId, classId) => assignLocalDeckToClass(db, setId, classId),
+    importDeck: (name, cards, classId) => importLocalDeck(db, name, cards, classId),
     deleteDeck: (setId) => deleteLocalDeck(db, setId),
     upsertCardState: (state) => upsertLocalCardState(db, state),
     enqueueReview: (review) => enqueueReview(db, review),
+    readKv: (key) => readLocalKv(db, key),
+    writeKv: (key, value) => writeLocalKv(db, key, value),
     readWallet: (today) => readWallet(db, today),
     readCollection: () => readCollection(db),
     settleSession: (sessionId, mode, outcome, today, now, sync) =>
@@ -285,14 +346,120 @@ function readWrongAnswers(choicesJson: string | null): string[] | undefined {
 /** Reads every locally known set, sorted by title. */
 export async function listLocalSets(db: SQLite.SQLiteDatabase): Promise<LocalSet[]> {
   const rows = await db.getAllAsync<LocalSetRow>(
-    'SELECT id, topic_id, title FROM local_sets ORDER BY title ASC, id ASC',
+    'SELECT id, topic_id, class_id, title FROM local_sets ORDER BY title ASC, id ASC',
   );
 
   return rows.map((row) => ({
     id: row.id,
     topicId: row.topic_id,
+    classId: row.class_id,
     title: row.title,
   }));
+}
+
+/** Reads every class of the player, in the order of the picker. */
+export async function listLocalClasses(db: SQLite.SQLiteDatabase): Promise<LocalClass[]> {
+  const rows = await db.getAllAsync<LocalClassRow>(
+    'SELECT id, name, color, sort, created_at FROM local_classes ORDER BY sort ASC, name ASC, id ASC',
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    color: row.color,
+    sort: row.sort ?? 0,
+    createdAt: row.created_at,
+  }));
+}
+
+/**
+ * Creates a class.
+ *
+ * The new class goes to the end of the picker. The decks of the player are
+ * not touched: they stay where they are until the player moves them.
+ */
+export async function createLocalClass(
+  db: SQLite.SQLiteDatabase,
+  name: string,
+  color: string | null = null,
+  now: number = Date.now(),
+): Promise<LocalClass> {
+  const title = name.trim();
+  const id = makeId('class');
+
+  const row = await db.getFirstAsync<{ sort: number | null }>(
+    'SELECT MAX(sort) AS sort FROM local_classes',
+  );
+  const sort = (row?.sort ?? 0) + 1;
+
+  await db.runAsync(
+    'INSERT INTO local_classes (id, name, color, sort, created_at) VALUES (?, ?, ?, ?, ?)',
+    id,
+    title,
+    color,
+    sort,
+    now,
+  );
+
+  return { id, name: title, color, sort, createdAt: now };
+}
+
+/** Renames a class. */
+export async function renameLocalClass(
+  db: SQLite.SQLiteDatabase,
+  id: string,
+  name: string,
+): Promise<void> {
+  await db.runAsync('UPDATE local_classes SET name = ? WHERE id = ?', name.trim(), id);
+}
+
+/**
+ * Deletes a class.
+ *
+ * The decks of the class are never deleted: they go back to the "Unsorted"
+ * bucket, so the player never loses a question by removing a class.
+ */
+export async function deleteLocalClass(db: SQLite.SQLiteDatabase, id: string): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync('UPDATE local_sets SET class_id = NULL WHERE class_id = ?', id);
+    await db.runAsync('DELETE FROM local_classes WHERE id = ?', id);
+  });
+}
+
+/**
+ * Moves a deck to a class.
+ *
+ * `null` sends the deck back to the "Unsorted" bucket.
+ */
+export async function assignLocalDeckToClass(
+  db: SQLite.SQLiteDatabase,
+  setId: string,
+  classId: string | null,
+): Promise<void> {
+  await db.runAsync('UPDATE local_sets SET class_id = ? WHERE id = ?', classId, setId);
+}
+
+/** Reads a value of the key/value store (`null` when the key is unknown). */
+export async function readLocalKv(db: SQLite.SQLiteDatabase, key: string): Promise<string | null> {
+  const row = await db.getFirstAsync<{ value: string | null }>(
+    'SELECT value FROM local_kv WHERE key = ?',
+    key,
+  );
+  return row?.value ?? null;
+}
+
+/** Writes a value in the key/value store. */
+export async function writeLocalKv(
+  db: SQLite.SQLiteDatabase,
+  key: string,
+  value: string,
+): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO local_kv (key, value) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+    key,
+    value,
+  );
 }
 
 /** Reads every locally known topic, sorted by name. */
@@ -354,26 +521,28 @@ export async function importLocalDeck(
   db: SQLite.SQLiteDatabase,
   name: string,
   cards: readonly ImportCard[],
+  classId: string | null = null,
   now: number = Date.now(),
 ): Promise<ImportDeckResult> {
   const title = name.trim();
 
   if (title === '') {
-    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck needs a name.' };
+    return { ok: false, setId: null, topicId: null, classId: null, cards: 0, message: 'The deck needs a name.' };
   }
 
   if (cards.length === 0) {
-    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck has no cards.' };
+    return { ok: false, setId: null, topicId: null, classId: null, cards: 0, message: 'The deck has no questions.' };
   }
 
   const setId = makeId('set');
 
   await db.withTransactionAsync(async () => {
     await db.runAsync(
-      `INSERT INTO local_sets (id, topic_id, title, updated_at)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO local_sets (id, topic_id, class_id, title, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
       setId,
       null,
+      classId,
       title,
       now,
     );
@@ -415,7 +584,7 @@ export async function importLocalDeck(
     }
   });
 
-  return { ok: true, setId, topicId: null, cards: cards.length, message: null };
+  return { ok: true, setId, topicId: null, classId, cards: cards.length, message: null };
 }
 
 /**
@@ -615,7 +784,16 @@ interface LocalCardRow {
 interface LocalSetRow {
   id: string;
   topic_id: string | null;
+  class_id: string | null;
   title: string;
+}
+
+interface LocalClassRow {
+  id: string;
+  name: string;
+  color: string | null;
+  sort: number | null;
+  created_at: number;
 }
 
 interface LocalTopicRow {

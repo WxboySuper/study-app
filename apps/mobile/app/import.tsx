@@ -13,13 +13,14 @@ import {
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { openLocalStore } from '@/db/local';
+import { openLocalStore, type LocalClass } from '@/db/local';
 import { FALLBACK_DECK_NAME } from '@/import/deck';
 import { PreviewSheet } from '@/import/PreviewSheet';
 import { pickDeckFile, readClipboardText } from '@/import/sources';
 import { useSettings } from '@/settings';
 import { play } from '@/sound/sfx';
 import { colors, fonts, radius, spacing } from '@/theme';
+import { CLASS_COLORS } from '@/study/decks';
 import { GameBackground, GameButton, GlassCard, ScreenHeader } from '@/ui';
 
 /**
@@ -56,6 +57,10 @@ export default function ImportScreen() {
   const [deck, setDeck] = useState<ParsedDeck | null>(null);
   /** The name the player can give to the deck in the preview sheet. */
   const [name, setName] = useState('');
+  /** The classes of the player (the deck lands in one of them). */
+  const [classes, setClasses] = useState<LocalClass[]>([]);
+  /** The class the imported deck lands in. */
+  const [classId, setClassId] = useState<string | null>(null);
   /** `true` while the deck is being imported. */
   const [busy, setBusy] = useState(false);
   /** The toast of the screen. */
@@ -87,6 +92,48 @@ export default function ImportScreen() {
   const say = useCallback((text: string, error = false) => {
     setToast({ text, error });
   }, []);
+
+  // The classes of the player are read when the screen opens: the deck
+  // lands in one of them.
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const store = await openLocalStore();
+        const localClasses = await store.listClasses();
+        if (!cancelled) {
+          setClasses(localClasses);
+        }
+      } catch {
+        // The deck lands in the unsorted bucket.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Creates a class and puts the imported deck in it. */
+  const onCreateClass = useCallback(
+    (className: string) => {
+      void (async () => {
+        try {
+          const store = await openLocalStore();
+          const created = await store.createClass(
+            className,
+            CLASS_COLORS[classes.length % CLASS_COLORS.length] ?? null,
+          );
+          setClasses((current) => [...current, created]);
+          setClassId(created.id);
+        } catch {
+          say('The class could not be created.');
+        }
+      })();
+    },
+    [classes.length, say],
+  );
 
   /**
    * Opens the preview of a deck, or explains why it cannot be read.
@@ -178,7 +225,7 @@ export default function ImportScreen() {
       try {
         const store = await openLocalStore();
         const title = name.trim() === '' ? deck.name : name.trim();
-        const result = await store.importDeck(title, deck.cards);
+        const result = await store.importDeck(title, deck.cards, classId);
 
         if (!result.ok || result.setId === null) {
           setBusy(false);
@@ -190,7 +237,7 @@ export default function ImportScreen() {
         setScope({ kind: 'set', id: result.setId, title });
         play('correct');
         setDeck(null);
-        say(`${result.cards} cards imported`);
+        say(`${result.cards} questions imported`);
 
         setTimeout(() => {
           router.replace('/');
@@ -200,7 +247,7 @@ export default function ImportScreen() {
         say('The deck could not be imported.');
       }
     })();
-  }, [busy, deck, name, router, say, setScope]);
+  }, [busy, classId, deck, name, router, say, setScope]);
 
   return (
     <GameBackground variant="home">
@@ -268,7 +315,7 @@ export default function ImportScreen() {
                   textAlignVertical="top"
                   autoCapitalize="none"
                   autoCorrect={false}
-                  accessibilityLabel="The cards of the deck"
+                  accessibilityLabel="The questions of the deck"
                 />
                 <GameButton
                   label="PREVIEW"
@@ -298,6 +345,10 @@ export default function ImportScreen() {
           deck={deck}
           name={name}
           onChangeName={setName}
+          classes={classes}
+          classId={classId}
+          onChangeClass={setClassId}
+          onCreateClass={onCreateClass}
           onCancel={() => {
             setDeck(null);
             setName('');

@@ -15,10 +15,12 @@ import { setSoundEnabled } from './sound/sfx';
  * AsyncStorage) is a follow up.
  */
 
-/** What the player studies: everything, one topic or one set. */
+/** What the player studies: everything, one class or one deck. */
 export type ScopeChoice =
   | { kind: 'all' }
   | { kind: 'topic'; id: string; title: string }
+  /** A class of decks (`null` is the "Unsorted" bucket). */
+  | { kind: 'class'; id: string | null; title: string }
   | { kind: 'set'; id: string; title: string };
 
 /** A readable name of a scope. */
@@ -28,8 +30,10 @@ export function scopeTitle(scope: ScopeChoice): string {
       return 'All';
     case 'topic':
       return `Topic: ${scope.title}`;
+    case 'class':
+      return scope.id === null ? 'Unsorted' : `Class: ${scope.title}`;
     case 'set':
-      return `Set: ${scope.title}`;
+      return `Deck: ${scope.title}`;
   }
 }
 
