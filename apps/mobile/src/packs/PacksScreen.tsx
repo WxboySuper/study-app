@@ -144,6 +144,9 @@ export function PacksScreen() {
           duplicate: result.duplicate,
           runId: (current?.runId ?? 0) + 1,
         }));
+        // The purchase is done: the reveal must accept "Open another" (a
+        // busy flag left on made that button a no-op).
+        setBusy(false);
       } catch {
         setMessage('The pack could not be opened.');
         setBusy(false);
