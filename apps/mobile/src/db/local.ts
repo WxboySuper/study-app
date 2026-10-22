@@ -30,6 +30,7 @@ import type {
   LocalStore,
   PendingReview,
 } from './types';
+import { ensureMasteryReset } from '@/study/masteryReset';
 import { withOutbox } from '@/sync/outbox';
 import { readCollection, readWallet, settleLocalSession, writeWallet } from './wallet';
 
@@ -329,7 +330,9 @@ let database: Promise<SQLite.SQLiteDatabase> | null = null;
  * {@link LocalStore} interface, so they do not care where the data lives.
  */
 export async function openLocalStore(): Promise<LocalStore> {
-  return withOutbox(await openRawLocalStore());
+  const raw = await openRawLocalStore();
+  await ensureMasteryReset(raw);
+  return withOutbox(raw);
 }
 
 /** The store without the sync outbox (the outbox itself writes through it). */
@@ -368,6 +371,9 @@ async function openRawLocalStore(): Promise<LocalStore> {
     resetTokens: () => resetLocalTokens(db),
     addTokens: (amount) => addLocalTokens(db, amount),
     resetSpinCooldown: () => resetLocalSpinCooldown(db),
+    resetScheduling: async () => {
+      await db.execAsync('DELETE FROM local_card_state; DELETE FROM outbox;');
+    },
   };
 }
 

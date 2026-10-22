@@ -1,3 +1,4 @@
+import { isStaleSchedulingEvent } from "@study-app/core";
 import type { Context } from "hono";
 
 import { recordQuizAnswers } from "./quizzes";
@@ -367,8 +368,12 @@ export async function pushEvents(
       parsed.push(event);
     }
   });
+  // Scheduling progress from before the Mastery reset never comes back.
+  const fresh = parsed.filter(
+    (event) => !isStaleSchedulingEvent(event.type, event.payload),
+  );
   const now = Date.now();
-  const statements = parsed.map((event) =>
+  const statements = fresh.map((event) =>
     db(c)
       .prepare(
         `INSERT INTO sync_events (id, player_id, device_id, seq, at, type, payload_json, received_at)
@@ -389,7 +394,7 @@ export async function pushEvents(
   if (statements.length > 0) {
     const results = await db(c).batch(statements);
     inserted = results.reduce((sum, r) => sum + (r.meta?.changes ?? 0), 0);
-    await recordQuizAnswers(db(c), device, parsed);
+    await recordQuizAnswers(db(c), device, fresh);
   }
   const top = await db(c)
     .prepare(

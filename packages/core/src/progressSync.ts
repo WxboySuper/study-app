@@ -94,7 +94,10 @@ export function makeEvent<T extends ProgressEventType>(
   type: T,
   payload: ProgressPayloads[T],
 ): ProgressEvent<T> {
-  return { id: `${deviceId}-${seq}`, seq, at, type, payload };
+  const stamped = isSchedulingEvent(type, payload)
+    ? ({ ...payload, epoch: MASTERY_EPOCH } as ProgressPayloads[T])
+    : payload;
+  return { id: `${deviceId}-${seq}`, seq, at, type, payload: stamped };
 }
 
 /** The change between two wallet + collection readings (`null` when none). */
@@ -224,6 +227,7 @@ export function foldRemoteEvents(
 
   for (const event of events) {
     if (event.device_id === localDeviceId) continue;
+    if (isStaleSchedulingEvent(event.type, event.payload)) continue;
     switch (event.type) {
       case "card_state": {
         const { state } = event.payload as ProgressPayloads["card_state"];
@@ -362,4 +366,51 @@ export function mergeCardStates(
     }
   }
   return [...out.values()];
+}
+
+/**
+ * The Mastery schema epoch. 0.1.15 reset every scheduling state once
+ * (per-question SRS state, mastery counts, learning steps, leeches,
+ * suspend/bury, daily counts) for the reworked Mastery. Scheduling events
+ * carry the epoch they were made in; older ones are dropped everywhere
+ * (outbox, push, fold) so sync never restores the old progress.
+ */
+export const MASTERY_EPOCH = 2;
+
+const MASTERY_COUNTS_KV = "fishing.masteryCounts.v1";
+
+/** `true` for events that carry scheduling progress. */
+export function isSchedulingEvent(type: string, payload: unknown): boolean {
+  if (type === "card_state" || type === "review") return true;
+  return (
+    type === "kv" &&
+    payload !== null &&
+    typeof payload === "object" &&
+    (payload as { key?: unknown }).key === MASTERY_COUNTS_KV
+  );
+}
+
+/** `true` for scheduling events made before {@link MASTERY_EPOCH}. */
+export function isStaleSchedulingEvent(
+  type: string,
+  payload: unknown,
+): boolean {
+  if (!isSchedulingEvent(type, payload)) return false;
+  const epoch = (payload as { epoch?: unknown }).epoch;
+  return typeof epoch !== "number" || epoch < MASTERY_EPOCH;
+}
+
+/** An outbox without its stale scheduling events. */
+export function dropStaleOutbox(raw: string | null): string {
+  return JSON.stringify(
+    parseOutbox(raw).filter(
+      (event) => !isStaleSchedulingEvent(event.type, event.payload),
+    ),
+  );
+}
+
+/** `true` while a device has not run the reset of {@link MASTERY_EPOCH}. */
+export function needsMasteryReset(savedEpoch: string | null): boolean {
+  const epoch = Number(savedEpoch);
+  return !Number.isFinite(epoch) || epoch < MASTERY_EPOCH;
 }

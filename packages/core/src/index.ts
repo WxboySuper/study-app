@@ -456,3 +456,10 @@ export {
 export type { QuizAnswerPayload } from './progressSync';
 
 export * from './studyOptions';
+export {
+  MASTERY_EPOCH,
+  dropStaleOutbox,
+  isSchedulingEvent,
+  isStaleSchedulingEvent,
+  needsMasteryReset,
+} from './progressSync';

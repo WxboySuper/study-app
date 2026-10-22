@@ -300,4 +300,6 @@ export interface LocalStore {
   addTokens(amount: number): Promise<void>;
   /** Forgets the spins, so the wheel can be spun again. */
   resetSpinCooldown(): Promise<void>;
+  /** Deletes every scheduling state and pending review (the Mastery reset). */
+  resetScheduling(): Promise<void>;
 }

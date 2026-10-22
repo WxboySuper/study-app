@@ -35,6 +35,7 @@ import type {
   SellDuplicatesResult,
   SpinResult,
 } from './types';
+import { ensureMasteryReset } from '@/study/masteryReset';
 import { withOutbox } from '@/sync/outbox';
 
 export type { LocalClass, LocalSet, LocalTopic, PendingReview } from './types';
@@ -640,7 +641,9 @@ function applyRemoteChangesOfDemo(
 
 /** Opens the local store of the web build. */
 export async function openLocalStore(): Promise<LocalStore> {
-  return withOutbox(await openRawLocalStore());
+  const raw = await openRawLocalStore();
+  await ensureMasteryReset(raw);
+  return withOutbox(raw);
 }
 
 /** The store without the sync outbox (the outbox itself writes through it). */
@@ -738,6 +741,10 @@ async function openRawLocalStore(): Promise<LocalStore> {
     addTokens: async (amount) => {
       const current = demo();
       current.wallet = applyTokenAdminAction(current.wallet, 'grant', amount);
+    },
+    resetScheduling: async () => {
+      demo().cardStates.clear();
+      demo().outbox.length = 0;
     },
     resetSpinCooldown: async () => {
       demo().spins = new Map();
