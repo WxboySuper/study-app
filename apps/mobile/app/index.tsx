@@ -54,6 +54,13 @@ import { DeckPicker } from '@/study/DeckPicker';
 import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
 import {
+  dismissUpdate,
+  isUpdateDismissed,
+  subscribeToUpdate,
+  type AvailableUpdate,
+} from '@/update/checkForUpdate';
+import { UpdateBanner } from '@/update/UpdateBanner';
+import {
   CritterLoader,
   GameBackground,
   GameButton,
@@ -111,6 +118,8 @@ export default function HomeScreen() {
   const [editingClass, setEditingClass] = useState<ClassChip | null>(null);
   /** The deck that moves to another class. */
   const [movingDeck, setMovingDeck] = useState<DeckCard | null>(null);
+  /** The release of the game that is newer than the app. */
+  const [update, setUpdate] = useState<AvailableUpdate | null>(null);
 
   const totalCritters = PACKS.reduce((sum, pack) => sum + pack.critters.length, 0);
   const cheapestPack = useMemo(() => {
@@ -174,6 +183,39 @@ export default function HomeScreen() {
       void loadDecks();
     }, [loadDecks]),
   );
+
+  // The banner of the update: the app tells the player when a new release is
+  // ready.
+  useEffect(() => {
+    return subscribeToUpdate((release) => {
+      setUpdate(release);
+    });
+  }, []);
+
+  // A release the player already dismissed never shows up again.
+  useEffect(() => {
+    if (update === null) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const dismissed = await isUpdateDismissed(update.version);
+      if (!cancelled && dismissed) {
+        setUpdate(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [update]);
+
+  const onDismissUpdate = useCallback((version: string) => {
+    setUpdate(null);
+    void dismissUpdate(version);
+  }, []);
 
   // The chips of the class row, with the number of questions and the number
   // of due questions of every class.
@@ -380,6 +422,10 @@ export default function HomeScreen() {
     <GameBackground variant="home">
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          {update === null ? null : (
+            <UpdateBanner update={update} onDismiss={onDismissUpdate} />
+          )}
+
           <Animated.View style={styles.header}>
             <Wordmark size={44} />
             <Text style={styles.tagline}>

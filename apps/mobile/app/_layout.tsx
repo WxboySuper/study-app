@@ -16,6 +16,7 @@ import { View } from 'react-native';
 
 import { SettingsProvider } from '@/settings';
 import { colors } from '@/theme';
+import { startUpdateChecks } from '@/update/checkForUpdate';
 
 /**
  * The root of the app.
@@ -47,6 +48,12 @@ export default function RootLayout() {
       });
     }
   }, [loaded, error]);
+
+  // The app looks for a new release when it starts, and again every six
+  // hours when it comes back from the background.
+  useEffect(() => {
+    return startUpdateChecks();
+  }, []);
 
   if (!loaded && error === null) {
     return <View style={{ flex: 1, backgroundColor: colors.backgroundDeep }} />;

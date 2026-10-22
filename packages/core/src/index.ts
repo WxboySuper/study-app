@@ -32,6 +32,8 @@ export {
   type SemVer,
 } from './version';
 
+export { parseRelease, type ReleaseInfo } from './release';
+
 export {
   createInitialState,
   fromFsrsCard,
