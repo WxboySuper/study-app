@@ -1,12 +1,14 @@
 import type {
   CardState,
   ImportCard,
+  LocalSyncState,
   PackPurchaseError,
   ReviewLogRecord,
   Rng,
   Settlement,
   SessionOutcome,
   StudyCard,
+  SyncPlan,
   WalletSnapshot,
   WalletSync,
 } from '@study-app/core';
@@ -37,6 +39,8 @@ export interface LocalSet {
   title: string;
   /** The id of the class of the deck (`null` when it has none). */
   classId: string | null;
+  /** The id of the deck on the server (`null` for a deck imported locally). */
+  remoteId?: string | null;
 }
 
 /**
@@ -232,6 +236,12 @@ export interface LocalStore {
   /** Queues a review for the next sync. */
   enqueueReview(review: PendingReview): Promise<void>;
 
+  // --- the sync of the decks ---
+  /** Reads the decks, the questions and the classes the merge needs. */
+  readSyncState(): Promise<LocalSyncState>;
+  /** Applies the plan of a server sync in one transaction. */
+  applySyncPlan(plan: SyncPlan): Promise<void>;
+
   // --- the small key/value store ---
   /** Reads a value of the key/value store (`null` when the key is unknown). */
   readKv(key: string): Promise<string | null>;
@@ -269,4 +279,14 @@ export interface LocalStore {
   sellAllDuplicates(now?: number): Promise<SellAllDuplicatesResult>;
   /** Spins the daily wheel (once per local day). */
   spinDailyWheel(today: string, options?: { rng?: Rng; now?: number }): Promise<SpinResult>;
+
+  // --- the hidden admin panel ---
+  /** Removes every critter from the collection. */
+  clearCollection(): Promise<void>;
+  /** Sets the token balance to zero. */
+  resetTokens(): Promise<void>;
+  /** Adds tokens to the wallet. */
+  addTokens(amount: number): Promise<void>;
+  /** Forgets the spins, so the wheel can be spun again. */
+  resetSpinCooldown(): Promise<void>;
 }

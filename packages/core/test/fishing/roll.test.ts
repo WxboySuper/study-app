@@ -153,7 +153,7 @@ describe('the heavy catches', () => {
 
     expect(isCatchOutcome(result.outcome)).toBe(true);
     if (isCatchOutcome(result.outcome)) {
-      expect(result.outcome.lbs).toBeGreaterThan(2_500_000);
+      expect(result.outcome.lbs).toBeGreaterThanOrEqual(50);
     }
   });
 
@@ -263,7 +263,7 @@ describe('rolling a catch', () => {
     if (result.outcome.kind === 'junk') {
       expect(result.outcome.tier).toBe('trash');
       expect(result.outcome.catch.id).toBe('old_sneaker');
-      expect(result.outcome.lbs).toBe(6);
+      expect(result.outcome.lbs).toBe(2);
     }
   });
 
@@ -426,7 +426,7 @@ describe('the powerups', () => {
     const result = rollCatch(sequenceRng([0.1, 0.0, 0.5]), state);
 
     if (isCatchOutcome(result.outcome)) {
-      expect(result.outcome.lbs).toBe(18);
+      expect(result.outcome.lbs).toBe(6);
     }
     expect(result.state.powerup).toBeNull();
   });
@@ -436,7 +436,7 @@ describe('the powerups', () => {
     const result = rollCatch(sequenceRng([0.1, 0.0, 0.5]), state);
 
     if (isCatchOutcome(result.outcome)) {
-      expect(result.outcome.lbs).toBe(7);
+      expect(result.outcome.lbs).toBe(2);
     }
   });
 });

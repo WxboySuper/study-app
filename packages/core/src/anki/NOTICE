@@ -1,0 +1,31 @@
+ANKI NOTICE
+===========
+
+The scheduler in this folder (packages/core/src/anki) is an original
+TypeScript implementation of the scheduler and queue design of Anki:
+
+  Anki
+  Copyright (C) 2006-2026 Ankitects Pty Ltd and contributors
+  https://github.com/ankitects/anki
+  Licensed under the GNU Affero General Public License, version 3 or later.
+
+The following Anki files were used as the reference for the design and the
+algorithms (no Anki source code is copied verbatim):
+
+  rslib/src/scheduler/states/steps.rs
+  rslib/src/scheduler/states/learning.rs
+  rslib/src/scheduler/states/relearning.rs
+  rslib/src/scheduler/states/review.rs
+  rslib/src/scheduler/queue/builder/mod.rs
+  rslib/src/scheduler/queue/builder/gathering.rs
+  rslib/src/scheduler/queue/builder/burying.rs
+  rslib/src/scheduler/queue/builder/intersperser.rs
+  rslib/src/scheduler/queue/learning.rs
+  rslib/src/scheduler/queue/main.rs
+
+This folder is distributed under the GNU Affero General Public License,
+version 3 or later (see LICENSE), to match the license of the design it
+ports. The rest of the study-app repository keeps its own license.
+
+The real-day FSRS intervals are computed with the MIT-licensed ts-fsrs
+package (https://github.com/open-spaced-repetition/ts-fsrs).

@@ -43,16 +43,16 @@ export interface HeavyDef {
 /**
  * Every heavy catch of the game.
  *
- * The weights are the deep end of the ladder: a heavy catch is heavier than
- * an Angler's Legend (500,000–2,500,000 lbs).
+ * The weights are the deep end of the lake: an ordinary catch stays between
+ * 1 and 40 lbs, and a heavy catch weighs between 50 and 450 lbs.
  */
 export const HEAVY: readonly HeavyDef[] = [
   {
     id: 'galaxy_fish',
     name: 'Galaxy Fish',
     tier: 'heavy',
-    minLbs: 3_000_000,
-    maxLbs: 12_000_000,
+    minLbs: 200,
+    maxLbs: 450,
     assetId: 'catch_heavy_galaxy_fish',
     emoji: '🌌',
     joke: 'It was not supposed to be down there.',
@@ -61,8 +61,8 @@ export const HEAVY: readonly HeavyDef[] = [
     id: 'golden_koi',
     name: 'Golden Koi',
     tier: 'heavy',
-    minLbs: 2_700_000,
-    maxLbs: 9_000_000,
+    minLbs: 90,
+    maxLbs: 250,
     assetId: 'catch_heavy_golden_koi',
     emoji: '🐟',
     joke: 'A good omen, apparently.',
@@ -71,8 +71,8 @@ export const HEAVY: readonly HeavyDef[] = [
     id: 'ice_fish',
     name: 'Ice Fish',
     tier: 'heavy',
-    minLbs: 2_600_000,
-    maxLbs: 7_500_000,
+    minLbs: 70,
+    maxLbs: 180,
     assetId: 'catch_heavy_ice_fish',
     emoji: '🧊',
     joke: 'Still frozen. Somehow.',
@@ -81,8 +81,8 @@ export const HEAVY: readonly HeavyDef[] = [
     id: 'skeleton_fish',
     name: 'Skeleton Fish',
     tier: 'heavy',
-    minLbs: 4_000_000,
-    maxLbs: 16_000_000,
+    minLbs: 150,
+    maxLbs: 380,
     assetId: 'catch_heavy_skeleton_fish',
     emoji: '💀',
     joke: 'It has been down here a while.',
@@ -91,8 +91,8 @@ export const HEAVY: readonly HeavyDef[] = [
     id: 'swamp_monster',
     name: 'Swamp Monster',
     tier: 'heavy',
-    minLbs: 5_000_000,
-    maxLbs: 20_000_000,
+    minLbs: 220,
+    maxLbs: 420,
     assetId: 'catch_heavy_swamp_monster',
     emoji: '🐊',
     joke: 'Nobody goes in the water after dark.',
@@ -101,8 +101,8 @@ export const HEAVY: readonly HeavyDef[] = [
     id: 'treasure_chest',
     name: 'Treasure Chest',
     tier: 'heavy',
-    minLbs: 3_500_000,
-    maxLbs: 14_000_000,
+    minLbs: 120,
+    maxLbs: 320,
     assetId: 'catch_heavy_treasure_chest',
     emoji: '💰',
     joke: 'The exam answers were not in there.',
@@ -111,8 +111,8 @@ export const HEAVY: readonly HeavyDef[] = [
     id: 'void_fish',
     name: 'Void Fish',
     tier: 'heavy',
-    minLbs: 8_000_000,
-    maxLbs: 25_000_000,
+    minLbs: 280,
+    maxLbs: 450,
     assetId: 'catch_heavy_void_fish',
     emoji: '🕳️',
     joke: 'Nothing was supposed to be down there.',

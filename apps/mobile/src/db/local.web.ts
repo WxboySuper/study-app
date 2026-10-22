@@ -1,5 +1,6 @@
 import {
   applySpinReward,
+  applyTokenAdminAction,
   buyPack,
   createInitialState,
   createRandomRng,
@@ -11,7 +12,9 @@ import {
   spinDailyWheel,
   type CardState,
   type ImportCard,
+  type LocalSyncState,
   type StudyCard,
+  type SyncPlan,
   type WalletSnapshot,
 } from '@study-app/core';
 
@@ -52,6 +55,8 @@ interface DemoState {
   wallet: WalletSnapshot;
   collection: Map<string, number>;
   cards: StudyCard[];
+  /** The remote id of every card that came from the server. */
+  cardRemoteIds: Map<string, string>;
   cardStates: Map<string, CardState>;
   sets: LocalSet[];
   topics: LocalTopic[];
@@ -265,6 +270,48 @@ const DEMO_CARDS: StudyCard[] = [
 ];
 
 /**
+ * The deck of the long-note screenshot.
+ *
+ * The web build can seed a 65 question deck of long math questions
+ * (`?demo=layout`), so the fishing screen can be photographed with a full
+ * mastery bar and a note that fills the width of a phone. Every prompt and
+ * every answer carries LaTeX: the picture checks the padding of the
+ * parchment, the wrapping of long formulas and the scrolling of the note.
+ */
+const LAYOUT_DECK_ID = 'set_layout_65';
+
+const LAYOUT_CARDS: StudyCard[] = Array.from({ length: 65 }, (_, index) => {
+  const n = index + 1;
+  const front =
+    index % 3 === 0
+      ? `Solve the differential equation $\\frac{d^2y}{dx^2} + ${n}\\,\\frac{dy}{dx} + ${n + 1}y = \\sin(${n}x)$ for $y(x)$ when $x > 0$ and $y(0) = ${n}$.`
+      : index % 3 === 1
+        ? `Which expression gives the value of $\\int_{0}^{${n}} \\left( ${n}x^2 + \\frac{1}{x + 1} \\right) dx$ for $x > -1$?`
+        : `Simplify $\\frac{${n}x^2 + ${n + 2}x + 1}{x + 1} + \\sqrt{${n * n}x^2 + ${n}x + 1}$ for $x \\ge 0$.`;
+
+  const answer =
+    index % 3 === 0
+      ? `$y = e^{-${n}x/2}\\left(A\\cos(\\omega x) + B\\sin(\\omega x)\\right) + \\frac{${n}}{${n + 1}}\\sin(${n}x)$`
+      : index % 3 === 1
+        ? `$\\frac{${n}}{3}${n}^3 + \\ln(${n} + 1) - \\ln(1) = \\frac{${n}^4}{3} + \\ln(${n} + 1)$`
+        : `$${n}x + 1 + ${n}x\\sqrt{x^2 + 1} + \\frac{${n}}{2}\\ln\\left(x + \\sqrt{x^2 + 1}\\right)$$`;
+
+  return {
+    id: `${LAYOUT_DECK_ID}_card_${n}`,
+    setId: LAYOUT_DECK_ID,
+    topicId: 'topic_physics',
+    type: 'mc',
+    front,
+    back: answer,
+    wrong: [
+      answer.replace(`${n}`, `${n + 1}`),
+      answer.replace('\\sin', '\\cos').replace('\\ln', '\\log'),
+      answer.replace('$', '$ - '),
+    ],
+  };
+});
+
+/**
  * The collection of the demo player.
  *
  * Half of the starter pack, with a few duplicates that can be sold: the
@@ -331,7 +378,19 @@ function demoCardStates(): Map<string, CardState> {
 }
 
 /** Creates the state of the demo player. */
-function createDemoState(): DemoState {
+function createDemoState(layoutDeck = false): DemoState {
+  const sets = layoutDeck
+    ? [
+        ...DEMO_SETS,
+        {
+          id: LAYOUT_DECK_ID,
+          topicId: 'topic_physics',
+          title: 'Calculus warm-up (65)',
+          classId: 'class_science',
+        },
+      ]
+    : DEMO_SETS;
+
   return {
     wallet: {
       balance: 150,
@@ -341,9 +400,10 @@ function createDemoState(): DemoState {
       packTickets: 1,
     },
     collection: new Map(Object.entries(DEMO_COLLECTION)),
-    cards: DEMO_CARDS,
+    cards: layoutDeck ? [...DEMO_CARDS, ...LAYOUT_CARDS] : DEMO_CARDS,
+    cardRemoteIds: new Map(),
     cardStates: demoCardStates(),
-    sets: DEMO_SETS,
+    sets,
     topics: DEMO_TOPICS,
     classes: DEMO_CLASSES,
     kv: new Map(),
@@ -359,11 +419,13 @@ let state: DemoState | null = null;
 /** The state of the demo player, created on the first use. */
 function demo(): DemoState {
   if (state === null) {
-    state = createDemoState();
+    const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
+    // The screenshot of the long note asks for the 65 question math deck
+    // (`?demo=layout`); every other page gets the small demo player.
+    state = createDemoState(search.includes('demo=layout'));
 
     // The demo of the web build can also show a player who cannot afford a
     // pack (`?poor=1`): the shop then refuses to open another one.
-    const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
     if (search.includes('poor=1')) {
       state.wallet.balance = 5;
       state.wallet.packTickets = 0;
@@ -406,6 +468,8 @@ export async function openLocalStore(): Promise<LocalStore> {
     enqueueReview: async (review) => {
       demo().outbox.push(review);
     },
+    readSyncState: async () => readSyncStateOfDemo(),
+    applySyncPlan: async (plan) => applySyncPlanOfDemo(plan),
     readKv: async (key) => demo().kv.get(key) ?? null,
     writeKv: async (key, value) => {
       demo().kv.set(key, value);
@@ -453,6 +517,20 @@ export async function openLocalStore(): Promise<LocalStore> {
     sellDuplicates: async (critterId, qty) => sellDuplicatesOfDemo(critterId, qty),
     sellAllDuplicates: async () => sellAllDuplicatesOfDemo(),
     spinDailyWheel: async (today, options) => spinOfDemo(today, options),
+    clearCollection: async () => {
+      demo().collection = new Map();
+    },
+    resetTokens: async () => {
+      const current = demo();
+      current.wallet = applyTokenAdminAction(current.wallet, 'reset');
+    },
+    addTokens: async (amount) => {
+      const current = demo();
+      current.wallet = applyTokenAdminAction(current.wallet, 'grant', amount);
+    },
+    resetSpinCooldown: async () => {
+      demo().spins = new Map();
+    },
   };
 }
 
@@ -525,6 +603,127 @@ async function importDeckOfDemo(
   return { ok: true, setId, topicId: null, classId, cards: cards.length, message: null };
 }
 
+/** Reads the state that the merge of the server decks needs. */
+async function readSyncStateOfDemo(): Promise<LocalSyncState> {
+  const current = demo();
+  return {
+    classes: current.classes.map((entry) => ({ id: entry.id, name: entry.name })),
+    decks: current.sets.map((entry) => ({
+      id: entry.id,
+      remoteId: entry.remoteId ?? null,
+      title: entry.title,
+    })),
+    questions: current.cards.map((entry) => ({
+      id: entry.id,
+      remoteId: current.cardRemoteIds.get(entry.id) ?? null,
+      setId: entry.setId,
+    })),
+  };
+}
+
+/**
+ * Applies the plan of a server sync to the demo store.
+ *
+ * The rules are the same as the ones of the SQLite store: the classes are
+ * created first, then the decks and their questions are upserted, and the
+ * rows that left the server are dropped. A question that is already there
+ * keeps its scheduling state.
+ */
+async function applySyncPlanOfDemo(plan: SyncPlan): Promise<void> {
+  const current = demo();
+  const now = Date.now();
+  let sort = current.classes.reduce((highest, entry) => Math.max(highest, entry.sort), 0) + 1;
+
+  for (const entry of plan.classes) {
+    current.classes = [
+      ...current.classes,
+      { id: entry.id, name: entry.name, color: null, sort, createdAt: now },
+    ];
+    sort += 1;
+  }
+
+  for (const deck of plan.decks) {
+    const known = current.sets.some((entry) => entry.id === deck.localId);
+
+    if (known) {
+      current.sets = current.sets.map((entry) =>
+        entry.id === deck.localId
+          ? { ...entry, title: deck.title, classId: deck.classId, remoteId: deck.remoteId }
+          : entry,
+      );
+    } else {
+      current.sets = [
+        ...current.sets,
+        {
+          id: deck.localId,
+          topicId: null,
+          classId: deck.classId,
+          title: deck.title,
+          remoteId: deck.remoteId,
+        },
+      ];
+    }
+
+    for (const question of deck.questions) {
+      current.cardRemoteIds.set(question.localId, question.remoteId);
+
+      if (question.created) {
+        current.cards = [
+          ...current.cards,
+          {
+            id: question.localId,
+            setId: deck.localId,
+            topicId: null,
+            type: 'mc',
+            front: question.question,
+            back: question.correct,
+            wrong: [...question.wrong],
+          },
+        ];
+        current.cardStates.set(
+          question.localId,
+          createInitialState(question.localId, new Date(now)),
+        );
+      } else {
+        current.cards = current.cards.map((card) =>
+          card.id === question.localId
+            ? {
+                ...card,
+                setId: deck.localId,
+                front: question.question,
+                back: question.correct,
+                wrong: [...question.wrong],
+              }
+            : card,
+        );
+      }
+    }
+
+    for (const questionId of deck.removedQuestionIds) {
+      removeCardOfDemo(current, questionId);
+    }
+  }
+
+  for (const deckId of plan.deletedDeckIds) {
+    const cardIds = current.cards
+      .filter((card) => card.setId === deckId)
+      .map((card) => card.id);
+
+    current.sets = current.sets.filter((entry) => entry.id !== deckId);
+    for (const cardId of cardIds) {
+      removeCardOfDemo(current, cardId);
+    }
+  }
+}
+
+/** Removes a card with its state and its pending review from the demo store. */
+function removeCardOfDemo(current: DemoState, cardId: string): void {
+  current.cards = current.cards.filter((card) => card.id !== cardId);
+  current.cardRemoteIds.delete(cardId);
+  current.cardStates.delete(cardId);
+  current.outbox = current.outbox.filter((review) => review.cardId !== cardId);
+}
+
 /** Deletes a deck (with its cards, states and pending reviews) in the demo store. */
 async function deleteDeckOfDemo(setId: string): Promise<void> {
   const current = demo();
@@ -538,6 +737,7 @@ async function deleteDeckOfDemo(setId: string): Promise<void> {
 
   for (const cardId of cardIds) {
     current.cardStates.delete(cardId);
+    current.cardRemoteIds.delete(cardId);
   }
 }
 

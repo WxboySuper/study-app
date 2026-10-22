@@ -53,18 +53,19 @@ export interface CatchTierDef {
  * The tier ladder of §6. The weight ranges are the tier wide ranges; every
  * individual catch narrows them down.
  *
- * The "Heavy Catch" tier is the deep end of the lake: it is heavier than
- * every critter tier and it is rare (about 2 % of the catches).
+ * The "Heavy Catch" tier is the deep end of the lake: the ordinary catches
+ * stay between 1 and 40 lbs, and a heavy catch weighs 50 to 450 lbs. Heavy
+ * catches are rare (about 2 % of the catches).
  */
 export const CATCH_TIERS: readonly CatchTierDef[] = [
-  { id: 'trash', name: 'Trash', color: '#8d6e63', minLbs: 1, maxLbs: 10 },
-  { id: 'easy', name: 'Easy One', color: '#9e9e9e', minLbs: 10, maxLbs: 100 },
-  { id: 'great', name: 'Great Catch', color: '#43a047', minLbs: 100, maxLbs: 750 },
-  { id: 'rare', name: 'Rare Find', color: '#1e88e5', minLbs: 500, maxLbs: 5_000 },
-  { id: 'epic', name: 'Epic Grab', color: '#e53935', minLbs: 7_000, maxLbs: 30_000 },
-  { id: 'cotd', name: 'Catch of the Day', color: '#fb8c00', minLbs: 25_000, maxLbs: 500_000 },
-  { id: 'legend', name: "Angler's Legend", color: '#8e24aa', minLbs: 500_000, maxLbs: 2_500_000 },
-  { id: 'heavy', name: 'Heavy Catch', color: '#0d9488', minLbs: 2_500_000, maxLbs: 25_000_000 },
+  { id: 'trash', name: 'Trash', color: '#8d6e63', minLbs: 1, maxLbs: 3 },
+  { id: 'easy', name: 'Easy One', color: '#9e9e9e', minLbs: 3, maxLbs: 7 },
+  { id: 'great', name: 'Great Catch', color: '#43a047', minLbs: 7, maxLbs: 12 },
+  { id: 'rare', name: 'Rare Find', color: '#1e88e5', minLbs: 12, maxLbs: 18 },
+  { id: 'epic', name: 'Epic Grab', color: '#e53935', minLbs: 18, maxLbs: 25 },
+  { id: 'cotd', name: 'Catch of the Day', color: '#fb8c00', minLbs: 25, maxLbs: 32 },
+  { id: 'legend', name: "Angler's Legend", color: '#8e24aa', minLbs: 32, maxLbs: 40 },
+  { id: 'heavy', name: 'Heavy Catch', color: '#0d9488', minLbs: 50, maxLbs: 450 },
 ];
 
 /**

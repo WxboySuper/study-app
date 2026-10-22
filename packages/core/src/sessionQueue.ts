@@ -1,3 +1,15 @@
+import {
+  answerAnkiCard,
+  buildAnkiQueues,
+  pickNextAnki,
+  removeAnkiCard,
+  requeueAnkiCard,
+  type AnkiCard,
+  type AnkiPickGroup,
+  type AnkiQueues,
+  type AnkiSettings,
+} from './anki';
+import { DEFAULT_ANKI_SETTINGS, ankiCardFromState } from './anki/types';
 import type { Rng } from './fishing/roll';
 import type { StateLookup } from './queue';
 import type { CardState, StudyCard } from './types';
@@ -9,19 +21,16 @@ import type { CardState, StudyCard } from './types';
  * state of the queue is a plain value and every function returns a new one,
  * so the whole thing can be tested without a renderer.
  *
- * The two modes of the game live here:
+ * The picker is a port of Anki's scheduler design (see
+ * `src/anki/`): new, learning and review cards live in separate queues,
+ * learning steps are measured in questions, a miss goes to a short
+ * relearning step, and a correct answer graduates the card towards a longer
+ * interval. The wrapper maps Anki's minutes and days to question gaps so a
+ * 1 minute step is about three questions and a 10 minute step about ten.
  *
- * - **mastery**: the session lasts until every question of the scope is
- *   mastered. Every question needs the same number of right answers
- *   ({@link MASTERY_REQUIRED_CORRECT}) and a miss throws the streak of the
- *   question away. The right answers are spread out: a question that was
- *   just answered is not asked again before {@link MASTERY_MIN_GAP} other
- *   questions (the gap shrinks with the deck, a deck of a single question
- *   has no other choice).
- * - **endless**: the session never ends by itself. The questions are picked
- *   with a weight: the ones that are due come first, then the ones with a
- *   weak memory, then the others. The same question is never asked twice in
- *   a row.
+ * Mastery mode uses the same picker, but a question only leaves the session
+ * after {@link MASTERY_REQUIRED_CORRECT} correct answers in a row. The Anki
+ * intervals space those answers out naturally.
  */
 
 /** How a session treats its questions. */
@@ -35,16 +44,16 @@ export interface SessionQuestion {
   card: StudyCard;
   /** The scheduling state of the card, when it has one. */
   state?: CardState;
+  /**
+   * Cards that share a sibling key are buried together, like the cards of
+   * one Anki note. A question without one is never buried.
+   */
+  siblingKey?: string;
 }
 
 /** What the session knows about one question. */
 export interface MasteryRecord {
-  /**
-   * How many correct answers in a row the question got.
-   *
-   * A miss puts it back to zero: the question has to be learned again
-   * from the start.
-   */
+  /** Correct answers in a row (the mastery rule of the game). */
   correctStreak: number;
   /** `true` when the player missed the question at some point. */
   missed: boolean;
@@ -61,15 +70,27 @@ export interface MasteryRecord {
 export const MASTERY_REQUIRED_CORRECT = 3;
 
 /**
- * How many questions are asked between two serves of the same question.
+ * The floor between two serves of the same question.
  *
- * The right answers of a question are spread out: the player reads (and
- * thinks about) the other questions in between, so a question is not asked
- * again right after it was answered. The gap is clamped by the size of the
- * deck: a deck that holds fewer questions than the gap cannot wait that
- * long.
+ * The Anki learning and relearning steps already provide a much longer gap;
+ * this is only the safety net for a tiny deck.
  */
 export const MASTERY_MIN_GAP = 3;
+
+/** How many questions later a missed question comes back. */
+export const DEFAULT_REINSERT_MIN = 3;
+
+/** The most questions later a missed question comes back. */
+export const DEFAULT_REINSERT_MAX = 5;
+
+/** How many questions later a question that is not mastered yet comes back. */
+export const DEFAULT_CORRECT_REINSERT_MIN = 3;
+
+/** The most questions later a question that is not mastered yet comes back. */
+export const DEFAULT_CORRECT_REINSERT_MAX = 10;
+
+/** The stability (in days) under which a card counts as weak. */
+export const DEFAULT_WEAK_STABILITY = 7;
 
 /** How the queue is built. */
 export interface SessionQueueOptions {
@@ -81,26 +102,12 @@ export interface SessionQueueOptions {
   rng: Rng;
   /** The time of the session (epoch milliseconds). Defaults to `Date.now()`. */
   now?: number;
-  /** How many questions later a missed question comes back. Defaults to 3. */
-  reinsertMin?: number;
-  /** The most questions later a missed question comes back. Defaults to 5. */
-  reinsertMax?: number;
-  /** How many questions later a question that is not mastered yet comes back. */
-  correctReinsertMin?: number;
-  /** The most questions later a question that is not mastered yet comes back. */
-  correctReinsertMax?: number;
-  /**
-   * How many right answers in a row a question needs to be mastered.
-   * Defaults to {@link MASTERY_REQUIRED_CORRECT}.
-   */
+  /** The scheduler settings. Defaults to {@link DEFAULT_ANKI_SETTINGS}. */
+  settings?: Partial<AnkiSettings>;
+  /** How many right answers in a row a question needs to be mastered. */
   masteryRequired?: number;
-  /**
-   * How many questions are asked between two serves of the same question.
-   * Defaults to {@link MASTERY_MIN_GAP}.
-   */
+  /** How many questions are asked between two serves of the same question. */
   minGap?: number;
-  /** The stability (in days) under which a card counts as weak. */
-  weakStabilityThreshold?: number;
 }
 
 /** The state of the queue of a session. */
@@ -110,180 +117,138 @@ export interface SessionQueueState {
   /** Every question of the scope. */
   questions: readonly SessionQuestion[];
   /**
-   * The questions that are still to be asked.
+   * The questions that are not mastered yet.
    *
-   * In mastery mode it is the list of the questions that wait for their
-   * turn (a missed question is put back into it). In endless mode it is the
-   * pool of the session: every question is in it.
+   * It is a view of the whole deck, not a small working set: the picker
+   * chooses from every eligible question of the session.
    */
   pending: readonly string[];
   /** What the session knows about every question. */
   records: Readonly<Record<string, MasteryRecord>>;
-  /** The scheduling states of the questions (they change while the session runs). */
+  /** The scheduling states of the questions. */
   states: Readonly<Record<string, CardState | undefined>>;
+  /** The Anki queue state of every question. */
+  cards: Readonly<Record<string, AnkiCard>>;
+  /** The new, learning and review queues. */
+  queues: AnkiQueues;
+  /** The group of the question that was asked last. */
+  lastGroup: AnkiPickGroup | null;
   /** The questions that were missed and not answered correctly since. */
   missedIds: readonly string[];
   /** The question that was asked last: it is never asked again right away. */
   lastAskedId: string | null;
+  /** The position (1-based) at which every question was last asked. */
+  askedAt: Readonly<Record<string, number>>;
   /** How many questions were asked. */
   asked: number;
   /** The random source of the session. */
   rng: Rng;
   /** The time of the session (epoch milliseconds). */
   now: number;
-  /** How many questions later a missed question comes back. */
-  reinsertMin: number;
-  /** The most questions later a missed question comes back. */
-  reinsertMax: number;
-  /** How many questions later a question that is not mastered yet comes back. */
-  correctReinsertMin: number;
-  /** The most questions later a question that is not mastered yet comes back. */
-  correctReinsertMax: number;
   /** How many right answers in a row a question needs to be mastered. */
   masteryRequired: number;
   /** How many questions are asked between two serves of the same question. */
   minGap: number;
-  /** The stability (in days) under which a card counts as weak. */
-  weakStabilityThreshold: number;
+  /** The scheduler settings of the session. */
+  settings: AnkiSettings;
 }
 
-/** How many questions later a missed question comes back. */
-export const DEFAULT_REINSERT_MIN = 3;
-
-/** The most questions later a missed question comes back. */
-export const DEFAULT_REINSERT_MAX = 5;
-
-/** How many questions later a question that is not mastered yet comes back. */
-export const DEFAULT_CORRECT_REINSERT_MIN = 1;
-
-/**
- * The most questions later a question that is not mastered yet comes back.
- *
- * The gap ({@link MASTERY_MIN_GAP}) is the floor of the distance, so the
- * real distance is never under it.
- */
-export const DEFAULT_CORRECT_REINSERT_MAX = 5;
-
-/** The stability (in days) under which a card counts as weak. */
-export const DEFAULT_WEAK_STABILITY = 7;
-
-/**
- * The weight of the questions that are due.
- *
- * The weights of the tiers of the endless mode: the due questions come
- * first, then the ones that were missed, then the ones with a weak memory,
- * then the others.
- */
-const WEIGHT_DUE = 8;
-const WEIGHT_MISSED = 5;
-const WEIGHT_WEAK = 3;
-const WEIGHT_OTHER = 1;
-
-/**
- * Creates the queue of a session.
- *
- * The questions are shuffled right away: the order of a session is never
- * the order of the deck.
- */
+/** Creates the queue of a session. */
 export function createSessionQueue(options: SessionQueueOptions): SessionQueueState {
+  const now = options.now ?? Date.now();
+  const settings: AnkiSettings = {
+    ...DEFAULT_ANKI_SETTINGS,
+    ...options.settings,
+  };
   const questions = [...options.questions];
+  const cards: Record<string, AnkiCard> = {};
   const records: Record<string, MasteryRecord> = {};
   const states: Record<string, CardState | undefined> = {};
 
   for (const question of questions) {
     records[question.id] = { correctStreak: 0, missed: false, mastered: false };
     states[question.id] = question.state;
+    cards[question.id] = createCard(question, settings, now, questions.length);
   }
+
+  const queues = buildAnkiQueues(cards, options.rng);
+  const pending = questions.map((question) => question.id);
 
   return {
     mode: options.mode,
     questions,
-    pending: shuffle(questions.map((question) => question.id), options.rng),
+    pending,
     records,
     states,
+    cards,
+    queues,
+    lastGroup: null,
     missedIds: [],
     lastAskedId: null,
+    askedAt: {},
     asked: 0,
     rng: options.rng,
-    now: options.now ?? Date.now(),
-    reinsertMin: options.reinsertMin ?? DEFAULT_REINSERT_MIN,
-    reinsertMax: options.reinsertMax ?? DEFAULT_REINSERT_MAX,
-    correctReinsertMin: options.correctReinsertMin ?? DEFAULT_CORRECT_REINSERT_MIN,
-    correctReinsertMax: options.correctReinsertMax ?? DEFAULT_CORRECT_REINSERT_MAX,
+    now,
     masteryRequired: toCount(options.masteryRequired, MASTERY_REQUIRED_CORRECT, 1),
     minGap: toCount(options.minGap, MASTERY_MIN_GAP, 0),
-    weakStabilityThreshold: options.weakStabilityThreshold ?? DEFAULT_WEAK_STABILITY,
+    settings,
   };
 }
 
 /**
  * Takes the next question of the session.
  *
- * In mastery mode the questions come in the order of the queue. In endless
- * mode they are picked with a weight: the due questions come first, then the
- * ones that were missed, then the ones with a weak memory, then the others.
- * The question that was asked last is never asked again right away.
- *
- * @return The question and the new state of the queue (`null` when the
- * session has nothing left to ask).
+ * The Anki queue builder decides: a due learning card first, then the mixed
+ * new/review queue, then the cards that are only slightly ahead. The whole
+ * deck is eligible; there is no small working set.
  */
 export function nextSessionQuestion(state: SessionQueueState): {
   state: SessionQueueState;
   question: SessionQuestion | null;
 } {
-  if (state.mode === 'mastery') {
-    const id = takeNextMastery(state);
-    if (id === undefined) {
-      return { state, question: null };
-    }
-
-    return {
-      state: {
-        ...state,
-        pending: state.pending.filter((entry) => entry !== id),
-        lastAskedId: id,
-        asked: state.asked + 1,
-      },
-      question: findQuestion(state, id),
-    };
-  }
-
-  const picked = pickWeighted(state);
-  if (picked === null) {
+  if (state.mode === 'mastery' && sessionComplete(state)) {
     return { state, question: null };
   }
 
-  // The question goes to the end of the pool: it is not asked again right
-  // away, but it stays in the session.
-  const rest = state.pending.filter((id) => id !== picked);
-  const pending = [...rest, picked];
+  const mastered: Record<string, boolean> = {};
+  for (const [id, record] of Object.entries(state.records)) {
+    mastered[id] = record.mastered;
+  }
+
+  const pick = pickNextAnki(state.cards, state.queues, state.asked, state.rng, {
+    settings: state.settings,
+    endless: state.mode === 'endless',
+    lastAskedId: state.lastAskedId,
+    askedAt: state.askedAt,
+    minGap: state.minGap,
+    mastered,
+  });
+
+  if (pick === null) {
+    return { state, question: null };
+  }
 
   return {
     state: {
       ...state,
-      pending,
-      lastAskedId: picked,
+      queues: pick.queues,
+      lastGroup: pick.group,
+      lastAskedId: pick.id,
+      askedAt: { ...state.askedAt, [pick.id]: state.asked + 1 },
       asked: state.asked + 1,
     },
-    question: findQuestion(state, picked),
+    question: findQuestion(state, pick.id),
   };
 }
 
 /**
  * Records the answer of the player.
  *
- * In mastery mode every question needs the same number of right answers
- * ({@link MASTERY_REQUIRED_CORRECT}) to be mastered, and a miss throws the
- * streak of the question away. A question that is not mastered yet comes
- * back a few questions later: a missed one waits three to five questions
- * (so the player really learns it), a correct one waits at least the gap
- * ({@link MASTERY_MIN_GAP}) so the right answers are spread out. A question
- * that is mastered leaves the queue for good.
- *
- * @param state The state of the queue.
- * @param questionId The question that was answered.
- * @param correct `true` when the player answered right.
- * @param nextState The scheduling state of the card after the review.
+ * The Anki scheduler computes the next state: a miss goes to the short
+ * relearning step, a correct answer follows the learning steps and then a
+ * growing review interval. In mastery mode a question is mastered after
+ * {@link MASTERY_REQUIRED_CORRECT} correct answers in a row and leaves the
+ * session; otherwise it stays in the queues and comes back when it is due.
  */
 export function answerSessionQuestion(
   state: SessionQueueState,
@@ -291,58 +256,76 @@ export function answerSessionQuestion(
   correct: boolean,
   nextState?: CardState,
 ): SessionQueueState {
-  const record = state.records[questionId] ?? { correctStreak: 0, missed: false, mastered: false };
+  const record = state.records[questionId] ?? {
+    correctStreak: 0,
+    missed: false,
+    mastered: false,
+  };
 
   const nextRecord: MasteryRecord = correct
     ? { ...record, correctStreak: record.correctStreak + 1 }
     : { ...record, correctStreak: 0, missed: true };
 
-  // Every question needs the same number of right answers in a row: a miss
-  // puts the streak of the question back to zero, so it has to be learned
-  // again from the start.
-  const mastered = nextRecord.correctStreak >= state.masteryRequired;
+  const mastered =
+    state.mode === 'mastery' && nextRecord.correctStreak >= state.masteryRequired;
   const finalRecord: MasteryRecord = { ...nextRecord, mastered };
-
   const records = { ...state.records, [questionId]: finalRecord };
   const states = { ...state.states, [questionId]: nextState ?? state.states[questionId] };
 
-  // The questions that were missed and not answered correctly since are the
-  // ones the player has to see again.
   const missedIds = correct
     ? state.missedIds.filter((id) => id !== questionId)
     : state.missedIds.includes(questionId)
       ? state.missedIds
       : [...state.missedIds, questionId];
 
-  if (state.mode === 'endless') {
-    return { ...state, records, states, missedIds };
+  const current = state.cards[questionId] ?? createCard(
+    { id: questionId, card: placeholderCard(questionId) },
+    state.settings,
+    state.now,
+    state.questions.length,
+  );
+
+  const answer = answerAnkiCard(current, {
+    correct,
+    asked: state.asked,
+    deckSize: Math.max(1, state.questions.length),
+    now: state.now,
+    rng: state.rng,
+    settings: state.settings,
+  });
+
+  // The gap is measured from the question that was just asked. Without this
+  // the card would keep its old due position (0 for a new card) and come
+  // back immediately.
+  const answered: AnkiCard = {
+    ...answer.card,
+    dueAt: state.asked + Math.max(1, answer.gap),
+  };
+
+  const cards = { ...state.cards, [questionId]: answered };
+  let queues = requeueAnkiCard(state.queues, answered, state.lastGroup ?? 'new');
+
+  // A mastered card leaves the mastery session. In endless mode it stays in
+  // the review queue and comes back rarely (its interval is now long).
+  if (state.mode === 'mastery' && mastered) {
+    queues = removeAnkiCard(queues, questionId);
   }
 
-  // In mastery mode the question leaves the queue when it is mastered.
-  if (mastered) {
-    return {
-      ...state,
-      records,
-      states,
-      missedIds,
-      pending: state.pending.filter((id) => id !== questionId),
-    };
-  }
-
-  // The question comes back: a missed one waits three to five questions
-  // (so the player really learns it), a correct one waits at least the gap
-  // (so the right answers of a question are spread out).
-  const gap = gapOf(state);
-  const distance = correct
-    ? Math.max(gap, state.rng.int(state.correctReinsertMin, state.correctReinsertMax))
-    : Math.max(gap, state.rng.int(state.reinsertMin, state.reinsertMax));
+  const pending =
+    state.mode === 'mastery'
+      ? state.questions
+          .filter((question) => records[question.id]?.mastered !== true)
+          .map((question) => question.id)
+      : state.pending.filter((id) => id !== questionId || !mastered);
 
   return {
     ...state,
     records,
     states,
+    cards,
+    queues,
     missedIds,
-    pending: insertAt(state.pending, questionId, distance),
+    pending,
   };
 }
 
@@ -371,13 +354,11 @@ export function updateSessionStates(
 /** How many questions of the scope are mastered. */
 export function masteredCount(state: SessionQueueState): number {
   let count = 0;
-
   for (const record of Object.values(state.records)) {
     if (record.mastered) {
       count += 1;
     }
   }
-
   return count;
 }
 
@@ -386,34 +367,15 @@ export function sessionTotal(state: SessionQueueState): number {
   return state.questions.length;
 }
 
-/**
- * The progress of one question of the scope.
- *
- * It is what the mastery view draws: a dot per right answer of the question
- * and the number of right answers it still needs.
- */
+/** The progress of one question of the scope. */
 export interface MasteryProgress {
-  /** The id of the question. */
   id: string;
-  /**
-   * How many right answers the question has in a row.
-   *
-   * It is the number of filled dots of the question, and it never goes over
-   * the number of right answers the question needs.
-   */
   correct: number;
-  /** How many right answers in a row the question needs to be mastered. */
   required: number;
-  /** `true` when the question is mastered. */
   mastered: boolean;
 }
 
-/**
- * The progress of every question of the scope.
- *
- * The mastery view shows "3/12 mastered" and one dot per right answer of
- * every question (the dots of a question that was missed are empty again).
- */
+/** The progress of every question of the scope. */
 export function masteryProgress(state: SessionQueueState): MasteryProgress[] {
   return state.questions.map((question) => {
     const record = state.records[question.id];
@@ -428,73 +390,53 @@ export function masteryProgress(state: SessionQueueState): MasteryProgress[] {
   });
 }
 
-/**
- * `true` when the session has nothing left to do.
- *
- * Only the mastery mode can end by itself: the endless mode plays until the
- * player ends it.
- */
+/** `true` when the session has nothing left to do. */
 export function sessionComplete(state: SessionQueueState): boolean {
   if (state.mode === 'endless') {
     return false;
   }
-
   if (state.questions.length === 0) {
     return true;
   }
-
   return masteredCount(state) >= state.questions.length;
 }
 
-/**
- * How many questions are still to be asked.
- *
- * In the endless mode it is the number of questions the player does not
- * know yet (the ones that were never answered correctly).
- */
+/** How many questions are still to be studied. */
 export function sessionRemaining(state: SessionQueueState): number {
   if (state.mode === 'mastery') {
-    return state.pending.length;
+    return state.questions.length - masteredCount(state);
   }
 
   let remaining = 0;
-
   for (const question of state.questions) {
     const record = state.records[question.id];
     if (record === undefined || record.correctStreak === 0) {
       remaining += 1;
     }
   }
-
   return remaining;
 }
 
-/**
- * Takes the next question of the mastery queue.
- *
- * The question that was asked last is never asked again right away: the
- * other questions of the queue come first. A queue that holds nothing but
- * the last question (a deck of a single question) has no other choice.
- */
-function takeNextMastery(state: SessionQueueState): string | undefined {
-  const first = state.pending[0];
-  if (first === undefined) {
-    return undefined;
-  }
-
-  const alternative = state.pending.find((id) => id !== state.lastAskedId);
-  return alternative ?? first;
+/** Builds the scheduler card of a question. */
+function createCard(
+  question: SessionQuestion,
+  settings: AnkiSettings,
+  now: number,
+  deckSize: number,
+): AnkiCard {
+  return ankiCard(question.id, question.state, settings, now, deckSize, question.siblingKey);
 }
 
-/**
- * The gap between two serves of the same question.
- *
- * The gap is clamped by the size of the deck: a deck that holds fewer
- * questions than the gap cannot wait that long, so the gap shrinks with it.
- */
-function gapOf(state: SessionQueueState): number {
-  const others = Math.max(0, state.questions.length - 1);
-  return Math.max(0, Math.min(state.minGap, others));
+/** Wraps `ankiCardFromState` so the import stays in one place. */
+function ankiCard(
+  id: string,
+  state: CardState | undefined,
+  settings: AnkiSettings,
+  now: number,
+  deckSize: number,
+  siblingKey?: string,
+): AnkiCard {
+  return ankiCardFromState(id, state, settings, now, deckSize, siblingKey);
 }
 
 /** A whole number of the options, with a floor and a fallback. */
@@ -502,78 +444,7 @@ function toCount(value: number | undefined, fallback: number, min: number): numb
   if (value === undefined || !Number.isFinite(value)) {
     return fallback;
   }
-
   return Math.max(min, Math.floor(value));
-}
-
-/**
- * Picks a question of the endless mode.
- *
- * The questions are sorted into four tiers (due, missed, weak, other) and a
- * tier is picked with a weight: the due questions come first. Inside a tier
- * the question is picked at random, so the session never plays the same
- * order twice.
- */
-function pickWeighted(state: SessionQueueState): string | null {
-  const pool = state.pending.length > 0 ? state.pending : state.questions.map((q) => q.id);
-  if (pool.length === 0) {
-    return null;
-  }
-
-  // The question that was asked last is not asked again right away (unless
-  // it is the only one left).
-  const candidates = pool.length > 1 ? pool.filter((id) => id !== state.lastAskedId) : pool;
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  const tiers: { weight: number; ids: string[] }[] = [
-    { weight: WEIGHT_DUE, ids: [] },
-    { weight: WEIGHT_MISSED, ids: [] },
-    { weight: WEIGHT_WEAK, ids: [] },
-    { weight: WEIGHT_OTHER, ids: [] },
-  ];
-
-  for (const id of candidates) {
-    const cardState = state.states[id];
-    const due = cardState !== undefined && cardState.due <= state.now;
-    const missed = state.missedIds.includes(id);
-    const weak = cardState !== undefined && cardState.stability <= state.weakStabilityThreshold;
-
-    if (due) {
-      tiers[0]!.ids.push(id);
-    } else if (missed) {
-      tiers[1]!.ids.push(id);
-    } else if (weak) {
-      tiers[2]!.ids.push(id);
-    } else {
-      tiers[3]!.ids.push(id);
-    }
-  }
-
-  // The tiers are sorted inside themselves, so the random pick is stable.
-  for (const tier of tiers) {
-    tier.ids.sort((a, b) => compareIds(a, b));
-  }
-
-  const groups = tiers.filter((tier) => tier.ids.length > 0);
-  if (groups.length === 0) {
-    return null;
-  }
-
-  const total = groups.reduce((sum, tier) => sum + tier.weight * tier.ids.length, 0);
-  let roll = state.rng.next() * total;
-
-  for (const tier of groups) {
-    roll -= tier.weight * tier.ids.length;
-    if (roll < 0) {
-      const index = state.rng.int(0, tier.ids.length - 1);
-      return tier.ids[index] ?? null;
-    }
-  }
-
-  const last = groups[groups.length - 1];
-  return last === undefined ? null : (last.ids[0] ?? null);
 }
 
 /** Finds a question by its id. */
@@ -586,33 +457,9 @@ function findQuestion(state: SessionQueueState, id: string): SessionQuestion | n
   return null;
 }
 
-/**
- * Puts a question back into the queue.
- *
- * The distance is the number of questions that are asked before it comes
- * back. A distance that is longer than the queue puts it at the end.
- */
-function insertAt(pending: readonly string[], id: string, distance: number): string[] {
-  const rest = pending.filter((entry) => entry !== id);
-  const at = Math.max(0, Math.min(distance, rest.length));
-  return [...rest.slice(0, at), id, ...rest.slice(at)];
-}
-
-/** Shuffles a list (Fisher-Yates). */
-function shuffle<T>(values: readonly T[], rng: Rng): T[] {
-  const result = [...values];
-
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const other = rng.int(0, index);
-    const current = result[index];
-    const swap = result[other];
-    if (current !== undefined && swap !== undefined) {
-      result[index] = swap;
-      result[other] = current;
-    }
-  }
-
-  return result;
+/** A placeholder card for an answer about a question the queue does not know. */
+function placeholderCard(id: string): StudyCard {
+  return { id, setId: '', type: 'mc', front: '', back: '' };
 }
 
 function lookupState(states: StateLookup, cardId: string): CardState | undefined {
@@ -620,9 +467,4 @@ function lookupState(states: StateLookup, cardId: string): CardState | undefined
     return states.get(cardId);
   }
   return (states as Readonly<Record<string, CardState | undefined>>)[cardId];
-}
-
-function compareIds(a: string, b: string): number {
-  if (a === b) return 0;
-  return a < b ? -1 : 1;
 }

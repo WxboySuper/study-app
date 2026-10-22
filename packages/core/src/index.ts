@@ -36,6 +36,29 @@ export {
 export { parseRelease, type ReleaseInfo } from './release';
 
 export {
+  ADMIN_TOKEN_GRANT,
+  applyTokenAdminAction,
+  type TokenAdminAction,
+} from './admin';
+
+export {
+  parseSyncSnapshot,
+  planDeckSync,
+  type LocalSyncClass,
+  type LocalSyncDeck,
+  type LocalSyncQuestion,
+  type LocalSyncState,
+  type PlannedClass,
+  type PlannedDeck,
+  type PlannedQuestion,
+  type RemoteSyncDeck,
+  type RemoteSyncQuestion,
+  type RemoteSyncSnapshot,
+  type SyncPlan,
+  type SyncPlanOptions,
+} from './sync';
+
+export {
   DEFAULT_CORRECT_REINSERT_MAX,
   DEFAULT_CORRECT_REINSERT_MIN,
   DEFAULT_REINSERT_MAX,
@@ -59,6 +82,33 @@ export {
   type SessionQueueOptions,
   type SessionQueueState,
 } from './sessionQueue';
+
+export {
+  DEFAULT_ANKI_SETTINGS,
+  Intersperser,
+  LearningSteps,
+  Rating as AnkiRating,
+  ankiCardFromState,
+  answerAnkiCard,
+  buildAnkiQueues,
+  burySiblings,
+  fsrsIntervalDays,
+  learningGapQuestions,
+  pickNextAnki,
+  removeAnkiCard,
+  requeueAnkiCard,
+  reviewGapQuestions,
+  siblingIds,
+  type AnkiAnswerContext,
+  type AnkiAnswerResult,
+  type AnkiCard,
+  type AnkiPick,
+  type AnkiPickGroup,
+  type AnkiQueue,
+  type AnkiQueues,
+  type AnkiRecord,
+  type AnkiSettings,
+} from './anki';
 
 export {
   hasMath,

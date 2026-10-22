@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 import { View } from 'react-native';
 
 import { SettingsProvider } from '@/settings';
+import { startDeckSync } from '@/sync/syncDecks';
 import { colors } from '@/theme';
 import { startUpdateChecks } from '@/update/checkForUpdate';
 
@@ -53,6 +54,12 @@ export default function RootLayout() {
   // hours when it comes back from the background.
   useEffect(() => {
     return startUpdateChecks();
+  }, []);
+
+  // The decks of the server are pulled when the app starts, and again when it
+  // comes back from the background (at most once every ten minutes).
+  useEffect(() => {
+    return startDeckSync();
   }, []);
 
   if (!loaded && error === null) {

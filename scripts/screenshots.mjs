@@ -118,8 +118,9 @@ async function settle(page) {
  * `path` is the route of the screen, `waitFor` is the text that only shows
  * up in that state, `waitForTestId` is the marker of the frame of a demo,
  * `scrollTo` is the test id of the part of the screen the camera has to look
- * at, `actions` are the taps that happen before the picture and `wait` is
- * how long the screen needs after it.
+ * at, `viewport` overrides the size of the picture, `actions` are the taps
+ * that happen before the picture and `wait` is how long the screen needs
+ * after it.
  */
 const SHOTS = [
   { name: 'home', path: '/' },
@@ -141,6 +142,17 @@ const SHOTS = [
   { name: 'fishing', path: '/fishing', wait: 600 },
   { name: 'fishing-cast', path: '/fishing?demo=cast', wait: 700 },
   { name: 'fishing-question', path: '/fishing?demo=question', waitFor: 'STUDY NOTE', wait: 900 },
+  // The layout of the question note on a 390x844 phone: a 65 question deck
+  // (the compact mastery bar), three catches in the log and a long math
+  // question that fills the parchment.
+  {
+    name: 'fishing-layout-65q',
+    path: '/fishing?demo=layout&mastery=1&kind=set&id=set_layout_65&title=Calculus%20warm-up',
+    viewport: { width: 390, height: 844 },
+    waitFor: '3 answered',
+    wait: 12_000,
+    timeout: 120_000,
+  },
   { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'CONTINUE', wait: 700, timeout: 60_000 },
   { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'PLAY AGAIN', wait: 1400, timeout: 90_000 },
   // The frames of the catch: the answer that is held on the screen, the dip
@@ -208,6 +220,9 @@ async function main() {
 
   for (const shot of SHOTS) {
     const page = await context.newPage();
+    if (shot.viewport !== undefined) {
+      await page.setViewportSize(shot.viewport);
+    }
     page.on('pageerror', (error) => {
       errors.push(`${shot.name}: ${error.message}`);
     });

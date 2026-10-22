@@ -5,7 +5,7 @@ import {
   type FishingQuestion,
 } from '@study-app/core';
 import { useEffect, useState } from 'react';
-import { ImageBackground, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ImageBackground, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -84,6 +84,7 @@ export function QuestionNote({
   onSelfGrade,
   reduceMotion,
 }: QuestionNoteProps) {
+  const { height: windowHeight } = useWindowDimensions();
   const slide = useSharedValue(0);
   // The answer of a self-graded card is hidden until the player asks for it.
   const [revealed, setRevealed] = useState(false);
@@ -111,13 +112,12 @@ export function QuestionNote({
     transform: [{ translateY: (1 - slide.value) * 60 }],
   }));
 
-  const dimStyle = useAnimatedStyle(() => ({ opacity: slide.value * 0.35 }));
-
   if (!visible || question === null) {
     return null;
   }
 
-  const fontSize = question.prompt.length > 140 ? 15 : question.prompt.length > 70 ? 17 : 19;
+  const fontSize = promptFontSize(question.prompt);
+  const promptMaxHeight = Math.max(110, Math.min(230, windowHeight * 0.27));
 
   // The answers decide the layout of the buttons: a long answer needs the
   // whole width of the screen and a smaller font.
@@ -130,12 +130,17 @@ export function QuestionNote({
         <Text style={styles.noteLabel}>STUDY NOTE</Text>
       </View>
 
-      <ScrollView style={styles.promptScroll} contentContainerStyle={styles.promptContent}>
+      <ScrollView
+        style={[styles.promptScroll, { maxHeight: promptMaxHeight }]}
+        contentContainerStyle={styles.promptContent}
+        showsVerticalScrollIndicator={false}
+      >
         <MathText
           text={question.prompt}
-          style={[styles.prompt, { fontSize }]}
+          style={[styles.prompt, { fontSize, lineHeight: Math.round(fontSize * 1.28) }]}
           color="#3b2a12"
           fontSize={fontSize}
+          center
         />
         {question.bonus ? <Text style={styles.bonus}>bonus review</Text> : null}
       </ScrollView>
@@ -146,9 +151,7 @@ export function QuestionNote({
   // itself.
   if (question.selfGrade) {
     return (
-      <View style={StyleSheet.absoluteFill} pointerEvents={locked ? 'none' : 'box-none'}>
-        <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
-
+      <View style={styles.area} pointerEvents={locked ? 'none' : 'box-none'}>
         <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
           {parchment === null ? (
             <View style={[styles.note, styles.notePlain]}>{body}</View>
@@ -174,7 +177,7 @@ export function QuestionNote({
                 <MathText
                   text={question.answer}
                   style={styles.revealAnswer}
-                  color="#fff8e7"
+                  color="#3b2a12"
                   fontSize={layout.fontSize + 3}
                   center
                 />
@@ -225,9 +228,7 @@ export function QuestionNote({
   }
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents={locked ? 'none' : 'box-none'}>
-      <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
-
+    <View style={styles.area} pointerEvents={locked ? 'none' : 'box-none'}>
       <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
         {parchment === null ? (
           <View style={[styles.note, styles.notePlain]}>{body}</View>
@@ -261,6 +262,33 @@ export function QuestionNote({
       </View>
     </View>
   );
+}
+
+/**
+ * The font size of the question.
+ *
+ * The prompt gets smaller as it gets longer, and a prompt with math gets
+ * smaller again: KaTeX cannot break a formula across two lines, so a long
+ * formula has to fit in the width of the parchment on its own. A very long
+ * prompt scrolls instead of being cut off.
+ */
+function promptFontSize(prompt: string): number {
+  const math = mathSources(prompt).join(' ').length;
+  const weight = prompt.length + math * 2;
+
+  if (weight > 300) {
+    return 12;
+  }
+  if (weight > 200) {
+    return 13;
+  }
+  if (weight > 140) {
+    return 14;
+  }
+  if (weight > 90) {
+    return 16;
+  }
+  return 19;
 }
 
 /**
@@ -432,24 +460,32 @@ function AnswerButton({
 }
 
 const styles = StyleSheet.create({
-  dim: {
-    backgroundColor: '#000000',
+  area: {
+    width: '100%',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 10,
   },
   noteWrap: {
-    position: 'absolute',
-    top: '13%',
-    left: 40,
-    right: 40,
+    width: '100%',
+    maxWidth: 520,
+    alignItems: 'center',
   },
   note: {
-    height: 300,
-    paddingLeft: 56,
-    paddingRight: 18,
-    paddingTop: 42,
-    paddingBottom: 24,
+    width: '100%',
+    maxWidth: 520,
+    minHeight: 220,
+    paddingLeft: 40,
+    paddingRight: 32,
+    paddingTop: 40,
+    paddingBottom: 30,
     gap: 8,
+    overflow: 'hidden',
   },
   noteImage: {
+    width: '100%',
+    height: '100%',
     borderRadius: 14,
   },
   notePlain: {
@@ -459,6 +495,7 @@ const styles = StyleSheet.create({
   noteHead: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 8,
   },
   pin: {
@@ -474,15 +511,20 @@ const styles = StyleSheet.create({
     letterSpacing: 2,
   },
   promptScroll: {
-    maxHeight: 140,
+    width: '100%',
+    flexGrow: 0,
   },
   promptContent: {
-    paddingVertical: 2,
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
   prompt: {
+    width: '100%',
     color: '#3b2a12',
     fontFamily: fonts.bodyBold,
-    lineHeight: 25,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   bonus: {
     marginTop: 6,
@@ -492,10 +534,8 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
   answers: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
-    bottom: 26,
+    width: '100%',
+    maxWidth: 520,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
@@ -525,13 +565,10 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   revealAnswer: {
-    color: '#fff8e7',
+    color: '#3b2a12',
     fontFamily: fonts.title,
     fontSize: 20,
     textAlign: 'center',
-    textShadowColor: 'rgba(4, 10, 24, 0.7)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
   },
   gradeRow: {
     width: '100%',
