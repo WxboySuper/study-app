@@ -100,7 +100,11 @@ export async function fetchLatestUpdate(
   }, UPDATE_TIMEOUT_MS);
 
   try {
-    const response = await doFetch(UPDATE_FEED_URL, {
+    // A check the player asked for reads GitHub again (the Worker skips its
+    // cache); every check carries a cache buster for the caches in between.
+    const query = options.force === true ? 'fresh=1&' : '';
+    const url = `${UPDATE_FEED_URL}?${query}t=${options.now ?? Date.now()}`;
+    const response = await doFetch(url, {
       signal: controller.signal,
       cache: 'no-store',
       headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
