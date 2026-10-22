@@ -1,4 +1,4 @@
-# study-app
+# CramCritters
 
 Endless, untimed study game: Blooket-style game modes and collectibles plus
 Anki-style spaced repetition (FSRS).
