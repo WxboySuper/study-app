@@ -83,19 +83,25 @@ export interface TierOdds {
   epic: number;
   cotd: number;
   legend: number;
+  /** The share that goes to the "Heavy Catch" tier (the deep end of the lake). */
+  heavy: number;
   /** The share that goes to the special table (§8). */
   special: number;
 }
 
 /**
  * The tier odds per lure rank (§6). Every row adds up to 100 %.
+ *
+ * The "Heavy Catch" tier takes 2 % of every row out of the bottom of the
+ * ladder (the trash tier), so the rare critter tiers keep the odds of the
+ * design doc.
  */
 export const TIER_ODDS: readonly TierOdds[] = [
-  { rank: 1, trash: 30, easy: 45, great: 16, rare: 4, epic: 0, cotd: 0, legend: 0, special: 5 },
-  { rank: 2, trash: 20, easy: 40, great: 22, rare: 10, epic: 2, cotd: 0, legend: 0, special: 6 },
-  { rank: 3, trash: 12, easy: 30, great: 26, rare: 18, epic: 6, cotd: 1, legend: 0, special: 7 },
-  { rank: 4, trash: 8, easy: 20, great: 26, rare: 24, epic: 12, cotd: 2.5, legend: 0.5, special: 7 },
-  { rank: 5, trash: 5, easy: 12, great: 22, rare: 28, epic: 18, cotd: 6, legend: 1, special: 8 },
+  { rank: 1, trash: 28, easy: 45, great: 16, rare: 4, epic: 0, cotd: 0, legend: 0, heavy: 2, special: 5 },
+  { rank: 2, trash: 18, easy: 40, great: 22, rare: 10, epic: 2, cotd: 0, legend: 0, heavy: 2, special: 6 },
+  { rank: 3, trash: 10, easy: 30, great: 26, rare: 18, epic: 6, cotd: 1, legend: 0, heavy: 2, special: 7 },
+  { rank: 4, trash: 6, easy: 20, great: 26, rare: 24, epic: 12, cotd: 2.5, legend: 0.5, heavy: 2, special: 7 },
+  { rank: 5, trash: 3, easy: 12, great: 22, rare: 28, epic: 18, cotd: 6, legend: 1, heavy: 2, special: 8 },
 ];
 
 /** The base odds of a lure rank. Unknown ranks fall back to rank 1. */
@@ -107,8 +113,9 @@ export function baseTierOdds(rank: number): TierOdds {
 /**
  * The odds of a lure rank with the equipped baits applied.
  *
- * The Glow Jig adds 2 percentage points to "Rare Find" and above; the points
- * are taken from the three common tiers so the row still adds up to 100 %.
+ * The Glow Jig adds 2 percentage points to "Rare Find" and above (the heavy
+ * tier included); the points are taken from the three common tiers so the
+ * row still adds up to 100 %.
  */
 export function tierOddsForRank(rank: number, baits: EquippedBaits = baitsWithoutEffect()): TierOdds {
   const base = { ...baseTierOdds(rank) };
@@ -123,8 +130,9 @@ export function tierOddsForRank(rank: number, baits: EquippedBaits = baitsWithou
   base.epic += bonus;
   base.cotd += bonus;
   base.legend += bonus;
+  base.heavy += bonus;
 
-  const taken = bonus * 4;
+  const taken = bonus * 5;
   // The three common tiers always have odds (5 % at the lowest rank), so the
   // divisor is never zero.
   const divisor = Math.max(donorTotal, Number.EPSILON);
@@ -236,17 +244,23 @@ export type RolledCatch =
   | { kind: 'fish'; tier: CatchTier; catch: CatchDef; lbs: number }
   | { kind: 'critter'; tier: CatchTier; catch: CatchDef; lbs: number; critter: CritterDef }
   | { kind: 'junk'; tier: CatchTier; catch: CatchDef; lbs: number }
+  | { kind: 'heavy'; tier: CatchTier; catch: CatchDef; lbs: number }
   | { kind: 'new_lure' }
   | { kind: 'frenzy' }
   | { kind: 'powerup'; powerup: PowerupId }
   | { kind: 'pack_ticket' };
 
-/** The rolls that land a catch (a critter, a fish or a piece of junk). */
-export type CatchOutcome = Extract<RolledCatch, { kind: 'fish' | 'critter' | 'junk' }>;
+/** The rolls that land a catch (a critter, a fish, junk or a heavy catch). */
+export type CatchOutcome = Extract<RolledCatch, { kind: 'fish' | 'critter' | 'junk' | 'heavy' }>;
 
 /** Whether the roll landed a catch. */
 export function isCatchOutcome(outcome: RolledCatch): outcome is CatchOutcome {
-  return outcome.kind === 'fish' || outcome.kind === 'critter' || outcome.kind === 'junk';
+  return (
+    outcome.kind === 'fish' ||
+    outcome.kind === 'critter' ||
+    outcome.kind === 'junk' ||
+    outcome.kind === 'heavy'
+  );
 }
 
 /** The result of one roll. */
@@ -337,7 +351,17 @@ export function specialOddsFor(
  */
 export function rollTier(rng: Rng, rank: number, baits?: EquippedBaits): CatchTier | 'special' {
   const odds = tierOddsForRank(rank, baits);
-  const order: (keyof TierOdds)[] = ['trash', 'easy', 'great', 'rare', 'epic', 'cotd', 'legend', 'special'];
+  const order: (keyof TierOdds)[] = [
+    'trash',
+    'easy',
+    'great',
+    'rare',
+    'epic',
+    'cotd',
+    'legend',
+    'heavy',
+    'special',
+  ];
   const roll = rng.next() * 100;
 
   let cumulative = 0;
@@ -537,6 +561,10 @@ export function toOutcome(catchDef: CatchDef, lbs: number): CatchOutcome {
   if (catchDef.contentType === 'fish') {
     /* v8 ignore next -- the fish registry is empty until the first fish is added */
     return { kind: 'fish', tier: catchDef.tier, catch: catchDef, lbs };
+  }
+
+  if (catchDef.contentType === 'heavy') {
+    return { kind: 'heavy', tier: catchDef.tier, catch: catchDef, lbs };
   }
 
   return { kind: 'junk', tier: catchDef.tier, catch: catchDef, lbs };

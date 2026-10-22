@@ -103,6 +103,8 @@ export interface SessionOutcome {
   critterIds: readonly string[];
   /** The pack tickets the game produced (before the caps). */
   packTickets: number;
+  /** The heavy catches the game produced (each of them pays a bonus). */
+  heavyCatches?: number;
 }
 
 /** One caught critter after settlement. */
@@ -142,6 +144,7 @@ export function settleSession(
       graduated: progress.graduated,
       dueCleared: progress.dueCleared,
       modeScore: outcome.modeScore ?? 0,
+      heavyCatches: outcome.heavyCatches ?? 0,
       tokensToday: current.tokensToday,
     },
     rules,

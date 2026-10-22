@@ -10,6 +10,8 @@ export interface PayoutInput {
   dueCleared: number;
   /** The score of the (cosmetic) game mode, e.g. the "number goes up" counter. */
   modeScore: number;
+  /** How many heavy catches landed (each of them pays a bonus). */
+  heavyCatches?: number;
   /** How many tokens have already been earned today, before this payout. */
   tokensToday: number;
 }
@@ -24,6 +26,8 @@ export interface PayoutRules {
   tokensPerDueCleared: number;
   /** Tokens per point of the game mode score. */
   modeBonusPerPoint: number;
+  /** Tokens per heavy catch of the fishing mode (a multiple of 5). */
+  tokensPerHeavyCatch: number;
   /** The soft daily cap: tokens beyond this are worth `softCapRatio`. */
   softCap: number;
   /** How much a token is worth once the soft cap is reached. */
@@ -40,6 +44,7 @@ export const DEFAULT_PAYOUT_RULES: PayoutRules = {
   tokensPerGraduated: 1,
   tokensPerDueCleared: 0.25,
   modeBonusPerPoint: 0.01,
+  tokensPerHeavyCatch: 15,
   softCap: 500,
   softCapRatio: 0.25,
 };
@@ -50,7 +55,9 @@ export interface Payout {
   baseTokens: number;
   /** Tokens earned from the game mode score. */
   bonusTokens: number;
-  /** `baseTokens + bonusTokens`, before the daily cap. */
+  /** Tokens earned from the heavy catches of the session. */
+  heavyTokens: number;
+  /** `baseTokens + bonusTokens + heavyTokens`, before the daily cap. */
   grossTokens: number;
   /** The tokens actually awarded. */
   tokens: number;
@@ -67,6 +74,10 @@ export interface Payout {
  * the client cannot pay itself. The daily cap is *soft*: once the cap is
  * reached every further token is only worth `softCapRatio` of its value, so
  * grinding never beats spacing but is never impossible either.
+ *
+ * A heavy catch of the fishing mode pays a flat bonus of
+ * `tokensPerHeavyCatch` tokens (15, a multiple of 5). Every other rule is
+ * the one of the SPEC.
  */
 export function computePayout(input: PayoutInput, rules: Partial<PayoutRules> = {}): Payout {
   const economy: PayoutRules = {
@@ -78,6 +89,7 @@ export function computePayout(input: PayoutInput, rules: Partial<PayoutRules> = 
   const graduated = nonNegative(input.graduated);
   const dueCleared = nonNegative(input.dueCleared);
   const modeScore = nonNegative(input.modeScore);
+  const heavyCatches = nonNegative(input.heavyCatches ?? 0);
   const tokensToday = nonNegative(input.tokensToday);
 
   const baseTokens = Math.floor(
@@ -86,7 +98,8 @@ export function computePayout(input: PayoutInput, rules: Partial<PayoutRules> = 
     economy.tokensPerDueCleared * dueCleared,
   );
   const bonusTokens = Math.floor(modeScore * economy.modeBonusPerPoint);
-  const grossTokens = baseTokens + bonusTokens;
+  const heavyTokens = Math.floor(heavyCatches * economy.tokensPerHeavyCatch);
+  const grossTokens = baseTokens + bonusTokens + heavyTokens;
 
   const softCap = Math.max(0, economy.softCap);
   const headroom = Math.max(0, softCap - tokensToday);
@@ -95,6 +108,7 @@ export function computePayout(input: PayoutInput, rules: Partial<PayoutRules> = 
     return {
       baseTokens,
       bonusTokens,
+      heavyTokens,
       grossTokens,
       tokens: grossTokens,
       capped: false,
@@ -109,6 +123,7 @@ export function computePayout(input: PayoutInput, rules: Partial<PayoutRules> = 
   return {
     baseTokens,
     bonusTokens,
+    heavyTokens,
     grossTokens,
     tokens,
     capped: true,

@@ -6,6 +6,7 @@
  * - `critters.ts`: the collectible characters (SPEC §3).
  * - `packs.ts`: the packs the critters live in (SPEC §3).
  * - `junk.ts`: the "Trash" tier of the fishing mode.
+ * - `heavy.ts`: the "Heavy Catch" tier of the fishing mode.
  * - `specials.ts`: the "Special" slice of the fishing mode (and the powerups).
  * - `fish.ts`: the fish registry of the future (typed, empty for now).
  *
@@ -18,6 +19,7 @@
 
 export * from './critters';
 export * from './fish';
+export * from './heavy';
 export * from './junk';
 export * from './packs';
 export * from './specials';
@@ -25,6 +27,7 @@ export * from './types';
 
 import { CRITTERS } from './critters';
 import { FISHES } from './fish';
+import { HEAVY } from './heavy';
 import { JUNK } from './junk';
 import { POWERUPS, SPECIALS } from './specials';
 import type { ContentType } from './types';
@@ -44,6 +47,9 @@ export function contentTypeOf(assetId: string): ContentType {
   }
   if (FISHES.some((entry) => entry.assetId === assetId)) {
     return 'fish';
+  }
+  if (HEAVY.some((entry) => entry.assetId === assetId)) {
+    return 'heavy';
   }
   if (
     SPECIALS.some((entry) => entry.assetId === assetId) ||
