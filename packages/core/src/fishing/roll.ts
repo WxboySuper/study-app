@@ -286,6 +286,36 @@ export const FRENZY_WEIGHT_MULTIPLIER = 2;
  * wide on purpose: reaching rank 5 takes a long session (100 correct answers
  * at the latest).
  */
+/** How far behind the expected pace the safety net kicks in (×1.5). */
+export const LURE_SAFETY_FACTOR = 1.5;
+
+/** The correct answers per lure level in endless mode. */
+export const ENDLESS_LURE_PACE = 22;
+
+/**
+ * The share of a mastery session's correct answers by which the four lure
+ * upgrades are expected. With misses and lost fish, 0.65 puts the median
+ * arrival of rank 5 at ~75 % of the session (see the pacing table in §8).
+ */
+export const MASTERY_MAX_LURE_AT = 0.65;
+
+/**
+ * The correct answers per lure level of a session.
+ *
+ * Mastery: a session is about `questions × 3` correct answers, and the four
+ * upgrades should land by ~75 % of it (36 questions → one level every ~17.5
+ * correct, rank 5 around answer 80 of 108). Endless: a slow fixed pace of
+ * {@link ENDLESS_LURE_PACE}. The upgrades stay rolled rewards: this is only
+ * the expected spacing.
+ */
+export function lurePaceFor(options: { mastery: boolean; questionCount: number }): number {
+  if (!options.mastery || options.questionCount <= 0) {
+    return ENDLESS_LURE_PACE;
+  }
+  const expectedCorrect = options.questionCount * 3;
+  return Math.max(3, (expectedCorrect * MASTERY_MAX_LURE_AT) / (MAX_LURE_RANK - 1));
+}
+
 export const LURE_GUARANTEE_THRESHOLDS: readonly number[] = [8, 25, 55, 100];
 
 /**
@@ -323,7 +353,11 @@ export function applyLureUpgrade(state: RollState): RollState {
 /**
  * How many lures have to be reeled up after `correctCount` correct answers.
  */
-export function guaranteedLureCount(correctCount: number): number {
+export function guaranteedLureCount(correctCount: number, lurePace?: number): number {
+  if (lurePace !== undefined) {
+    // The safety net trails the expected pace by half a level.
+    return Math.min(MAX_LURE_RANK - 1, Math.floor(correctCount / (lurePace * LURE_SAFETY_FACTOR)));
+  }
   return LURE_GUARANTEE_THRESHOLDS.filter((threshold) => correctCount >= threshold).length;
 }
 
@@ -349,6 +383,12 @@ export interface RollState {
   packTicketsToday: number;
   /** The baits that are equipped. */
   baits: EquippedBaits;
+  /**
+   * The correct answers per lure level ({@link lurePaceFor}). When it is set,
+   * "New Lure!" is its own 1-in-`lurePace` roll on every catch instead of a
+   * share of the special table. `undefined` keeps the legacy special share.
+   */
+  lurePace?: number;
 }
 
 /** A fresh roll state. */
@@ -442,14 +482,15 @@ export function specialOddsFor(
   const critterShare = equippedBaitEffect(state.baits).critterShare;
   const critterAllowed = !bonus;
 
-  const withoutCritter = BASE_SPECIAL_ODDS.newLure + BASE_SPECIAL_ODDS.frenzy + BASE_SPECIAL_ODDS.powerup;
+  const lureShare = state.lurePace === undefined ? BASE_SPECIAL_ODDS.newLure : 0;
+  const withoutCritter = lureShare + BASE_SPECIAL_ODDS.frenzy + BASE_SPECIAL_ODDS.powerup;
   // Pack tickets only roll on due or new cards, and only once per session
   // and once per day (§8).
   const ticketShare = ticketCapped || bonus ? 0 : BASE_SPECIAL_ODDS.packTicket;
   const others = withoutCritter + ticketShare;
 
   const odds: SpecialOdds = {
-    newLure: BASE_SPECIAL_ODDS.newLure,
+    newLure: lureShare,
     frenzy: BASE_SPECIAL_ODDS.frenzy,
     powerup: BASE_SPECIAL_ODDS.powerup,
     critter: 0,
@@ -615,8 +656,20 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
 
   // 1. The lure guarantee.
   // The rank itself moves when the catch is claimed (see applyLureUpgrade).
-  if (next.lureRank < MAX_LURE_RANK && next.luresReeledUp < guaranteedLureCount(next.correctCount)) {
+  if (
+    next.lureRank < MAX_LURE_RANK &&
+    next.luresReeledUp < guaranteedLureCount(next.correctCount, next.lurePace)
+  ) {
     return { outcome: { kind: 'new_lure' }, state: next, rank, luckyCharmUsed: false, frenzyActive };
+  }
+
+  // 1b. The paced lure roll: a 1-in-lurePace chance on every catch. The fish
+  // has to be landed (a correct answer) for the upgrade to count, so the
+  // expected spacing is `lurePace` correct answers per level.
+  if (next.lurePace !== undefined && next.lureRank < MAX_LURE_RANK && !bonus) {
+    if (rng.next() < 1 / next.lurePace) {
+      return { outcome: { kind: 'new_lure' }, state: next, rank, luckyCharmUsed: false, frenzyActive };
+    }
   }
 
   // 2. The tier.

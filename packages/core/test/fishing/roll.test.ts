@@ -25,6 +25,8 @@ import {
   weightMultiplier,
   applyLureUpgrade,
   applySpecialReward,
+  lurePaceFor,
+  ENDLESS_LURE_PACE,
   TIER_WEIGHTS_BY_RANK,
 } from '../../src/fishing/roll';
 import { catchesOfTier } from '../../src/fishing/catches';
@@ -290,6 +292,51 @@ describe('the tier weights of the lures', () => {
 
   it('has a row for every roll rank', () => {
     expect(TIER_WEIGHTS_BY_RANK).toHaveLength(6);
+  });
+});
+
+describe('the lure pace', () => {
+  it('scales with the mastery session and is slow and fixed in endless mode', () => {
+    expect(lurePaceFor({ mastery: true, questionCount: 36 })).toBeCloseTo(17.55, 2);
+    expect(lurePaceFor({ mastery: false, questionCount: 36 })).toBe(ENDLESS_LURE_PACE);
+    expect(lurePaceFor({ mastery: true, questionCount: 0 })).toBe(ENDLESS_LURE_PACE);
+    expect(lurePaceFor({ mastery: true, questionCount: 1 })).toBe(3);
+  });
+
+  it('rolls New Lure as its own 1-in-pace chance and not in the special table', () => {
+    const state = createRollState({ lurePace: 20 });
+    expect(rollCatch(sequenceRng([0.01, 0.1, 0.0, 0.0]), state).outcome).toEqual({ kind: 'new_lure' });
+    expect(rollCatch(sequenceRng([0.5, 0.1, 0.0, 0.0]), state).outcome.kind).toBe('junk');
+    expect(specialOddsFor(state).newLure).toBe(0);
+    expect(rollCatch(sequenceRng([0.01, 0.1, 0.0]), createRollState({ lurePace: 20, lureRank: 5 })).outcome.kind).not.toBe('new_lure');
+  });
+
+  it('keeps a trailing safety net at 1.5x the pace', () => {
+    expect(guaranteedLureCount(29, 20)).toBe(0);
+    expect(guaranteedLureCount(30, 20)).toBe(1);
+    expect(guaranteedLureCount(1000, 20)).toBe(4);
+  });
+
+  it('reaches the last lure late in a 36-question mastery session', () => {
+    const pace = lurePaceFor({ mastery: true, questionCount: 36 });
+    const at = (answers: number) => {
+      let total = 0;
+      for (let run = 0; run < 400; run += 1) {
+        const rng = createSeededRng(run + 1);
+        let state = createRollState({ lurePace: pace });
+        for (let index = 0; index < answers; index += 1) {
+          const result = rollCatch(rng, state, { now: 0 });
+          state = result.state;
+          if (rng.next() < 0.85) {
+            state = applySpecialReward({ ...state, correctCount: state.correctCount + 1 }, result.outcome);
+          }
+        }
+        total += state.lureRank;
+      }
+      return total / 400;
+    };
+    expect(at(26)).toBeLessThan(2.8);
+    expect(at(108)).toBeGreaterThan(4.5);
   });
 });
 

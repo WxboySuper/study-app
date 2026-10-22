@@ -136,6 +136,18 @@ export function PackOpening({
       return undefined;
     }
 
+    // Every run ("Open another" included) starts from a clean slate: the
+    // values of the last reveal are still at 1, and animating 1 -> 1 skipped
+    // the fly, the shake and the burst after the first pack.
+    fly.value = 0;
+    shake.value = 0;
+    shakeX.value = 0;
+    flash.value = 0;
+    critterScale.value = 0;
+    labelScale.value = 0;
+    stampScale.value = 0;
+    setPhase('idle');
+
     if (reduceMotion) {
       setPhase('reveal');
       backdrop.value = withTiming(1, { duration: 120 });
@@ -196,6 +208,7 @@ export function PackOpening({
     reduceMotion,
     runId,
     shake,
+    shakeX,
     stampScale,
     visible,
   ]);

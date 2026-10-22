@@ -2,6 +2,7 @@ import {
   answerSessionQuestion,
   buildChoices,
   buildDeckClassMap,
+  lurePaceFor,
   computePayout,
   countStudyProgress,
   createSessionQueue,
@@ -412,7 +413,11 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           left: sessionRemaining(engine),
           dots: masteryProgress(engine),
         });
-        dispatch({ type: 'set_queue', queue: [] });
+        dispatch({
+          type: 'set_queue',
+          queue: [],
+          lurePace: lurePaceFor({ mastery, questionCount: pool.length }),
+        });
 
         // The wallet knows how many pack tickets were already earned today:
         // the mode must not roll a second one.

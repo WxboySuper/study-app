@@ -223,7 +223,7 @@ The table is checked by `packages/core/test/fishing/catches.test.ts`: every
 catch has to sit inside the range of its row and carry its chance, and every
 rank-1 pool has to add up to 100%.
 
-- **Lure rank rises within a session.** You *reel up* "New Lure!" as a special catch, from the catch roll, as in Blooket's "New Lure" special ([wiki](https://blooket.fandom.com/wiki/Fishing_Frenzy)), with wide safety nets at 8, 25, 55 and 100 correct answers. The upgrade is applied when the catch is **claimed** on the reveal card (a lure that got away is lost), so reaching the Legend Lure takes a long session. Rank resets each session. The **base lure** you start at is a persistent shop upgrade (§9), so progress carries over.
+- **Lure rank rises within a session.** You *reel up* "New Lure!" as a special catch, from the catch roll, as in Blooket's "New Lure" special ([wiki](https://blooket.fandom.com/wiki/Fishing_Frenzy)), paced per session (see §8, Lure pacing). The upgrade is applied when the catch is **claimed** on the reveal card (a lure that got away is lost), so reaching the Legend Lure takes a long session. Rank resets each session. The **base lure** you start at is a persistent shop upgrade (§9), so progress carries over.
 - **Haul lbs is the score for bests and achievements. Tokens still come only from the SPEC payout formula** (~1.5/correct). Catches never mint tokens directly, apart from the capped specials in §8 and the heavy-catch bonus in §10.
 - **What a tier holds:** the bottom tier holds junk, every other tier holds the **critters of that rarity** of the packs that are on sale (Common → Easy One, Uncommon → Great Catch, Rare → Rare Find, Epic → Epic Grab, Legendary → Catch of the Day). A tier without any catch falls back to the closest tier that has one, so the game never dead ends.
 - **Weights are shown compactly** for the big catches: `3.3k lbs`, `1.2M lbs`. The HUD, the catch log, the claim card and the payout screen all use the same formatter.
@@ -258,12 +258,34 @@ lives in `packages/core/src/fishing/wiki.ts`.
 The "Special" slice in §6 rolls on this table:
 | Special | Share | Effect |
 |---|---|---|
-| **New Lure!** | 30% (plus safety nets at 8/25/55/100 correct) | lure rank +1 for this session (max 5), applied on claim, with a big reel-up and a lure-glow trail |
+| **New Lure!** | its own 1-in-pace roll (§8, Lure pacing) | lure rank +1 for this session (max 5), applied on claim, with a big reel-up and a lure-glow trail |
 | **FRENZY!** | 15% | rainbow sky and water, music tempo up. The **next 5 catches** roll at rank +2 with ×2 weight. Counted in catches, not seconds, so it fits untimed play |
 | **Powerup bottle** | 40% | one of: **Double Hook** (next correct lands 2 catches), **Lucky Charm** (next catch rerolls Trash/Easy once), **Second Chance** (next wrong answer lets the catch stay on, so you can retry the same card once; the SRS still logs the first miss as Again), **Heavy Sinker** (×3 weight on the next catch) |
 | **Critter catch** | 12% | a bonus critter swims up, whatever the tier roll was. Rarity is rolled with the SPEC pack odds. It is a catch like any other (haul, reveal, payout): it does **not** go into the collection |
 | **Pack Ticket** | 3% | one free Brain Buddies pack, max 1 per session and 1 per day. It counts against the SPEC economy, so a ticket ≈ 20 tokens of value inside the daily cap |
 The critter special and the ticket **only roll on due or new cards** (never bonus review) and are validated server-side at End, as tokens are, so they can't be farmed.
+
+### Lure pacing (v0.1.9)
+"New Lure!" is a rolled reward, never a fixed turn. Every catch has a
+1-in-`lurePace` chance of being a New Lure, and the upgrade only counts when
+the catch is claimed. `lurePaceFor` sets the pace:
+
+- **Mastery:** `0.65 × questions × 3 / 4` correct answers per level. That is
+  17.6 for 36 questions, so rank 5 arrives around 70–75 % of the session.
+- **Endless:** a fixed 22 correct answers per level.
+
+A trailing safety net forces an upgrade at 1.5× the pace (for example 26, 53,
+79 and 105 correct answers at a pace of 17.6). It only rescues very unlucky
+runs. When a pace is set, New Lure is removed from the special table.
+
+Expected lure level by answer: mean rank / share of runs already at rank 5.
+The simulation runs 2,000 sessions at 85 % accuracy.
+
+| Answers | 10 | 20 | 30 | 40 | 50 | 60 | 70 | 80 | 90 | 100 | 108 | 150 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Mastery, 36 q (pace 17.6) | 1.47/0% | 1.95/2% | 2.49/6% | 3.10/12% | 3.51/23% | 3.86/36% | 4.22/48% | 4.45/60% | 4.63/71% | 4.81/81% | 4.88/88% | 5.00/100% |
+| Mastery, 12 q (pace 5.9) | 2.46/5% | 3.86/35% | 4.64/72% | 4.94/94% | 5.00/100% | | | | | | | |
+| Endless (pace 22) | 1.38/0% | 1.75/1% | 2.17/3% | 2.67/7% | 3.09/12% | 3.41/21% | 3.70/31% | 4.05/42% | 4.30/52% | 4.47/62% | 4.58/69% | 4.93/93% |
 
 ## 9. Lures and upgrades (shop, persistent)
 | Item | Effect | Price (tokens) |

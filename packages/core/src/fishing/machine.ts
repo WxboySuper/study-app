@@ -279,7 +279,7 @@ export type FishingEvent =
   /** The end sheet is confirmed: the session is over. */
   | { type: 'confirm_end' }
   /** The queue was (re)built by the app. */
-  | { type: 'set_queue'; queue: readonly QueueItem[] };
+  | { type: 'set_queue'; queue: readonly QueueItem[]; lurePace?: number };
 
 /** How a fishing session is created. */
 export interface FishingMachineOptions {
@@ -434,7 +434,15 @@ export function fishingReducer(state: FishingState, event: FishingEvent): Fishin
       }
       return {
         ...state,
-        session: { ...state.session, queue: event.queue, queueIndex: 0 },
+        session: {
+          ...state.session,
+          queue: event.queue,
+          queueIndex: 0,
+          roll:
+            event.lurePace === undefined
+              ? state.session.roll
+              : { ...state.session.roll, lurePace: event.lurePace },
+        },
       };
   }
 }

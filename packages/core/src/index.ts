@@ -333,6 +333,8 @@ export {
   findPowerup,
   applyLureUpgrade,
   applySpecialReward,
+  lurePaceFor,
+  ENDLESS_LURE_PACE,
   guaranteedLureCount,
   isCatchOutcome,
   pickWeightedCatch,
