@@ -23,7 +23,6 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
-  FadeInDown,
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
@@ -245,7 +244,7 @@ export default function HomeScreen() {
     <GameBackground variant="home">
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <Animated.View entering={FadeInDown.springify().damping(16)} style={styles.header}>
+          <Animated.View style={styles.header}>
             <Wordmark size={44} />
             <Text style={styles.tagline}>
               Endless, untimed study. The scheduler picks the cards, the game picks the vibe.
@@ -253,7 +252,6 @@ export default function HomeScreen() {
           </Animated.View>
 
           <Animated.View
-            entering={FadeInDown.springify().damping(16).delay(80)}
             style={styles.walletRow}
           >
             <GlassCard style={styles.walletCard} contentStyle={styles.walletCardContent} tint={colors.gold}>
@@ -274,7 +272,6 @@ export default function HomeScreen() {
           </Animated.View>
 
           <Animated.View
-            entering={FadeInDown.springify().damping(16).delay(160)}
           >
             <PlayCard
               onPress={go}
@@ -284,7 +281,7 @@ export default function HomeScreen() {
             />
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.springify().damping(16).delay(240)} style={styles.tiles}>
+          <Animated.View style={styles.tiles}>
             <ModeTile
               title="PACKS"
               hint="Open a pack"
@@ -327,7 +324,7 @@ export default function HomeScreen() {
             />
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.springify().damping(16).delay(320)} style={styles.section}>
+          <Animated.View style={styles.section}>
             <DeckPicker
               decks={decks}
               selectedId={selectedDeckId(scope)}
@@ -342,7 +339,7 @@ export default function HomeScreen() {
             />
           </Animated.View>
 
-          <Animated.View entering={FadeInDown.springify().damping(16).delay(380)} style={styles.section}>
+          <Animated.View style={styles.section}>
             <Text style={styles.sectionTitle}>Settings</Text>
             <Toggle label="Sound" value={sound} onChange={setSound} />
             <Toggle label="Haptics" value={haptics} onChange={setHaptics} />

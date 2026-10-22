@@ -50,10 +50,14 @@ const RIM_RADIUS = 94;
  * The wedges are drawn with their centre at a quarter of a segment, so the
  * pointer has to be moved by half a segment to land on one.
  */
+/** The number of segments, read once so the worklet captures a number. */
+const SEGMENT_COUNT = SPIN_SEGMENTS.length;
+
 export function segmentAt(rotation: number): number {
-  const step = 360 / SPIN_SEGMENTS.length;
+  'worklet';
+  const step = 360 / SEGMENT_COUNT;
   const raw = Math.round((-rotation - step / 2) / step);
-  return ((raw % SPIN_SEGMENTS.length) + SPIN_SEGMENTS.length) % SPIN_SEGMENTS.length;
+  return ((raw % SEGMENT_COUNT) + SEGMENT_COUNT) % SEGMENT_COUNT;
 }
 
 /** Mixes a hex color with white (`amount` above 0) or black (below 0). */
