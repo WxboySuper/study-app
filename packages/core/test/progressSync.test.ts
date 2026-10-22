@@ -218,4 +218,86 @@ describe("foldRemoteEvents", () => {
     const second = foldRemoteEvents(events, local, "zzz");
     expect(second.cardStates).toHaveLength(0);
   });
+
+  it("survives malformed payloads and breaks ties", () => {
+    const changes = foldRemoteEvents(
+      [
+        remote("a", 1, "card_state", {}),
+        remote("a", 2, "card_state", { state: state("c1", null) }),
+        remote("b", 3, "card_state", { state: state("c1", null) }),
+        remote("a", 4, "card_state", { state: state("c1", null) }),
+        remote("a", 5, "wallet_delta", {
+          balance: "x",
+          packTickets: undefined,
+        }),
+        remote("a", 6, "wallet_delta", {
+          balance: 1,
+          packTickets: 1,
+          critters: { f: "y", g: 2 },
+        }),
+        remote("a", 7, "kv", { key: "fishing.masteryCounts.v1", value: 3 }),
+        remote(
+          "a",
+          8,
+          "kv",
+          { key: "fishing.masteryCounts.v1", value: "A" },
+          50,
+        ),
+        remote(
+          "b",
+          9,
+          "kv",
+          { key: "fishing.masteryCounts.v1", value: "B" },
+          50,
+        ),
+        remote(
+          "a",
+          10,
+          "kv",
+          { key: "fishing.masteryCounts.v1", value: "C" },
+          50,
+        ),
+        remote(
+          "a",
+          11,
+          "kv",
+          { key: "fishing.masteryCounts.v1", value: "D" },
+          10,
+        ),
+        remote("a", 12, "spin", { localDate: "2026-10-22", reward: 7 }),
+        remote("a", 13, "spin", { localDate: "2026-10-01", reward: 1 }),
+        remote(
+          "a",
+          14,
+          "baseline",
+          {
+            wallet: { balance: 9, packTickets: 0 },
+            collection: {},
+            lastSpin: null,
+          },
+          90,
+        ),
+        remote(
+          "a",
+          15,
+          "baseline",
+          {
+            wallet: { balance: 1, packTickets: 0 },
+            collection: {},
+            lastSpin: null,
+          },
+          20,
+        ),
+        remote("a", 16, "nope" as RemoteEvent["type"], {}),
+      ],
+      new Map([["c1", state("c1", 5)]]),
+      "local",
+    );
+    expect(changes.cardStates).toHaveLength(0);
+    expect(changes.wallet.balance).toBe(1);
+    expect(changes.wallet.packTickets).toBe(1);
+    expect(changes.kv["fishing.masteryCounts.v1"]).toBe("B");
+    expect(changes.lastSpin?.reward).toBe(7);
+    expect(changes.baseline?.wallet.balance).toBe(9);
+  });
 });
