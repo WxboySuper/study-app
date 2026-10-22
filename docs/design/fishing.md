@@ -46,8 +46,10 @@ Sources: the [Fandom wiki](https://blooket.fandom.com/wiki/Fishing_Frenzy), the 
 ```
 IDLE ─tap Cast─▶ CASTING ─bobber lands─▶ WAITING ─bite 0.8–2.5s─▶ HOOKED!
 HOOKED! ─tap Reel (or auto after 600ms)─▶ QUESTION  (next FSRS card, overlaid in-scene)
-QUESTION ─correct─▶ REELING ─▶ REVEAL ─tap─▶ IDLE   (haul += lbs, effects applied)
-QUESTION ─wrong──▶ GOT_AWAY (line snaps, fish swims off, right answer shown 1.5s) ─▶ IDLE
+QUESTION ─answer─▶ ANSWERED (the answer is held on the screen)
+ANSWERED ─hold over (1.8s, or a tap anywhere)─▶ REELING (the lead-up)
+REELING ─the catch comes out of the water─▶ REVEAL ─tap─▶ IDLE
+REELING ─the line snaps (the answer was wrong)─▶ GOT_AWAY ─tap─▶ IDLE
 any ─End─▶ END_CONFIRM ─▶ PAYOUT
 ```
 - **Card selection:** each HOOKED! pulls the next card from the FSRS queue in `@study-app/core` (due first, then new, then bonus review). The *catch is rolled when the fish is hooked*, before you answer. The silhouette size and the shimmer of the shadow hint at what's on the line (a big shadow, a rarity-coloured glow), so a wrong answer on a hinted Megalodon *hurts*. That's the Blooket tension, without a timer.
@@ -56,7 +58,8 @@ any ─End─▶ END_CONFIRM ─▶ PAYOUT
 - **WAITING:** the bobber bobs, shadows drift, and the bobber twitches on nibbles. The wait is always short (≤2.5s), since waiting isn't studying.
 - **HOOKED!:** the bobber yanks under, and a giant tilted **"HOOKED!"** banner slams in with a screen shake and a heavy haptic. The shadow on the line shows its size. Tap **Reel** (auto-advances after 600ms if Alex prefers; it's a setting).
 - **QUESTION:** the in-scene answer gate (§4). The line stays taut and the fish thrashes.
-- **REELING (~900ms):** the reel spins, the line tightens, the fish is dragged up with spray, and bigger catches thrash harder.
+- **ANSWERED (the hold, 1.8s):** the answer the player picked and the right answer keep their colours (green and red, §4) and the answers are switched off, so the card can be reread. A tap anywhere ends the hold early.
+- **REELING (the lead-up, 2.5s):** the bobber dips and jerks on the water with ripples and small splashes, the fish pulls on the line (the rod bends, the line goes tight and the bobber comes closer to the boat) and the catch comes out of the water with a big splash. A junk catch and a wrong answer get the short version (1s): the line snaps and the shadow swims off.
 - **REVEAL:** the catch flips out of the water onto a reveal card (§5).
 - **GOT_AWAY:** a *twang*, the line goes slack, the shadow darts off, and the bubble reads **"It got away!"** with the right answer highlighted. You lose that catch, the streak resets, and the SRS grade is Again. That's the only penalty.
 
@@ -67,9 +70,12 @@ any ─End─▶ END_CONFIRM ─▶ PAYOUT
 - Answers are **2 to 4 wooden lure tags** hanging from a rope at the bottom (a 2×2 grid when there are four), each 56dp+ tall. The wrong answers are the ones the author wrote for that very question: they never come from the other cards of the deck.
 - A card **without wrong answers** is not a multiple choice question: the note shows the question alone, the player taps **"Show the answer"** and then grades itself (**"Got it"** = Good, **"Missed it"** = Again).
 - Feedback: the tag presses in, then turns green with ✓ or red with a shake. Self-graded cards use the same gate with "Tap to flip" and ✓/✗ tags.
+- **The hold (1.8s):** after the answer, the tag the player picked and the right answer keep their colours (the right one green with ✓, the wrong one red with ✗) and the answers are switched off, so the player can reread the question and the answers. A tap anywhere ends the hold early.
+- The answers are never cut off: a long answer wraps on two lines.
 - There is no visible timer. Response time is tracked silently for Hard/Good/Easy, as in the SPEC.
 
 ## 5. Reveal card
+- The card never comes out of nowhere: the **lead-up** comes first (§3): the bobber dips and jerks, the fish pulls on the line and the catch comes out of the water with a big splash. A critter (or a heavy catch) gets the full 2.5s, a junk catch and a wrong answer get 1s.
 - It springs in (scale 0.6→1.05→1) over a burst in the rarity colour.
 - It shows the art, name, **rarity ribbon** using Blooket-style tier names (below) and **weight** counting up. Silly catches get a one-line joke caption ("Smells like detention"), critters show their vibe.
 - **No "NEW!" stamp:** a catch never grants a critter to the collection, so there is nothing to stamp. The stamp stays on the pack opening, where the critter really is granted.
@@ -178,12 +184,14 @@ Every **heavy catch** of the session pays **15 tokens** on top of the payout of 
 
 ### 11a. The lake scene as it is drawn today (`LakeScene.tsx`)
 The scene is **drawn with `react-native-svg`**, not assembled from PNGs, so the boat, the fisher and the rod stay crisp on every screen:
-- **Layers, back to front:** sky gradient → sun → far shore and hills → water gradient → glitter of the sun → four wave bands (the parallax) → the boat with the fisher and the rod → the frenzy tint → the shadow of the catch → the ripples → the fishing line → the splash → the bobber → the catch → the overlays (HUD, note, reveal card).
+- **Layers, back to front:** sky gradient → sun → far shore and hills → water gradient → glitter of the sun → four wave bands (the parallax) → the big splash of the catch → the boat with the fisher and the rod → the frenzy tint → the shadow of the catch → the ripples → the fishing line → the splash → the bobber → the catch → the overlays (HUD, note, reveal card).
 - **The boat floats in the lake:** the hull is drawn in two halves (the part above the water and the part below it, tinted like the water) and it rocks and bobs with the phase of the waves, so the boat never "sits on" the water.
 - **The line sags:** it is a quadratic curve from the tip of the rod to the bobber; the sag grows with the length of the line and it goes tight when a fish is hooked. The line is drawn piece by piece (each piece is turned along the curve) so it follows the bobber on the UI thread.
-- **The bobber floats on the water** at a distance (on the water line at its own x), it bobs with the waves and it makes rings. During a cast it flies over the water on a parabola, from the tip of the rod to the spot where it lands.
+- **The bobber floats on the water** at a distance (on the water line at its own x), it bobs with the waves and it makes rings. During a cast it flies over the water on a parabola, from the tip of the rod to the spot where it lands. **It stays in the water during the lead-up**: it dips under it (and fades a little), it is pulled towards the boat and it never leaves the lake.
+- **The rod bends:** the rod is drawn in two halves and the tip turns on its joint while the fish pulls on the line, so the tip of the rod (and the line that hangs from it) follows the pull.
+- **The lead-up before the reveal card** (`REELING`): the bobber dips and jerks with ripples and small splashes, the fish pulls on the line (the rod bends, the line goes tight, the bobber comes closer to the boat) and the catch leaps out of the water with a big splash. A wrong answer gets the short version: the line snaps, the rod springs back and the shadow swims off.
 - **Reduce Motion:** the waves, the bobbing, the rocking and the flight of the cast stop; the scene stays in one pose.
-- **Demo states of the web build:** `/fishing` (idle), `/fishing?demo=cast` (the bobber in the air), `?demo=question`, `?demo=reveal` and `?demo=payout`. `scripts/screenshots.mjs` photographs them.
+- **Demo states of the web build:** `/fishing` (idle), `/fishing?demo=cast` (the bobber in the air), `?demo=question`, `?demo=reveal` and `?demo=payout`. The frames of the catch have a demo of their own: `?demo=seq-highlight` (the answer that is held on the screen), `?demo=seq-dip`, `?demo=seq-tug`, `?demo=seq-breach` and `?demo=seq-reveal`. `scripts/screenshots.mjs` photographs them (`docs/screenshots/fishing-seq-*.png`).
 
 ## 12. Sound and haptics
 - **Audio:** `expo-audio`. Short SFX are preloaded: cast whoosh, plop, nibble blip, bite splash, reel ratchet (loop), line snap twang, correct ding, wrong thunk, reveal fanfare (3 tiers), coin roll, and an ambient lake loop (water lap and birds, low volume). Mute toggle, ducked when other audio is playing.
@@ -257,7 +265,9 @@ Multiplayer, real distractions against other players, timers, an aquarium displa
 ## 15. Acceptance checklist
 - [ ] The scene is always visible and runs smoothly on a mid-range Android phone. It works with the placeholder fallback art.
 - [ ] The question shows as an in-scene note. There is never a full-screen quiz card.
-- [ ] The full loop works: cast → wait → HOOKED! → answer → reel + reveal, or got away → cast again.
+- [ ] The full loop works: cast → wait → HOOKED! → answer → the answer is held on the screen → reel + reveal, or got away → cast again.
+- [ ] After an answer, the answer the player picked and the right answer keep their colours for ~1.8s, the answers are switched off during the hold and a tap anywhere ends it early.
+- [ ] The lead-up before the reveal card plays on the water: the bobber dips and jerks, the rod bends, the bobber is pulled towards the boat and the catch comes out of the water with a big splash (2.5s for a critter or a heavy catch, 1s for junk and for a wrong answer).
 - [ ] The haul counter rolls up, and the End confirmation leads to the server payout screen.
 - [ ] The HOOKED! banner, GOT_AWAY and the in-session lure ranks 1–5 work. Frenzy lasts 5 catches. Powerups, critter catches and the Pack Ticket caps all work.
 - [ ] A critter catch is a catch: it counts for the haul and it is shown on the reveal and on the payout screen, but it **never** enters the collection. Only a pack grants a critter (a duplicate only bumps the count there).
