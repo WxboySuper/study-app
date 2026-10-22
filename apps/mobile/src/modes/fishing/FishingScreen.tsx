@@ -38,6 +38,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { openLocalStore } from '@/db/local';
 import { MathText } from '@/math/MathText';
@@ -233,6 +234,7 @@ function saveMasteryCounts(state: Parameters<typeof masteryCounts>[0]): void {
 export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { bait } = useSettings();
+  const insets = useSafeAreaInsets();
 
   const cardsRef = useRef<StudyCard[]>([]);
   const statesRef = useRef<Map<string, CardState>>(new Map());
@@ -1204,7 +1206,10 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         floating over it. Nothing is absolutely positioned here, so the note
         can never be covered by the HUD.
       */}
-      <View style={styles.hudStack} pointerEvents="box-none">
+      <View
+        style={[styles.hudStack, { paddingTop: insets.top, paddingBottom: insets.bottom + 12 }]}
+        pointerEvents="box-none"
+      >
         <Hud
           session={machine.session}
           remaining={progress.left}
@@ -1301,7 +1306,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
           accessibilityLabel="Cast the line"
           onPress={onCast}
           disabled={loading || nothingToStudy}
-          style={({ pressed }) => [styles.castWrap, pressed && styles.castPressed]}
+          style={({ pressed }) => [styles.castWrap, { bottom: 130 + insets.bottom }, pressed && styles.castPressed]}
         >
           <View style={styles.castBase}>
             <LinearGradient
@@ -1369,10 +1374,12 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
   },
+  // The note sits in the thumb zone: the answers are anchored to the bottom
+  // of the screen and the question right above them, the lake stays on top.
   noteStack: {
     flex: 1,
     width: '100%',
-    justifyContent: 'flex-start',
+    justifyContent: 'flex-end',
   },
   demoMarker: {
     position: 'absolute',
