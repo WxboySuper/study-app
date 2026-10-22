@@ -312,7 +312,15 @@ function demoCardStates(): Map<string, CardState> {
     lastReview: now - day,
   });
 
-  for (const id of ['card_cell_1', 'card_cell_3', 'card_cell_5', 'card_rev_1', 'card_rev_3']) {
+  for (const id of [
+    'card_cell_1',
+    'card_cell_3',
+    'card_cell_5',
+    'card_rev_1',
+    'card_rev_3',
+    'card_math_1',
+    'card_math_3',
+  ]) {
     states.set(id, state(id, now - day, 3));
   }
   for (const id of ['card_cell_2', 'card_rev_2', 'card_rev_5']) {

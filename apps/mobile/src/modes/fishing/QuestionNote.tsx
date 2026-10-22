@@ -1,4 +1,9 @@
-import { plainText, type FishingFeedback, type FishingQuestion } from '@study-app/core';
+import {
+  mathSources,
+  plainText,
+  type FishingFeedback,
+  type FishingQuestion,
+} from '@study-app/core';
 import { useEffect, useState } from 'react';
 import { ImageBackground, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
@@ -264,12 +269,15 @@ export function QuestionNote({
  * A short answer gets a 2x2 grid. An answer longer than
  * {@link LONG_ANSWER_CHARS} characters gets a button of its own (one
  * column), and the font shrinks a step for every 60 extra characters.
+ *
+ * The length of an answer with math is the length of its text plus the
+ * length of its LaTeX: a long formula is a long answer too.
  */
 function answerLayout(choices: readonly string[]): { columns: 1 | 2; fontSize: number } {
   let longest = 0;
 
   for (const choice of choices) {
-    longest = Math.max(longest, plainText(choice).length);
+    longest = Math.max(longest, answerLength(choice));
   }
 
   let fontSize = ANSWER_FONT;
@@ -281,6 +289,11 @@ function answerLayout(choices: readonly string[]): { columns: 1 | 2; fontSize: n
   }
 
   return { columns: longest > LONG_ANSWER_CHARS ? 1 : 2, fontSize: Math.max(11, fontSize) };
+}
+
+/** How long an answer is: its text plus its LaTeX. */
+function answerLength(answer: string): number {
+  return plainText(answer).length + mathSources(answer).join(' ').length;
 }
 
 interface AnswerButtonProps {
@@ -497,6 +510,8 @@ const styles = StyleSheet.create({
     flexGrow: 0,
   },
   answerLabel: {
+    fontFamily: fonts.title,
+    letterSpacing: 1,
     fontSize: 15,
     textAlign: 'center',
     flexShrink: 1,

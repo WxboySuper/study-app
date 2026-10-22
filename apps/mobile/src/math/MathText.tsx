@@ -68,6 +68,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
+    alignSelf: 'stretch',
   },
   center: {
     justifyContent: 'center',

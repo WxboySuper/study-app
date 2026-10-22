@@ -83,7 +83,8 @@ const MASTERED_CELEBRATION_MS = 2_800;
 const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
   scene: 1,
   cast: 1,
-  question: 1,
+  // The question demo lands on a question with math (the heat equation).
+  question: 10,
   reveal: 1,
   payout: 3,
   'seq-highlight': 1,
