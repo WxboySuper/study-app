@@ -7,7 +7,7 @@ import {
   type PackDef,
   type WalletSnapshot,
 } from '@study-app/core';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -29,6 +29,7 @@ import { PackOpening } from './PackOpening';
  */
 
 export function PacksScreen() {
+  const params = useLocalSearchParams<{ demo?: string }>();
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
   const [owned, setOwned] = useState<Map<string, number>>(new Map());
   const [useTicket, setUseTicket] = useState(false);
@@ -58,6 +59,22 @@ export function PacksScreen() {
       void refresh();
     }, [refresh]),
   );
+
+  // The demo of the web build opens the reveal of a pack right away.
+  useEffect(() => {
+    if (params.demo !== 'reveal') {
+      return;
+    }
+    const pack = PACKS[0];
+    if (pack === undefined) {
+      return;
+    }
+    const critter = pack.critters.find((entry) => entry.rarity === 'epic') ?? pack.critters[0];
+    if (critter === undefined) {
+      return;
+    }
+    setOpening({ pack, critter, duplicate: false });
+  }, [params.demo]);
 
   const onOpen = useCallback(
     async (pack: PackDef, force = false) => {

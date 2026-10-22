@@ -1,10 +1,11 @@
 import type { FishingSessionResult } from '@study-app/core';
 import { CATCH_TIERS } from '@study-app/core';
-import { useEffect } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { useEffect, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-import { GameBackground } from '@/ui';
+import { colors, fonts, radius } from '@/theme';
+import { GameBackground, GameButton, GlassCard, Glow, LightRays, Particles, TokenCounter } from '@/ui';
 
 import { tierColor } from './assets';
 import { playSfxSequence } from './sfx';
@@ -17,8 +18,6 @@ import { Sprite } from './Sprite';
  * pack tickets. The server pays the session out, so the tokens that are shown
  * here are the estimate of `computePayout` until the API answers.
  */
-
-const AnimatedTextInput = Animated.createAnimatedComponent(TextInput);
 
 export interface PayoutScreenProps {
   /** The result of the session. */
@@ -35,26 +34,32 @@ export interface PayoutScreenProps {
   newCritterIds?: ReadonlySet<string>;
 }
 
-export function PayoutScreen({ result, tokens, onPlayAgain, onHome, reduceMotion, newCritterIds }: PayoutScreenProps) {
-  const counter = useSharedValue(0);
+export function PayoutScreen({
+  result,
+  tokens,
+  onPlayAgain,
+  onHome,
+  reduceMotion,
+  newCritterIds,
+}: PayoutScreenProps) {
   const cardScale = useSharedValue(0.9);
+  const [burst, setBurst] = useState(0);
 
   useEffect(() => {
     if (reduceMotion) {
-      counter.value = tokens;
       cardScale.value = 1;
       return;
     }
 
-    counter.value = withTiming(tokens, { duration: 900 });
     cardScale.value = withSpring(1, { damping: 14, stiffness: 120 });
     playSfxSequence('coin', Math.max(1, Math.min(8, Math.round(tokens / 4))));
-  }, [tokens, reduceMotion, counter, cardScale]);
-
-  const tokenProps = useAnimatedProps(() => ({
-    text: `${Math.round(counter.value)}`,
-    defaultValue: `${Math.round(counter.value)}`,
-  }));
+    const timer = setTimeout(() => {
+      setBurst((current) => current + 1);
+    }, 320);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [tokens, reduceMotion, cardScale]);
 
   const cardStyle = useAnimatedStyle(() => ({ transform: [{ scale: cardScale.value }] }));
 
@@ -64,92 +69,108 @@ export function PayoutScreen({ result, tokens, onPlayAgain, onHome, reduceMotion
     <GameBackground variant="ocean">
       <View style={styles.container}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Pack up!</Text>
+          <LightRays color={colors.gold} count={16} size={760} opacity={0.22} style={styles.rays} />
 
-        <Animated.View style={[styles.tokenCard, cardStyle]}>
-          <Text style={styles.tokenLabel}>Tokens</Text>
-          <AnimatedTextInput
-            editable={false}
-            animatedProps={tokenProps}
-            underlineColorAndroid="transparent"
-            style={styles.tokenValue}
-            accessibilityLabel={`${tokens} tokens`}
-          />
-          <Text style={styles.tokenHint}>the server pays the session out</Text>
-        </Animated.View>
+          <Animated.View entering={undefined} style={[styles.titleWrap, cardStyle]}>
+            <Text style={styles.title}>PACK UP!</Text>
+            <Text style={styles.subtitle}>The haul of the session</Text>
+          </Animated.View>
 
-        <View style={styles.statRow}>
-          <Stat label="Haul" value={`${result.haulLbs.toLocaleString('en-US')} lbs`} />
-          <Stat label="Catches" value={`${result.catches}`} />
-          <Stat label="Correct" value={`${result.correct}/${result.answered}`} />
-        </View>
+          <Animated.View style={[styles.tokenCard, cardStyle]}>
+            <Glow color={colors.gold} size={260} opacity={0.45} style={styles.tokenGlow} />
+            <Text style={styles.tokenLabel}>TOKENS EARNED</Text>
+            <TokenCounter
+              value={tokens}
+              startAt={0}
+              size={54}
+              duration={1100}
+              accessibilityLabel={`${tokens} tokens`}
+            />
+            <Text style={styles.tokenHint}>the server pays the session out</Text>
+          </Animated.View>
 
-        {biggest === null ? null : (
-          <View style={styles.biggest}>
-            <Text style={styles.sectionTitle}>Biggest catch</Text>
-            <View style={styles.biggestRow}>
-              <Sprite assetId={biggest.assetId} size={72} />
-              <View style={styles.biggestText}>
-                <Text style={styles.biggestName}>{biggest.name}</Text>
-                <Text style={[styles.biggestWeight, { color: tierColor(biggest.tier) }]}>
-                  {biggest.lbs.toLocaleString('en-US')} lbs
-                </Text>
+          <View style={styles.statRow}>
+            <Stat label="Haul" value={`${result.haulLbs.toLocaleString('en-US')} lbs`} />
+            <Stat label="Catches" value={`${result.catches}`} />
+            <Stat label="Correct" value={`${result.correct}/${result.answered}`} />
+          </View>
+
+          {biggest === null ? null : (
+            <GlassCard contentStyle={styles.biggest} tint={tierColor(biggest.tier)}>
+              <Text style={styles.sectionTitle}>BIGGEST CATCH</Text>
+              <View style={styles.biggestRow}>
+                <Sprite assetId={biggest.assetId} size={72} />
+                <View style={styles.biggestText}>
+                  <Text style={styles.biggestName}>{biggest.name}</Text>
+                  <Text style={[styles.biggestWeight, { color: tierColor(biggest.tier) }]}>
+                    {biggest.lbs.toLocaleString('en-US')} lbs
+                  </Text>
+                </View>
+              </View>
+            </GlassCard>
+          )}
+
+          {result.critters.length === 0 ? null : (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>CRITTERS CAUGHT</Text>
+              <View style={styles.critterGrid}>
+                {result.critters.map((critter, index) => (
+                  <View
+                    key={`${critter.critterId}-${index}`}
+                    style={[
+                      styles.critterChip,
+                      { borderColor: tierColor(critter.tier) },
+                    ]}
+                  >
+                    <Text style={styles.critterEmoji}>{critter.emoji}</Text>
+                    <View style={styles.critterText}>
+                      <Text style={styles.critterName} numberOfLines={1}>
+                        {critter.name}
+                      </Text>
+                      {newCritterIds?.has(critter.critterId) === true ? (
+                        <Text style={styles.critterNew}>NEW</Text>
+                      ) : null}
+                    </View>
+                  </View>
+                ))}
               </View>
             </View>
-          </View>
-        )}
+          )}
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Catches by tier</Text>
-          {CATCH_TIERS.map((tier) => (
-            <View key={tier.id} style={styles.tierRow}>
-              <View style={[styles.tierDot, { backgroundColor: tier.color }]} />
-              <Text style={styles.tierName}>{tier.name}</Text>
-              <Text style={styles.tierCount}>{result.byTier[tier.id] ?? 0}</Text>
-            </View>
-          ))}
-        </View>
-
-        {result.critters.length === 0 ? null : (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Critters</Text>
-            {result.critters.map((critter) => (
-              <View key={`${critter.critterId}-${critter.lbs}`} style={styles.critterRow}>
-                <Text style={styles.critterEmoji}>{critter.emoji}</Text>
-                <Text style={styles.critterName}>{critter.name}</Text>
-                <Text style={styles.critterRarity}>
-                  {newCritterIds?.has(critter.critterId) === true ? 'NEW · ' : ''}
-                  {critter.rarity}
-                </Text>
+            <Text style={styles.sectionTitle}>CATCHES BY TIER</Text>
+            {CATCH_TIERS.map((tier) => (
+              <View key={tier.id} style={styles.tierRow}>
+                <View style={[styles.tierDot, { backgroundColor: tier.color }]} />
+                <Text style={styles.tierName}>{tier.name}</Text>
+                <Text style={styles.tierCount}>{result.byTier[tier.id] ?? 0}</Text>
               </View>
             ))}
           </View>
-        )}
 
-        {result.packTickets === 0 ? null : (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Pack tickets</Text>
-            <Text style={styles.ticketText}>🎟️ {result.packTickets} free Brain Buddies pack</Text>
-          </View>
-        )}
-      </ScrollView>
+          {result.packTickets === 0 ? null : (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>PACK TICKETS</Text>
+              <Text style={styles.ticketText}>🎟️ {result.packTickets} free Brain Buddies pack</Text>
+            </View>
+          )}
+        </ScrollView>
 
-      <View style={styles.actions}>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onPlayAgain}
-          style={({ pressed }) => [styles.playAgain, pressed && styles.pressed]}
-        >
-          <Text style={styles.playAgainText}>Play again</Text>
-        </Pressable>
-        <Pressable
-          accessibilityRole="button"
-          onPress={onHome}
-          style={({ pressed }) => [styles.home, pressed && styles.pressed]}
-        >
-          <Text style={styles.homeText}>Home</Text>
-        </Pressable>
-      </View>
+        <View style={styles.actions}>
+          <GameButton label="PLAY AGAIN" variant="primary" size="lg" onPress={onPlayAgain} />
+          <GameButton label="HOME" variant="ghost" size="lg" onPress={onHome} />
+        </View>
+
+        <Particles
+          trigger={burst}
+          count={40}
+          colors={[colors.gold, '#fff7d6', '#38bdf8', '#ffffff']}
+          size={13}
+          distance={280}
+          gravity={300}
+          duration={1400}
+          style={styles.confetti}
+        />
       </View>
     </GameBackground>
   );
@@ -170,36 +191,55 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 18,
-    paddingBottom: 120,
+    paddingBottom: 150,
     gap: 14,
   },
+  rays: {
+    top: 0,
+    left: '50%',
+    marginLeft: -380,
+  },
+  titleWrap: {
+    alignItems: 'center',
+    gap: 2,
+  },
   title: {
-    color: '#f8fafc',
-    fontSize: 30,
-    fontWeight: '900',
-    textAlign: 'center',
+    color: colors.text,
+    fontSize: 34,
+    fontFamily: fonts.title,
+    letterSpacing: 1,
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 4 },
+    textShadowRadius: 10,
+  },
+  subtitle: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
   },
   tokenCard: {
     alignItems: 'center',
-    backgroundColor: '#16213e',
-    borderRadius: 18,
-    paddingVertical: 16,
+    borderRadius: radius.card,
+    paddingVertical: 18,
+    backgroundColor: 'rgba(12, 18, 38, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 209, 102, 0.35)',
+    overflow: 'hidden',
+  },
+  tokenGlow: {
+    position: 'absolute',
+    top: -60,
   },
   tokenLabel: {
-    color: '#94a3b8',
-    fontSize: 12,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  },
-  tokenValue: {
-    color: '#ffd166',
-    fontSize: 48,
-    fontWeight: '900',
-    padding: 0,
-    textAlign: 'center',
+    color: colors.textMuted,
+    fontSize: 10,
+    lineHeight: 16,
+    fontFamily: fonts.titleSemi,
+    letterSpacing: 2.4,
   },
   tokenHint: {
-    color: '#64748b',
+    color: colors.textDim,
+    fontFamily: fonts.bodySemi,
     fontSize: 11,
     marginTop: 4,
   },
@@ -209,34 +249,96 @@ const styles = StyleSheet.create({
   },
   stat: {
     flex: 1,
-    backgroundColor: '#16213e',
-    borderRadius: 14,
+    borderRadius: radius.tile,
     paddingVertical: 10,
     alignItems: 'center',
+    backgroundColor: 'rgba(12, 18, 38, 0.66)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   statLabel: {
-    color: '#94a3b8',
-    fontSize: 11,
+    color: colors.textDim,
+    fontSize: 10,
+    lineHeight: 15,
+    fontFamily: fonts.titleSemi,
+    letterSpacing: 1.4,
     textTransform: 'uppercase',
-    letterSpacing: 1,
   },
   statValue: {
-    color: '#f8fafc',
+    color: colors.text,
     fontSize: 16,
-    fontWeight: '800',
+    fontFamily: fonts.title,
     marginTop: 2,
   },
   section: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
+    borderRadius: radius.tile,
     padding: 14,
     gap: 6,
+    backgroundColor: 'rgba(12, 18, 38, 0.66)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
   },
   sectionTitle: {
-    color: '#f8fafc',
-    fontSize: 15,
-    fontWeight: '800',
+    color: colors.textDim,
+    fontSize: 10,
+    lineHeight: 16,
+    fontFamily: fonts.titleSemi,
+    letterSpacing: 2,
     marginBottom: 4,
+  },
+  biggest: {
+    gap: 8,
+    padding: 14,
+  },
+  biggestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  biggestText: {
+    flex: 1,
+  },
+  biggestName: {
+    color: colors.text,
+    fontSize: 18,
+    fontFamily: fonts.title,
+  },
+  biggestWeight: {
+    fontSize: 15,
+    fontFamily: fonts.titleSemi,
+  },
+  critterGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  critterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderRadius: radius.chip,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: 1,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    maxWidth: '48%',
+  },
+  critterEmoji: {
+    fontSize: 18,
+  },
+  critterText: {
+    flexShrink: 1,
+  },
+  critterName: {
+    color: colors.text,
+    fontSize: 13,
+    fontFamily: fonts.titleSemi,
+  },
+  critterNew: {
+    color: colors.danger,
+    fontSize: 9,
+    fontFamily: fonts.title,
+    letterSpacing: 1.4,
   },
   tierRow: {
     flexDirection: 'row',
@@ -250,97 +352,32 @@ const styles = StyleSheet.create({
   },
   tierName: {
     flex: 1,
-    color: '#cbd5f5',
+    color: colors.textMuted,
     fontSize: 14,
+    fontFamily: fonts.bodySemi,
   },
   tierCount: {
-    color: '#f8fafc',
+    color: colors.text,
     fontSize: 14,
-    fontWeight: '800',
-  },
-  biggest: {
-    backgroundColor: '#16213e',
-    borderRadius: 16,
-    padding: 14,
-  },
-  biggestRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  biggestText: {
-    flex: 1,
-  },
-  biggestName: {
-    color: '#f8fafc',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  biggestWeight: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  critterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  critterEmoji: {
-    fontSize: 20,
-  },
-  critterName: {
-    flex: 1,
-    color: '#f8fafc',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  critterRarity: {
-    color: '#94a3b8',
-    fontSize: 12,
+    fontFamily: fonts.title,
   },
   ticketText: {
-    color: '#f8fafc',
+    color: colors.text,
     fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fonts.titleSemi,
   },
   actions: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
-    flexDirection: 'row',
     gap: 10,
     padding: 16,
     paddingBottom: 28,
-    backgroundColor: 'rgba(11, 16, 32, 0.95)',
+    backgroundColor: 'rgba(6, 10, 24, 0.92)',
   },
-  playAgain: {
-    flex: 1,
-    backgroundColor: '#208aef',
-    borderRadius: 16,
-    minHeight: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  home: {
-    flex: 1,
-    backgroundColor: '#1f2937',
-    borderRadius: 16,
-    minHeight: 52,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  pressed: {
-    opacity: 0.8,
-  },
-  playAgainText: {
-    color: '#ffffff',
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  homeText: {
-    color: '#f8fafc',
-    fontSize: 17,
-    fontWeight: '800',
+  confetti: {
+    top: '10%',
+    bottom: '60%',
   },
 });

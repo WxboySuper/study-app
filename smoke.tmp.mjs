@@ -29,7 +29,7 @@ page.on('console', (m) => { if (m.type() === 'error') console.log('CONSOLE:', m.
 
 for (const route of process.argv.slice(2)) {
   await page.goto(`http://127.0.0.1:${port}${route}`, { waitUntil: 'load' });
-  await page.waitForTimeout(route.includes('demo=spin') ? 7000 : 2500);
+  await page.waitForTimeout(route.includes('demo=spin') ? 7000 : route.includes('demo=reveal') ? 4000 : route.includes('demo=question') ? 2000 : route.includes('demo=payout') ? 12000 : 2500);
   console.log(`=== ${route}`);
   console.log((await page.innerText('body')).slice(0, 400));
   await page.screenshot({ path: `/tmp/opencode/shot${route.replace(/[^a-z0-9]/gi, '_')}.png` });
