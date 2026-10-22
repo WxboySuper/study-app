@@ -557,7 +557,7 @@ function Bobber() {
 
 /** The color of a catch (the color of its tier). */
 function colorOfLanding(landed: RolledCatch): string {
-  if (landed.kind === 'fish' || landed.kind === 'critter' || landed.kind === 'junk') {
+  if (landed.kind === 'fish' || landed.kind === 'critter' || landed.kind === 'junk' || landed.kind === 'heavy') {
     return tierColor(landed.catch.tier);
   }
   if (landed.kind === 'pack_ticket') {

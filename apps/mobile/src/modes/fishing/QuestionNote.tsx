@@ -1,6 +1,6 @@
 import type { FishingFeedback, FishingQuestion } from '@study-app/core';
 import { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ImageBackground, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -10,15 +10,16 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
+import { artFor } from '@/content/art';
 import { colors, fonts, radius } from '@/theme';
-import { GameButton, GlassCard, Particles } from '@/ui';
+import { GameButton, Particles } from '@/ui';
 
 /**
  * The question of the fishing mode (docs/design/fishing.md §4).
  *
- * The card lives *inside* the scene: a glassy note slides up from the water
- * and the four answers sit below it as chunky buttons. The right answer
- * flashes green with a burst of sparks, the wrong one flashes red.
+ * The card lives *inside* the scene: a parchment note slides up from the
+ * water and the four answers sit below it as chunky buttons. The right
+ * answer flashes green with a burst of sparks, the wrong one flashes red.
  */
 export interface QuestionNoteProps {
   /** `true` while the question is on the screen. */
@@ -41,6 +42,8 @@ export function QuestionNote({
   reduceMotion,
 }: QuestionNoteProps) {
   const slide = useSharedValue(0);
+  // The parchment of the question card (the art of the UI piece).
+  const parchment = artFor('ui_parchment_note');
 
   useEffect(() => {
     if (reduceMotion) {
@@ -66,22 +69,37 @@ export function QuestionNote({
 
   const fontSize = question.prompt.length > 140 ? 15 : question.prompt.length > 70 ? 17 : 19;
 
+  const body = (
+    <>
+      <View style={styles.noteHead}>
+        <View style={styles.pin} />
+        <Text style={styles.noteLabel}>STUDY NOTE</Text>
+      </View>
+
+      <ScrollView style={styles.promptScroll} contentContainerStyle={styles.promptContent}>
+        <Text style={[styles.prompt, { fontSize }]}>{question.prompt}</Text>
+        {question.bonus ? <Text style={styles.bonus}>bonus review</Text> : null}
+      </ScrollView>
+    </>
+  );
+
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
       <Animated.View style={[StyleSheet.absoluteFill, styles.dim, dimStyle]} pointerEvents="none" />
 
       <Animated.View style={[styles.noteWrap, noteStyle]} pointerEvents="box-none">
-        <GlassCard contentStyle={styles.note} tint={colors.ticket}>
-          <View style={styles.noteHead}>
-            <View style={styles.pin} />
-            <Text style={styles.noteLabel}>STUDY NOTE</Text>
-          </View>
-
-          <ScrollView style={styles.promptScroll} contentContainerStyle={styles.promptContent}>
-            <Text style={[styles.prompt, { fontSize }]}>{question.prompt}</Text>
-            {question.bonus ? <Text style={styles.bonus}>bonus review</Text> : null}
-          </ScrollView>
-        </GlassCard>
+        {parchment === null ? (
+          <View style={[styles.note, styles.notePlain]}>{body}</View>
+        ) : (
+          <ImageBackground
+            source={parchment}
+            resizeMode="stretch"
+            style={styles.note}
+            imageStyle={styles.noteImage}
+          >
+            {body}
+          </ImageBackground>
+        )}
       </Animated.View>
 
       <View style={styles.answers} pointerEvents="box-none">
@@ -212,14 +230,24 @@ const styles = StyleSheet.create({
   noteWrap: {
     position: 'absolute',
     top: '13%',
-    left: 14,
-    right: 14,
+    left: 40,
+    right: 40,
   },
   note: {
-    padding: 14,
+    height: 300,
+    paddingLeft: 56,
+    paddingRight: 18,
+    paddingTop: 42,
+    paddingBottom: 24,
     gap: 8,
   },
-  noteHead: {
+  noteImage: {
+    borderRadius: 14,
+  },
+  notePlain: {
+    borderRadius: 14,
+    backgroundColor: '#f4e3b2',
+  },  noteHead: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -228,10 +256,10 @@ const styles = StyleSheet.create({
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: colors.ticket,
+    backgroundColor: '#8d5b34',
   },
   noteLabel: {
-    color: colors.ticket,
+    color: '#7a5a2e',
     fontFamily: fonts.titleSemi,
     fontSize: 10,
     letterSpacing: 2,
@@ -243,13 +271,13 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   prompt: {
-    color: colors.text,
+    color: '#3b2a12',
     fontFamily: fonts.bodyBold,
     lineHeight: 25,
   },
   bonus: {
     marginTop: 6,
-    color: colors.textDim,
+    color: '#6b4f22',
     fontFamily: fonts.bodySemi,
     fontSize: 11,
     fontStyle: 'italic',

@@ -47,3 +47,17 @@ export function hapticLegend(): void {
     runHaptic(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy));
   }, 280);
 }
+
+/**
+ * A heavy catch (the deep end of the lake).
+ *
+ * It is heavier than a legend, so the haptic is a rumble of four heavy
+ * taps.
+ */
+export function hapticHeavy(): void {
+  for (const delay of [0, 130, 260, 420]) {
+    setTimeout(() => {
+      runHaptic(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy));
+    }, delay);
+  }
+}

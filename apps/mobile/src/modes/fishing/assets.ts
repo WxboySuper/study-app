@@ -1,4 +1,4 @@
-import { CATCH_TIERS, CRITTERS, JUNK, findCritterCatch, type CatchTier } from '@study-app/core';
+import { CATCH_TIERS, CRITTERS, HEAVY, JUNK, findCritterCatch, type CatchTier } from '@study-app/core';
 import type { ImageSourcePropType } from 'react-native';
 
 import { artFor } from '@/content/art';
@@ -72,6 +72,14 @@ export const FISHING_ASSET_IDS = [
   'ui_reveal_rays',
   'ui_tier_ribbon',
   'ui_coin',
+  // Heavy catches (the deep end of the lake)
+  'catch_heavy_galaxy_fish',
+  'catch_heavy_golden_koi',
+  'catch_heavy_ice_fish',
+  'catch_heavy_skeleton_fish',
+  'catch_heavy_swamp_monster',
+  'catch_heavy_treasure_chest',
+  'catch_heavy_void_fish',
 ] as const;
 
 /** The id of a sprite. */
@@ -87,6 +95,12 @@ const STATIC_FALLBACKS: Readonly<Record<string, FishingFallback>> = {
   ripple_ring: { emoji: '⭕', color: '#e0fbfc' },
   splash: { emoji: '💦', color: '#90e0ef' },
   fish_shadow: { emoji: '🐟', color: '#1d3557' },
+  lure_r1_worm: { emoji: '🪱', color: '#ff8fab' },
+  lure_r2_spinner: { emoji: '🌀', color: '#adb5bd' },
+  lure_r3_jig: { emoji: '💡', color: '#52b788' },
+  lure_r4_golden_fly: { emoji: '✨', color: '#ffd166' },
+  lure_r5_legend: { emoji: '🌈', color: '#c77dff' },
+  bait_critter_chum: { emoji: '🐟', color: '#ff85a1' },
   special_new_lure: { emoji: '🎁', color: '#ffd166' },
   special_frenzy: { emoji: '🌈', color: '#ff5d8f' },
   pu_double_hook: { emoji: '🪝', color: '#48cae4' },
@@ -100,6 +114,13 @@ const STATIC_FALLBACKS: Readonly<Record<string, FishingFallback>> = {
   ui_reveal_rays: { emoji: '🌟', color: '#ffffff' },
   ui_tier_ribbon: { emoji: '🎗️', color: '#ffffff' },
   ui_coin: { emoji: '🪙', color: '#ffd60a' },
+  catch_heavy_galaxy_fish: { emoji: '🌌', color: '#0d9488' },
+  catch_heavy_golden_koi: { emoji: '🐟', color: '#0d9488' },
+  catch_heavy_ice_fish: { emoji: '🧊', color: '#0d9488' },
+  catch_heavy_skeleton_fish: { emoji: '💀', color: '#0d9488' },
+  catch_heavy_swamp_monster: { emoji: '🐊', color: '#0d9488' },
+  catch_heavy_treasure_chest: { emoji: '💰', color: '#0d9488' },
+  catch_heavy_void_fish: { emoji: '🕳️', color: '#0d9488' },
 };
 
 /** The colour of a tier. */
@@ -131,6 +152,11 @@ export function fallbackFor(assetId: string): FishingFallback {
   const junk = JUNK.find((entry) => entry.assetId === assetId);
   if (junk !== undefined) {
     return { emoji: junk.emoji, color: tierColor(junk.tier) };
+  }
+
+  const heavy = HEAVY.find((entry) => entry.assetId === assetId);
+  if (heavy !== undefined) {
+    return { emoji: heavy.emoji, color: tierColor(heavy.tier) };
   }
 
   return { emoji: '🟦', color: '#9e9e9e' };

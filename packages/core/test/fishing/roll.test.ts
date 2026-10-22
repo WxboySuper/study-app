@@ -64,15 +64,29 @@ describe('the tier odds table (§6)', () => {
   it('adds up to 100 % for every rank', () => {
     for (const odds of TIER_ODDS) {
       const total =
-        odds.trash + odds.easy + odds.great + odds.rare + odds.epic + odds.cotd + odds.legend + odds.special;
+        odds.trash +
+        odds.easy +
+        odds.great +
+        odds.rare +
+        odds.epic +
+        odds.cotd +
+        odds.legend +
+        odds.heavy +
+        odds.special;
       expect(total).toBeCloseTo(100, 10);
     }
   });
 
   it('matches the design doc', () => {
     expect(TIER_ODDS.map((odds) => odds.rank)).toEqual([1, 2, 3, 4, 5]);
-    expect(TIER_ODDS[0]).toMatchObject({ trash: 30, easy: 45, great: 16, rare: 4, epic: 0, cotd: 0, legend: 0, special: 5 });
-    expect(TIER_ODDS[4]).toMatchObject({ trash: 5, easy: 12, great: 22, rare: 28, epic: 18, cotd: 6, legend: 1, special: 8 });
+    expect(TIER_ODDS[0]).toMatchObject({ trash: 28, easy: 45, great: 16, rare: 4, epic: 0, cotd: 0, legend: 0, heavy: 2, special: 5 });
+    expect(TIER_ODDS[4]).toMatchObject({ trash: 3, easy: 12, great: 22, rare: 28, epic: 18, cotd: 6, legend: 1, heavy: 2, special: 8 });
+  });
+
+  it('gives the heavy tier about 2 % of the catches', () => {
+    for (const odds of TIER_ODDS) {
+      expect(odds.heavy).toBeCloseTo(2, 10);
+    }
   });
 
   it('falls back to rank 1 for an unknown rank', () => {
@@ -84,7 +98,8 @@ describe('the tier odds table (§6)', () => {
     expect(rollTier(fixedRng(0.1), 1)).toBe('trash');
     expect(rollTier(fixedRng(0.5), 1)).toBe('easy');
     expect(rollTier(fixedRng(0.8), 1)).toBe('great');
-    expect(rollTier(fixedRng(0.93), 1)).toBe('rare');
+    expect(rollTier(fixedRng(0.9), 1)).toBe('rare');
+    expect(rollTier(fixedRng(0.94), 1)).toBe('heavy');
     expect(rollTier(fixedRng(0.97), 1)).toBe('special');
     expect(rollTier(fixedRng(0.2), 5)).toBe('great');
     expect(rollTier(fixedRng(0.1), 5)).toBe('easy');
@@ -93,7 +108,7 @@ describe('the tier odds table (§6)', () => {
   it('never rolls a tier that is out of the table', () => {
     for (let index = 0; index < 500; index += 1) {
       const tier = rollTier(createSeededRng(index), 1);
-      expect(['trash', 'easy', 'great', 'rare', 'epic', 'cotd', 'legend', 'special']).toContain(tier);
+      expect(['trash', 'easy', 'great', 'rare', 'epic', 'cotd', 'legend', 'heavy', 'special']).toContain(tier);
     }
   });
 
@@ -105,16 +120,60 @@ describe('the tier odds table (§6)', () => {
     expect(glow.epic).toBeCloseTo(plain.epic + 2, 10);
     expect(glow.cotd).toBeCloseTo(plain.cotd + 2, 10);
     expect(glow.legend).toBeCloseTo(plain.legend + 2, 10);
+    expect(glow.heavy).toBeCloseTo(plain.heavy + 2, 10);
     expect(glow.trash).toBeLessThan(plain.trash);
 
     const total =
-      glow.trash + glow.easy + glow.great + glow.rare + glow.epic + glow.cotd + glow.legend + glow.special;
+      glow.trash +
+      glow.easy +
+      glow.great +
+      glow.rare +
+      glow.epic +
+      glow.cotd +
+      glow.legend +
+      glow.heavy +
+      glow.special;
     expect(total).toBeCloseTo(100, 10);
   });
 });
 
-describe('the special table (§8)', () => {
-  it('matches the design doc', () => {
+describe('the heavy catches', () => {
+  it('rolls a heavy catch on the heavy tier', () => {
+    const result = rollCatch(fixedRng(0.94), createRollState({ lureRank: 1 }));
+
+    expect(isCatchOutcome(result.outcome)).toBe(true);
+    if (isCatchOutcome(result.outcome)) {
+      expect(result.outcome.tier).toBe('heavy');
+      expect(result.outcome.kind).toBe('heavy');
+    }
+  });
+
+  it('weighs more than any critter tier', () => {
+    const result = rollCatch(fixedRng(0.94), createRollState({ lureRank: 1 }));
+
+    expect(isCatchOutcome(result.outcome)).toBe(true);
+    if (isCatchOutcome(result.outcome)) {
+      expect(result.outcome.lbs).toBeGreaterThan(2_500_000);
+    }
+  });
+
+  it('lands on about 2 % of the catches', () => {
+    const total = 20_000;
+    let heavy = 0;
+
+    for (let index = 0; index < total; index += 1) {
+      const result = rollCatch(createSeededRng(index), createRollState({ lureRank: 1 }));
+      if (isCatchOutcome(result.outcome) && result.outcome.tier === 'heavy') {
+        heavy += 1;
+      }
+    }
+
+    expect(heavy / total).toBeGreaterThan(0.015);
+    expect(heavy / total).toBeLessThan(0.025);
+  });
+});
+
+describe('the special table (§8)', () => {  it('matches the design doc', () => {
     expect(BASE_SPECIAL_ODDS).toEqual({
       newLure: 30,
       frenzy: 15,
@@ -345,7 +404,7 @@ describe('the frenzy', () => {
 describe('the powerups', () => {
   it('rerolls trash and easy with the Lucky Charm', () => {
     const state = createRollState({ powerup: 'lucky_charm' });
-    const result = rollCatch(sequenceRng([0.1, 0.9, 0.0, 0.5]), state);
+    const result = rollCatch(sequenceRng([0.1, 0.8, 0.0, 0.5]), state);
 
     expect(result.luckyCharmUsed).toBe(true);
     expect(result.state.powerup).toBeNull();

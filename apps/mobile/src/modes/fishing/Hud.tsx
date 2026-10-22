@@ -1,5 +1,5 @@
 import type { CatchTier, FishingSession } from '@study-app/core';
-import { CATCH_TIERS, POWERUPS } from '@study-app/core';
+import { CATCH_TIERS, LURE_RANKS, POWERUPS } from '@study-app/core';
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { useAnimatedProps, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -8,6 +8,7 @@ import { colors, fonts, radius } from '@/theme';
 import { GlassCard, TokenCounter } from '@/ui';
 
 import { tierColor } from './assets';
+import { Sprite } from './Sprite';
 
 /**
  * The HUD of the fishing mode (docs/design/fishing.md §9).
@@ -63,6 +64,9 @@ export function Hud({
     ? null
     : POWERUPS.find((entry) => entry.id === session.roll.powerup) ?? null;
 
+  // The lure of the session (the art of the rank, not an emoji).
+  const lure = LURE_RANKS.find((entry) => entry.rank === session.roll.lureRank) ?? LURE_RANKS[0]!;
+
   const log = session.log.slice(-5);
 
   return (
@@ -75,7 +79,8 @@ export function Hud({
         <View style={styles.center} pointerEvents="none">
           <View style={styles.chipRow}>
             <View style={styles.lureChip}>
-              <Text style={styles.lureLabel}>LURE</Text>
+              <Sprite assetId={lure.assetId} size={20} />
+              <Text style={styles.lureLabel}>{lure.name.toUpperCase()}</Text>
               <View style={styles.pips} accessibilityLabel={`Lure rank ${session.roll.lureRank}`}>
                 {[1, 2, 3, 4, 5].map((rank) => (
                   <View
@@ -95,9 +100,8 @@ export function Hud({
 
             {powerup === null ? null : (
               <View style={styles.powerupChip}>
-                <Text style={styles.powerupText}>
-                  {powerup.emoji} {powerup.name}
-                </Text>
+                <Sprite assetId={powerup.assetId} size={18} />
+                <Text style={styles.powerupText}>{powerup.name}</Text>
               </View>
             )}
           </View>
@@ -141,7 +145,7 @@ export function Hud({
               key={`${entry.id}-${index}`}
               style={[styles.logItem, { borderColor: tierColor(entry.tier) }]}
             >
-              <Text style={styles.logEmoji}>{entry.emoji}</Text>
+              <Sprite assetId={entry.assetId} size={18} />
               <Text style={styles.logWeight}>{formatShort(entry.lbs)}</Text>
             </View>
           ))}
@@ -334,9 +338,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
-  },
-  logEmoji: {
-    fontSize: 14,
   },
   logWeight: {
     color: '#e2e8f0',

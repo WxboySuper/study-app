@@ -6,6 +6,7 @@ import {
   localDayKey,
   createFishingState,
   createRandomRng,
+  createSeededRng,
   fishingReducer,
   remainingCards,
   toSessionResult,
@@ -28,7 +29,7 @@ import { GameButton, GlassCard, CritterLoader } from '@/ui';
 
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
-import { hapticBite, hapticCast, hapticCorrect, hapticLegend, hapticReel, hapticWrong } from './haptics';
+import { hapticBite, hapticCast, hapticCorrect, hapticHeavy, hapticLegend, hapticReel, hapticWrong } from './haptics';
 import { LakeScene } from './LakeScene';
 import { PayoutScreen } from './PayoutScreen';
 import { QuestionNote } from './QuestionNote';
@@ -54,6 +55,20 @@ const HOOKED_AUTO_REEL_MS = 600;
 const REELING_DURATION_MS = 900;
 const GOT_AWAY_MS = 1_500;
 const NEW_CARD_CAP = 20;
+
+/**
+ * The seeds of the demos.
+ *
+ * A demo plays with a fixed session, so the screenshots of the game are the
+ * same on every run: the reveal demo lands a critter on its first catch and
+ * the payout demo catches three of them.
+ */
+const DEMO_SEEDS: Readonly<Record<FishingDemo, number>> = {
+  scene: 1,
+  question: 1,
+  reveal: 1,
+  payout: 3,
+};
 
 /**
  * The demo states of the web build.
@@ -139,7 +154,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     undefined,
     () =>
       createFishingState({
-        rng: createRandomRng(),
+        rng: demo === null ? createRandomRng() : createSeededRng(DEMO_SEEDS[demo]),
         baits:
           bait === null
             ? undefined
@@ -259,6 +274,11 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
           playSfx('legend');
           play('legendary');
           hapticLegend();
+        } else if (tier === 'heavy') {
+          // A heavy catch gets the fanfare and a heavy haptic of its own.
+          playSfx('legend');
+          play('legendary');
+          hapticHeavy();
         } else {
           playSfx('reveal');
           play('reveal');
@@ -414,9 +434,10 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
       graduated: progress.graduated,
       dueCleared: progress.dueCleared,
       modeScore: 0,
+      heavyCatches: result.heavyCatches,
       tokensToday: 0,
     }).tokens;
-  }, [result.correct, result.reviews]);
+  }, [result.correct, result.reviews, result.heavyCatches]);
   const tokens = settledTokens ?? estimate;
 
   // Credit the wallet and the collection once, when the session ends.
@@ -439,6 +460,7 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
             reviews: final.reviews,
             critterIds: final.critters.map((critter) => critter.critterId),
             packTickets: final.packTickets,
+            heavyCatches: final.heavyCatches,
           },
           localDayKey(new Date()),
         );
@@ -517,11 +539,17 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     }
 
     if (demo === 'reveal') {
-      // The demo keeps fishing until a critter comes out of the water.
+      // The demo keeps fishing until a critter comes out of the water and
+      // then keeps the reveal card on the screen (for the picture).
       const tryCatch = (attempt: number) => {
         catchAt(0, true, () => {
           const reveal = machineRef.current.reveal;
           if (reveal !== null && reveal.kind === 'critter') {
+            return;
+          }
+          // The queue of the demo runs dry at some point: the card that is
+          // on the screen then stays there.
+          if (attempt >= 4 || machineRef.current.question === null) {
             return;
           }
           dispatch({ type: 'continue' });
@@ -536,13 +564,15 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
     if (demo === 'payout') {
       // The demo catches three critters and then packs up.
       let caught = 0;
+      let attempts = 0;
       const catchCritter = () => {
         catchAt(0, true, () => {
           const reveal = machineRef.current.reveal;
           if (reveal !== null && reveal.kind === 'critter') {
             caught += 1;
           }
-          if (caught >= 3) {
+          attempts += 1;
+          if (caught >= 3 || attempts >= 8 || machineRef.current.question === null) {
             later(300, () => {
               dispatch({ type: 'request_end' });
             });

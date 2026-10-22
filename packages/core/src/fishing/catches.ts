@@ -9,12 +9,14 @@
  * pack ticket).
  *
  * The data lives in the content registries (`src/content/critters.ts`,
- * `src/content/junk.ts`, `src/content/fish.ts`), this module only turns it
- * into the catches of the mode. See `docs/ADDING-CONTENT.md`.
+ * `src/content/junk.ts`, `src/content/fish.ts`, `src/content/heavy.ts`),
+ * this module only turns it into the catches of the mode. See
+ * `docs/ADDING-CONTENT.md`.
  */
 
 import { CRITTERS, type CritterDef, type CritterRarity } from '../content/critters';
 import { FISHES, type FishDef } from '../content/fish';
+import { HEAVY, type HeavyDef } from '../content/heavy';
 import { JUNK, type JunkDef } from '../content/junk';
 import {
   isAvailable,
@@ -50,6 +52,9 @@ export interface CatchTierDef {
 /**
  * The tier ladder of §6. The weight ranges are the tier wide ranges; every
  * individual catch narrows them down.
+ *
+ * The "Heavy Catch" tier is the deep end of the lake: it is heavier than
+ * every critter tier and it is rare (about 2 % of the catches).
  */
 export const CATCH_TIERS: readonly CatchTierDef[] = [
   { id: 'trash', name: 'Trash', color: '#8d6e63', minLbs: 1, maxLbs: 10 },
@@ -59,6 +64,7 @@ export const CATCH_TIERS: readonly CatchTierDef[] = [
   { id: 'epic', name: 'Epic Grab', color: '#e53935', minLbs: 7_000, maxLbs: 30_000 },
   { id: 'cotd', name: 'Catch of the Day', color: '#fb8c00', minLbs: 25_000, maxLbs: 500_000 },
   { id: 'legend', name: "Angler's Legend", color: '#8e24aa', minLbs: 500_000, maxLbs: 2_500_000 },
+  { id: 'heavy', name: 'Heavy Catch', color: '#0d9488', minLbs: 2_500_000, maxLbs: 25_000_000 },
 ];
 
 /**
@@ -81,7 +87,7 @@ export interface CatchDef {
   assetId: string;
   /** Emoji shown when the sprite is not available yet. */
   emoji: string;
-  /** The kind of content the catch is (a critter, junk or a fish). */
+  /** The kind of content the catch is (a critter, junk, a fish or a heavy catch). */
   contentType: ContentType;
   /** A one line joke for the silly catches. */
   joke?: string;
@@ -170,16 +176,41 @@ function fishCatch(fish: FishDef): CatchDef {
 }
 
 /**
+ * Turns a heavy catch into a catch of the "Heavy Catch" tier.
+ *
+ * A heavy catch is a normal catch of the ladder: it has a weight range, an
+ * art key and a joke. The tier makes it rare and worth a token bonus.
+ */
+function heavyCatch(heavy: HeavyDef): CatchDef {
+  return {
+    id: `heavy_${heavy.id}`,
+    name: heavy.name,
+    tier: heavy.tier,
+    minLbs: heavy.minLbs,
+    maxLbs: heavy.maxLbs,
+    assetId: heavy.assetId,
+    emoji: heavy.emoji,
+    contentType: 'heavy',
+    ...(heavy.joke === undefined ? {} : { joke: heavy.joke }),
+    ...(heavy.seasonal === undefined ? {} : { seasonal: heavy.seasonal }),
+    ...(heavy.availableFrom === undefined ? {} : { availableFrom: heavy.availableFrom }),
+    ...(heavy.availableUntil === undefined ? {} : { availableUntil: heavy.availableUntil }),
+  };
+}
+
+/**
  * Every catch of the game.
  *
  * The catalogue holds the junk of the bottom tier, the fish of the future
- * registry and every critter of the catalogue. The critters of a pack that
- * is not on sale are in the catalogue too, but they never show up in a pool
- * (see {@link isCatchAvailable}).
+ * registry, the heavy catches of the deep end of the lake and every critter
+ * of the catalogue. The critters of a pack that is not on sale are in the
+ * catalogue too, but they never show up in a pool (see
+ * {@link isCatchAvailable}).
  */
 export const CATCHES: readonly CatchDef[] = [
   ...JUNK.map(junkCatch),
   ...FISHES.map(fishCatch),
+  ...HEAVY.map(heavyCatch),
   ...CRITTERS.map(critterCatch),
 ];
 

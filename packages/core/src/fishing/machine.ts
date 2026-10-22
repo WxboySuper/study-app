@@ -65,7 +65,7 @@ export interface CaughtCatch {
   name: string;
   tier: CatchTier;
   lbs: number;
-  kind: 'fish' | 'critter' | 'junk';
+  kind: 'fish' | 'critter' | 'junk' | 'heavy';
   emoji: string;
   assetId: string;
   joke?: string;
@@ -649,6 +649,8 @@ export interface FishingSessionResult {
   biggest: CaughtCatch | null;
   critters: CritterCatchRecord[];
   packTickets: number;
+  /** How many heavy catches landed (every one of them pays a token bonus). */
+  heavyCatches: number;
   lureRank: number;
   log: CaughtCatch[];
   reviews: FishingReview[];
@@ -666,6 +668,7 @@ export function toSessionResult(state: FishingState): FishingSessionResult {
     biggest: state.session.biggest,
     critters: [...state.session.critters],
     packTickets: state.session.packTickets,
+    heavyCatches: state.session.byTier.heavy ?? 0,
     lureRank: state.session.roll.lureRank,
     log: [...state.session.log],
     reviews: [...state.session.reviews],

@@ -1,5 +1,5 @@
 import type { FishingSessionResult } from '@study-app/core';
-import { CATCH_TIERS } from '@study-app/core';
+import { CATCH_TIERS, DEFAULT_PAYOUT_RULES } from '@study-app/core';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -18,6 +18,9 @@ import { Sprite } from './Sprite';
  * pack tickets. The server pays the session out, so the tokens that are shown
  * here are the estimate of `computePayout` until the API answers.
  */
+
+/** The tokens a heavy catch pays at the end of the session. */
+const HEAVY_BONUS_TOKENS = DEFAULT_PAYOUT_RULES.tokensPerHeavyCatch;
 
 export interface PayoutScreenProps {
   /** The result of the session. */
@@ -122,7 +125,7 @@ export function PayoutScreen({
                       { borderColor: tierColor(critter.tier) },
                     ]}
                   >
-                    <Text style={styles.critterEmoji}>{critter.emoji}</Text>
+                    <Sprite assetId={critter.assetId} size={22} />
                     <View style={styles.critterText}>
                       <Text style={styles.critterName} numberOfLines={1}>
                         {critter.name}
@@ -134,6 +137,15 @@ export function PayoutScreen({
                   </View>
                 ))}
               </View>
+            </View>
+          )}
+
+          {result.heavyCatches === 0 ? null : (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>HEAVY CATCHES</Text>
+              <Text style={styles.ticketText}>
+                🪸 {result.heavyCatches} × {HEAVY_BONUS_TOKENS} tokens
+              </Text>
             </View>
           )}
 
@@ -322,9 +334,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     backgroundColor: 'rgba(255,255,255,0.05)',
     maxWidth: '48%',
-  },
-  critterEmoji: {
-    fontSize: 18,
   },
   critterText: {
     flexShrink: 1,
