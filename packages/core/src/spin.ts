@@ -98,6 +98,9 @@ export function applySpinReward(wallet: WalletSnapshot, reward: number): WalletS
   return { ...wallet, balance: wallet.balance + reward };
 }
 
+/** How close to a segment edge the wheel may stop, in degrees. */
+export const SPIN_EDGE_MARGIN_DEG = 2;
+
 /** The angle of one segment of the wheel, in degrees. */
 export const SPIN_SEGMENT_DEG = 360 / SPIN_SEGMENTS.length;
 
@@ -124,11 +127,12 @@ export function spinSegmentAtRotation(rotation: number): number {
  * The final rotation that lands the wheel on a segment.
  *
  * The wheel turns `turns` full times and stops with the centre of the
- * segment under the pointer, offset by `jitter` (a fraction of half a
- * segment in `[-1, 1]`, clamped to keep clear of the edges).
+ * segment under the pointer, offset by `jitter` in `[-1, 1]`: -1 and 1 put
+ * the pointer `SPIN_EDGE_MARGIN_DEG` inside either edge of the segment, so a
+ * uniform jitter lands anywhere across the segment and never on a line.
  */
 export function spinTargetRotation(index: number, turns = 5, jitter = 0): number {
   const step = SPIN_SEGMENT_DEG;
-  const safe = Math.max(-0.7, Math.min(0.7, jitter));
-  return turns * 360 - (index + 0.5) * step + safe * (step / 2);
+  const safe = Math.max(-1, Math.min(1, jitter));
+  return turns * 360 - (index + 0.5) * step + safe * (step / 2 - SPIN_EDGE_MARGIN_DEG);
 }

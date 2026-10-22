@@ -11,6 +11,7 @@ import {
   spinDailyWheel,
   spinSegmentAtRotation,
   spinSegmentIndex,
+  SPIN_EDGE_MARGIN_DEG,
   spinTargetRotation,
 } from '../src/spin';
 import { emptyWallet } from '../src/wallet';
@@ -112,5 +113,21 @@ describe('the angle of the wheel', () => {
     expect(spinSegmentAtRotation(-step - 0.01)).toBe(1);
     expect(spinSegmentAtRotation(0.01)).toBe(SPIN_SEGMENTS.length - 1);
     expect(spinSegmentAtRotation(-360 * 3 - step * 2.5)).toBe(2);
+  });
+});
+
+describe('the spread of the landing', () => {
+  it('reaches within the edge margin on both sides and stays inside the segment', () => {
+    const step = 360 / SPIN_SEGMENTS.length;
+    SPIN_SEGMENTS.forEach((_segment, index) => {
+      const centre = spinTargetRotation(index, 5, 0);
+      for (const jitter of [-1, -0.99, -0.5, 0.5, 0.99, 1, -5, 5]) {
+        const rotation = spinTargetRotation(index, 5, jitter);
+        expect(spinSegmentAtRotation(rotation)).toBe(index);
+        expect(Math.abs(rotation - centre)).toBeLessThanOrEqual(step / 2 - SPIN_EDGE_MARGIN_DEG + 1e-9);
+      }
+      expect(spinTargetRotation(index, 5, 1) - centre).toBeCloseTo(step / 2 - SPIN_EDGE_MARGIN_DEG);
+      expect(spinTargetRotation(index, 5, -1) - centre).toBeCloseTo(-(step / 2 - SPIN_EDGE_MARGIN_DEG));
+    });
   });
 });

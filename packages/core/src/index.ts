@@ -251,6 +251,7 @@ export {
   spinSegmentIndex,
   spinTargetRotation,
   SPIN_SEGMENT_DEG,
+  SPIN_EDGE_MARGIN_DEG,
   type SpinSegment,
 } from './spin';
 
