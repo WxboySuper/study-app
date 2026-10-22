@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* global URL, document */
 /**
  * The screenshots of the game.
  *
@@ -108,28 +109,28 @@ async function settle(page) {
     { timeout: 30_000 },
   );
   // The fonts, the gradients and the entrance animations need a moment.
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(1400);
 }
 
 /**
  * The screenshots of the script.
  *
- * `path` is the route of the screen, `wait` is what the script does before
- * the picture is taken (it can wait for a text that only shows up in that
- * state).
+ * `path` is the route of the screen, `waitFor` is the text that only shows
+ * up in that state and `wait` is how long the screen needs after it.
  */
 const SHOTS = [
   { name: 'home', path: '/' },
   { name: 'packs', path: '/packs' },
-  { name: 'pack-reveal', path: '/packs?demo=reveal', waitFor: 'CONTINUE' },
+  { name: 'pack-reveal', path: '/packs?demo=reveal', waitFor: 'CONTINUE', wait: 2600 },
   { name: 'collection', path: '/collection' },
-  { name: 'collection-sheet', path: '/collection?demo=sheet', waitFor: 'Sell duplicates' },
+  { name: 'collection-sheet', path: '/collection?demo=sheet', waitFor: 'SELL', wait: 1200 },
   { name: 'spin', path: '/spin' },
-  { name: 'spin-result', path: '/spin?demo=spin', waitFor: 'tokens' },
-  { name: 'fishing', path: '/fishing' },
-  { name: 'fishing-question', path: '/fishing?demo=question', waitFor: '?' },
-  { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'NEW!' },
-  { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'Play again' },
+  { name: 'spin-spinning', path: '/spin?demo=spin', wait: 1800 },
+  { name: 'spin-result', path: '/spin?demo=spin', waitFor: 'TOKENS', wait: 1600 },
+  { name: 'fishing', path: '/fishing', wait: 600 },
+  { name: 'fishing-question', path: '/fishing?demo=question', waitFor: 'STUDY NOTE', wait: 900 },
+  { name: 'fishing-reveal', path: '/fishing?demo=reveal', waitFor: 'CONTINUE', wait: 1200 },
+  { name: 'fishing-payout', path: '/fishing?demo=payout', waitFor: 'PLAY AGAIN', wait: 1400 },
 ];
 
 async function main() {
@@ -177,9 +178,12 @@ async function main() {
       await page.waitForFunction(
         (needle) => (document.body.innerText ?? '').includes(needle),
         shot.waitFor,
-        { timeout: 20_000 },
+        { timeout: 30_000 },
       );
-      await page.waitForTimeout(900);
+    }
+
+    if (shot.wait !== undefined) {
+      await page.waitForTimeout(shot.wait);
     }
 
     await page.screenshot({ path: join(outDir, `${shot.name}.png`) });
