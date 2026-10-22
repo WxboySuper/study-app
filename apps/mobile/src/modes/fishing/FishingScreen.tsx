@@ -9,6 +9,11 @@ import {
   filterByScope,
   isCatchOutcome,
   localDayKey,
+  gradeLabel,
+  limitSessionPool,
+  noteAnswered,
+  parseDailyDone,
+  type DailyDone,
   createFishingState,
   createRandomRng,
   createSeededRng,
@@ -48,6 +53,7 @@ import { play } from '@/sound/sfx';
 import { colors, fonts, radius, shadow } from '@/theme';
 import { GameButton, GlassCard, CritterLoader } from '@/ui';
 import { MASTERY_COUNTS_KEY, readMasteryCounts } from '@/study/masteryCounts';
+import { DAILY_DONE_KEY, readStudyOptions } from '@/study/studyOptions';
 
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
@@ -358,6 +364,9 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
   );
 
   const [loading, setLoading] = useState(true);
+  // Mastery sessions follow the daily limits of the deck presets.
+  const [doneToday, setDoneToday] = useState(false);
+  const doneRef = useRef<DailyDone | null>(null);
 
   // Load the cards of the scope and hand them to the machine.
   useEffect(() => {
@@ -379,7 +388,24 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
 
         // The session plays the cards of the scope: the order is shuffled
         // and the queue of the core decides what comes next.
-        const pool = filterByScope(cardsRef.current, queueScope, deckClassesRef.current);
+        const scoped = filterByScope(cardsRef.current, queueScope, deckClassesRef.current);
+        let pool = scoped;
+        if (mastery) {
+          const options = await readStudyOptions(store);
+          const done = parseDailyDone(await store.readKv(DAILY_DONE_KEY), localDayKey(new Date()));
+          if (cancelled) {
+            return;
+          }
+          doneRef.current = done;
+          const classOfDeck = new Map(sets.map((set) => [set.id, set.classId]));
+          const limited = limitSessionPool(
+            scoped.map((card) => ({ id: card.id, deckId: card.setId, state: states.get(card.id) })),
+            { options, done, now: Date.now(), classOf: (deckId) => classOfDeck.get(deckId) },
+          );
+          const keep = new Set(limited.questions.map((question) => question.id));
+          pool = scoped.filter((card) => keep.has(card.id));
+          setDoneToday(limited.doneForToday);
+        }
         const engine = createSessionQueue({
           questions: pool.map((card) => ({
             id: card.id,
@@ -627,6 +653,23 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
     };
   }, []);
 
+  // Counts the answer toward today's limits (once per card).
+  const noteDone = useCallback((cardId: string) => {
+    const done = doneRef.current;
+    const card = cardsRef.current.find((item) => item.id === cardId);
+    if (done === null || card === undefined) {
+      return;
+    }
+    const next = noteAnswered(done, cardId, card.setId, statesRef.current.get(cardId), Date.now());
+    if (next === done) {
+      return;
+    }
+    doneRef.current = next;
+    void openLocalStore()
+      .then((store) => store.writeKv(DAILY_DONE_KEY, JSON.stringify(next)))
+      .catch(() => undefined);
+  }, []);
+
   const onAnswer = useCallback(
     (choiceIndex: number) => {
       const now = Date.now();
@@ -637,6 +680,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       // back a few questions later, and a mastered one leaves the queue.
       const engine = engineRef.current;
       if (engine !== null && question !== null) {
+        noteDone(question.cardId);
         const next = answerSessionQuestion(engine, question.cardId, correct);
         engineRef.current = next;
         saveMasteryCounts(next);
@@ -659,7 +703,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         now,
       });
     },
-    [mastery, celebrate],
+    [mastery, celebrate, noteDone],
   );
 
   const onReel = useCallback(() => {
@@ -686,6 +730,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       // The session queue learns from the grade of the player too.
       const engine = engineRef.current;
       if (engine !== null && question !== null) {
+        noteDone(question.cardId);
         const next = answerSessionQuestion(engine, question.cardId, gotIt);
         engineRef.current = next;
         saveMasteryCounts(next);
@@ -709,7 +754,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         selfGrade: true,
       });
     },
-    [machine.question, mastery, celebrate],
+    [machine.question, mastery, celebrate, noteDone],
   );
   const onCast = useCallback(() => {
     dispatch({ type: 'cast' });
@@ -1111,6 +1156,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
   // The queue of the machine holds one question at a time: the scope of the
   // session is what says whether there is something to study.
   const nothingToStudy = !loading && progress.total === 0;
+  const lastReview = machine.session.reviews[machine.session.reviews.length - 1];
 
   /** The frame of the sequence the demo freezes the scene on. */
   const freezeStage = useMemo<LeadUpStage | null>(() => {
@@ -1236,6 +1282,12 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
             reduceMotion={reduceMotion}
           />
 
+          {machine.phase === 'answered' && lastReview !== undefined ? (
+            <View pointerEvents="none" style={styles.gradePill} testID="fishing-grade">
+              <Text style={styles.gradeText}>{gradeLabel(lastReview.rating, lastReview.durationMs)}</Text>
+            </View>
+          ) : null}
+
           {/*
             The hold of the answer: a tap anywhere on the note area goes on
             before the wait is over. It sits above the note but inside the
@@ -1317,11 +1369,26 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
               {loading ? (
                 <CritterLoader emoji="🎣" size={24} style={styles.castLoader} />
               ) : (
-                <Text style={styles.castLabel}>{nothingToStudy ? 'NO QUESTIONS YET' : 'CAST'}</Text>
+                <Text style={styles.castLabel}>{doneToday ? 'DONE FOR TODAY' : nothingToStudy ? 'NO QUESTIONS YET' : 'CAST'}</Text>
               )}
             </LinearGradient>
           </View>
         </Pressable>
+      ) : null}
+
+      {doneToday && !loading ? (
+        <View style={styles.sheetBackdrop} testID="fishing-done-today">
+          <GlassCard contentStyle={styles.sheet} tint={colors.ticket}>
+            <Text style={styles.sheetTitle}>Done for today 🎉</Text>
+            <Text style={styles.sheetBody}>
+              You reached today&apos;s new-card and review limits for this scope. New cards and due reviews come back
+              tomorrow. Change the limits in Study options, or play Endless mode to keep practicing.
+            </Text>
+            <View style={styles.sheetActions}>
+              <GameButton label="HOME" variant="primary" size="md" onPress={onHome} />
+            </View>
+          </GlassCard>
+        </View>
       ) : null}
 
       {machine.phase === 'question' && machine.question === null ? (
@@ -1365,6 +1432,15 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
 }
 
 const styles = StyleSheet.create({
+  gradePill: {
+    alignSelf: 'center',
+    marginTop: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(15,23,42,0.85)',
+  },
+  gradeText: { color: '#ffffff', fontFamily: fonts.title, fontSize: 13 },
   container: {
     flex: 1,
     backgroundColor: '#0b1020',

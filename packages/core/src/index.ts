@@ -453,3 +453,5 @@ export {
 } from './mastery';
 
 export type { QuizAnswerPayload } from './progressSync';
+
+export * from './studyOptions';
