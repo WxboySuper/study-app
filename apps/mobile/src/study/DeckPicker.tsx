@@ -225,7 +225,7 @@ function DeckTile({
         accessibilityRole="button"
         accessibilityState={{ selected }}
         accessibilityLabel={`${deck.title}. ${deck.cards} cards, ${deck.due} due`}
-        accessibilityHint="Long press to delete the deck"
+        accessibilityHint={deck.kind === 'set' ? 'Long press to delete the deck' : undefined}
         onPressIn={() => {
           press.value = withSpring(1, { damping: 18, stiffness: 320, mass: 0.6 });
         }}
@@ -238,7 +238,10 @@ function DeckTile({
           onPress();
         }}
         onLongPress={() => {
-          onDelete();
+          // Only a set can be deleted: a topic is a pile of sets.
+          if (deck.kind === 'set') {
+            onDelete();
+          }
         }}
       >
         <GlassCard
@@ -248,17 +251,19 @@ function DeckTile({
           tint={colors.borderStrong}
           elevated={false}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={`Delete ${deck.title}`}
-            onPress={() => {
-              onDelete();
-            }}
-            hitSlop={8}
-            style={({ pressed }) => [styles.trash, pressed && styles.trashPressed]}
-          >
-            <Text style={styles.trashGlyph}>🗑</Text>
-          </Pressable>
+          {deck.kind === 'set' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${deck.title}`}
+              onPress={() => {
+                onDelete();
+              }}
+              hitSlop={8}
+              style={({ pressed }) => [styles.trash, pressed && styles.trashPressed]}
+            >
+              <Text style={styles.trashGlyph}>🗑</Text>
+            </Pressable>
+          ) : null}
 
           <Text style={styles.deckEmoji}>{deck.emoji}</Text>
           <Text style={styles.deckEyebrow}>{deck.kind === 'topic' ? 'TOPIC' : 'SET'}</Text>
