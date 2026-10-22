@@ -17,6 +17,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import {
   Image,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -677,6 +678,16 @@ export default function HomeScreen() {
             >
               <Text style={styles.versionLabel}>v{appVersion()}</Text>
             </Pressable>
+            <GameButton
+              label={Platform.OS === 'web' ? 'LINK TO PHONE' : 'LINK A BROWSER'}
+              variant="ghost"
+              size="md"
+              onPress={() => {
+                play('tap');
+                router.push('/link');
+              }}
+              accessibilityLabel={Platform.OS === 'web' ? 'Link to phone' : 'Link a browser'}
+            />
             <GameButton
               label={checkingUpdate ? 'CHECKING…' : 'CHECK FOR UPDATES'}
               variant="secondary"

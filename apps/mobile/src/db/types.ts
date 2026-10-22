@@ -3,6 +3,7 @@ import type {
   ImportCard,
   LocalSyncState,
   PackPurchaseError,
+  RemoteChanges,
   ReviewLogRecord,
   Rng,
   Settlement,
@@ -199,6 +200,16 @@ export interface ImportDeckResult {
  * the daily wheel.
  */
 export interface LocalStore {
+  // --- the progress sync ---
+  /**
+   * Applies what a pull brought (docs/design/sync.md §5). Never records
+   * outbox events. Card states of cards the device does not know yet are
+   * handed back to be parked until the deck arrives.
+   */
+  applyRemoteChanges(
+    changes: RemoteChanges,
+    options: { adoptBaseline: boolean },
+  ): Promise<{ parkedCardStates: CardState[] }>;
   // --- the study cards ---
   /** Reads every locally known card. */
   listCards(): Promise<StudyCard[]>;

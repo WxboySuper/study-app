@@ -1,6 +1,7 @@
 import {
   applySpinReward,
   applyTokenAdminAction,
+  applyWalletChanges,
   buyPack,
   createInitialState,
   createRandomRng,
@@ -14,6 +15,7 @@ import {
   type CardState,
   type ImportCard,
   type LocalSyncState,
+  type RemoteChanges,
   type StudyCard,
   type SyncPlan,
   type WalletSnapshot,
@@ -459,6 +461,183 @@ function demo(): DemoState {
   return state;
 }
 
+// --- the persistence of the web build (IndexedDB) ---
+//
+// The live web app keeps its progress in IndexedDB, so a linked browser
+// survives a reload. The demo pages (`?demo=`) never touch it.
+
+const IDB_NAME = 'cramcritters';
+const IDB_STORE = 'state';
+const IDB_KEY = 'v1';
+const PERSIST_DEBOUNCE_MS = 250;
+
+function isDemoUrl(): boolean {
+  const search = (globalThis as { location?: { search?: string } }).location?.search ?? '';
+  return search.includes('demo=');
+}
+
+function openIdb(): Promise<IDBDatabase | null> {
+  const factory = (globalThis as { indexedDB?: IDBFactory }).indexedDB;
+  if (factory === undefined) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const request = factory.open(IDB_NAME, 1);
+    request.onupgradeneeded = () => {
+      request.result.createObjectStore(IDB_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+  });
+}
+
+interface SerializedState {
+  wallet: WalletSnapshot;
+  collection: [string, number][];
+  cards: StudyCard[];
+  cardRemoteIds: [string, string][];
+  cardStates: [string, CardState][];
+  sets: LocalSet[];
+  topics: LocalTopic[];
+  classes: LocalClass[];
+  kv: [string, string][];
+  spins: [string, number][];
+  outbox: PendingReview[];
+  settled: string[];
+}
+
+function serializeState(value: DemoState): SerializedState {
+  return {
+    wallet: value.wallet,
+    collection: [...value.collection],
+    cards: value.cards,
+    cardRemoteIds: [...value.cardRemoteIds],
+    cardStates: [...value.cardStates],
+    sets: value.sets,
+    topics: value.topics,
+    classes: value.classes,
+    kv: [...value.kv],
+    spins: [...value.spins],
+    outbox: value.outbox,
+    settled: [...value.settled],
+  };
+}
+
+function deserializeState(raw: Partial<SerializedState>): DemoState {
+  const empty = createEmptyState();
+  return {
+    wallet: raw.wallet ?? empty.wallet,
+    collection: new Map(raw.collection ?? []),
+    cards: raw.cards ?? empty.cards,
+    cardRemoteIds: new Map(raw.cardRemoteIds ?? []),
+    cardStates: new Map(raw.cardStates ?? []),
+    sets: raw.sets ?? empty.sets,
+    topics: raw.topics ?? empty.topics,
+    classes: raw.classes ?? empty.classes,
+    kv: new Map(raw.kv ?? []),
+    spins: new Map(raw.spins ?? []),
+    outbox: raw.outbox ?? [],
+    settled: new Set(raw.settled ?? []),
+  };
+}
+
+let idb: Promise<IDBDatabase | null> | null = null;
+let hydrated: Promise<void> | null = null;
+
+/** Loads the saved progress once (before the first read of the store). */
+function hydrate(): Promise<void> {
+  if (hydrated === null) {
+    hydrated = (async () => {
+      if (isDemoUrl()) return;
+      idb = openIdb();
+      const database = await idb;
+      if (database === null) return;
+      void (globalThis as { navigator?: { storage?: { persist?: () => Promise<boolean> } } })
+        .navigator?.storage?.persist?.()
+        .catch(() => false);
+      const saved = await new Promise<unknown>((resolve) => {
+        const request = database
+          .transaction(IDB_STORE, 'readonly')
+          .objectStore(IDB_STORE)
+          .get(IDB_KEY);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(undefined);
+      });
+      if (saved !== undefined && saved !== null && typeof saved === 'object') {
+        state = deserializeState(saved as Partial<SerializedState>);
+      }
+    })().catch(() => undefined);
+  }
+  return hydrated;
+}
+
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
+async function persistNow(): Promise<void> {
+  if (idb === null || state === null) return;
+  const database = await idb;
+  if (database === null) return;
+  const snapshot = serializeState(state);
+  await new Promise<void>((resolve) => {
+    const tx = database.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(snapshot, IDB_KEY);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => resolve();
+    tx.onabort = () => resolve();
+  });
+}
+
+function schedulePersist(): void {
+  if (idb === null) return;
+  if (persistTimer !== null) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    void persistNow();
+  }, PERSIST_DEBOUNCE_MS);
+}
+
+/** Saves after every call of the store (reads included: cheap, debounced). */
+function persisting(store: LocalStore): LocalStore {
+  const wrapped: Record<string, unknown> = {};
+  for (const [name, value] of Object.entries(store)) {
+    wrapped[name] =
+      typeof value === 'function'
+        ? async (...args: unknown[]) => {
+            try {
+              return await (value as (...a: unknown[]) => Promise<unknown>)(...args);
+            } finally {
+              schedulePersist();
+            }
+          }
+        : value;
+  }
+  return wrapped as unknown as LocalStore;
+}
+
+/** Applies a pull to the in-memory state. */
+function applyRemoteChangesOfDemo(
+  changes: RemoteChanges,
+  options: { adoptBaseline: boolean },
+): { parkedCardStates: CardState[] } {
+  const current = demo();
+  const known = new Set(current.cards.map((card) => card.id));
+  const parkedCardStates: CardState[] = [];
+  for (const cardState of changes.cardStates) {
+    if (known.has(cardState.cardId)) current.cardStates.set(cardState.cardId, cardState);
+    else parkedCardStates.push(cardState);
+  }
+  const next = applyWalletChanges(
+    { wallet: current.wallet, collection: current.collection },
+    changes,
+    options.adoptBaseline,
+  );
+  current.wallet = { ...current.wallet, balance: next.balance, packTickets: next.packTickets };
+  current.collection = next.collection;
+  for (const [key, value] of Object.entries(changes.kv)) current.kv.set(key, value);
+  if (changes.lastSpin !== null && !current.spins.has(changes.lastSpin.localDate)) {
+    current.spins.set(changes.lastSpin.localDate, changes.lastSpin.reward);
+  }
+  return { parkedCardStates };
+}
+
 /** Opens the local store of the web build. */
 export async function openLocalStore(): Promise<LocalStore> {
   return withOutbox(await openRawLocalStore());
@@ -466,7 +645,9 @@ export async function openLocalStore(): Promise<LocalStore> {
 
 /** The store without the sync outbox (the outbox itself writes through it). */
 async function openRawLocalStore(): Promise<LocalStore> {
-  return {
+  await hydrate();
+  return persisting({
+    applyRemoteChanges: async (changes, options) => applyRemoteChangesOfDemo(changes, options),
     listCards: async () => [...demo().cards],
     listCardStates: async () => new Map(demo().cardStates),
     listSets: async () => [...demo().sets],
@@ -561,7 +742,7 @@ async function openRawLocalStore(): Promise<LocalStore> {
     resetSpinCooldown: async () => {
       demo().spins = new Map();
     },
-  };
+  });
 }
 
 /**

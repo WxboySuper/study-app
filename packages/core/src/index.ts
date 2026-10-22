@@ -423,6 +423,8 @@ export {
   peekOutbox,
   SYNCED_KV_KEYS,
   walletDelta,
+  applyWalletChanges,
+  mergeCardStates,
   type BaselinePayload,
   type ProgressEvent,
   type ProgressEventType,
