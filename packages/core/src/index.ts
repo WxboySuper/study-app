@@ -10,6 +10,7 @@ export {
   DEFAULT_BONUS_STABILITY_THRESHOLD,
   buildQueue,
   countScope,
+  filterByScope,
   type DeckClassMap,
   type QueueItem,
   type QueueItemKind,
@@ -33,6 +34,36 @@ export {
 } from './version';
 
 export { parseRelease, type ReleaseInfo } from './release';
+
+export {
+  DEFAULT_CORRECT_REINSERT_MAX,
+  DEFAULT_CORRECT_REINSERT_MIN,
+  DEFAULT_REINSERT_MAX,
+  DEFAULT_REINSERT_MIN,
+  DEFAULT_WEAK_STABILITY,
+  answerSessionQuestion,
+  createSessionQueue,
+  masteredCount,
+  nextSessionQuestion,
+  sessionComplete,
+  sessionRemaining,
+  sessionTotal,
+  updateSessionStates,
+  type MasteryRecord,
+  type SessionMode,
+  type SessionQuestion,
+  type SessionQueueOptions,
+  type SessionQueueState,
+} from './sessionQueue';
+
+export {
+  hasMath,
+  mathSources,
+  plainText,
+  splitMathSegments,
+  type MathSegment,
+  type MathSegmentType,
+} from './math';
 
 export {
   createInitialState,
