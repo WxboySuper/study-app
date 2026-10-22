@@ -5,9 +5,10 @@ import {
   type FishingQuestion,
   type MasteryStatus,
 } from '@study-app/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ImageBackground,
+  Image,
+  type LayoutChangeEvent,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -128,6 +129,18 @@ export function QuestionNote({
   const [burst, setBurst] = useState(0);
   // The parchment of the question card (the art of the UI piece).
   const parchment = artFor('ui_parchment_note');
+  // The size of the content box of the note: the art is stretched past it.
+  const [noteSize, setNoteSize] = useState<{ width: number; height: number } | null>(null);
+  const onNoteLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setNoteSize((current) =>
+      current !== null &&
+      Math.abs(current.width - width) < 1 &&
+      Math.abs(current.height - height) < 1
+        ? current
+        : { width, height },
+    );
+  }, []);
 
   // Every new question starts hidden again.
   useEffect(() => {
@@ -223,14 +236,16 @@ export function QuestionNote({
           {parchment === null ? (
             <View style={[styles.note, styles.notePlain]}>{body}</View>
           ) : (
-            <ImageBackground
-              source={parchment}
-              resizeMode="stretch"
-              style={styles.note}
-              imageStyle={styles.noteImage}
-            >
+            <View style={styles.note} onLayout={onNoteLayout}>
+              {noteSize === null ? null : (
+                <Image
+                  source={parchment}
+                  resizeMode="stretch"
+                  style={[styles.noteImage, parchmentFrame(noteSize)]}
+                />
+              )}
               {body}
-            </ImageBackground>
+            </View>
           )}
         </Animated.View>
 
@@ -304,14 +319,16 @@ export function QuestionNote({
         {parchment === null ? (
           <View style={[styles.note, styles.notePlain]}>{body}</View>
         ) : (
-          <ImageBackground
-            source={parchment}
-            resizeMode="stretch"
-            style={styles.note}
-            imageStyle={styles.noteImage}
-          >
+          <View style={styles.note} onLayout={onNoteLayout}>
+            {noteSize === null ? null : (
+              <Image
+                source={parchment}
+                resizeMode="stretch"
+                style={[styles.noteImage, parchmentFrame(noteSize)]}
+              />
+            )}
             {body}
-          </ImageBackground>
+          </View>
         )}
       </Animated.View>
 
@@ -548,6 +565,19 @@ function AnswerTile({
   );
 }
 
+/**
+ * The frame of the parchment art around a content box.
+ *
+ * The art is a square with a torn, transparent margin (about 14-18 % at the
+ * top and 13 % at the bottom). It is stretched past the box so the solid
+ * paper covers the whole box whatever its height: the text never sits on the
+ * transparent edge, however tall the question is.
+ */
+function parchmentFrame(size: { width: number; height: number }) {
+  const art = size.height / 0.66;
+  return { width: size.width, top: -art * 0.19, height: art };
+}
+
 const styles = StyleSheet.create({
   area: {
     width: '100%',
@@ -589,24 +619,28 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     alignItems: 'center',
+    // Room for the torn margin of the art drawn past the content box.
+    marginTop: 26,
+    marginBottom: 20,
   },
   note: {
     width: '100%',
     maxWidth: 520,
-    minHeight: 150,
+    minHeight: 96,
     // The parchment art has a transparent, torn border (roughly a tenth of
     // its width on each side): the inner padding has to clear it, or the
     // text ends up on the ragged edge of the paper.
     paddingLeft: 52,
     paddingRight: 52,
-    paddingTop: 30,
-    paddingBottom: 24,
+    paddingTop: 14,
+    paddingBottom: 12,
     gap: 6,
-    overflow: 'hidden',
+    // The paper grows with its content; nothing is clipped.
+    overflow: 'visible',
   },
   noteImage: {
-    width: '100%',
-    height: '100%',
+    position: 'absolute',
+    left: 0,
     borderRadius: 14,
   },
   notePlain: {
