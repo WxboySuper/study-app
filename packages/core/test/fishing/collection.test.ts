@@ -55,6 +55,7 @@ function playSession(catches: number) {
       { type: 'bite' },
       { type: 'reel' },
       { type: 'answer', choiceIndex: 0, durationMs: 500, now: NOW },
+      { type: 'answer_hold_done' },
       { type: 'reel_finished' },
       { type: 'continue' },
     ];

@@ -239,15 +239,20 @@ export {
 } from './fishing/roll';
 
 export {
+  ANSWER_HOLD_MS,
   biggestCatch,
   createFishingState,
   fishingReducer,
+  leadUpOf,
   remainingCards,
   toSessionResult,
+  LEAD_UP_FULL_MS,
+  LEAD_UP_SHORT_MS,
   type CaughtCatch,
   type CritterCatchRecord,
   type FishingEvent,
   type FishingFeedback,
+  type FishingLeadUp,
   type FishingMachineOptions,
   type FishingPhase,
   type FishingQuestion,
