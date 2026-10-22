@@ -28,6 +28,7 @@ import type {
   LocalStore,
   PendingReview,
 } from './types';
+import { withOutbox } from '@/sync/outbox';
 import { readCollection, readWallet, settleLocalSession, writeWallet } from './wallet';
 
 export type { LocalClass, LocalSet, LocalTopic, PendingReview } from './types';
@@ -326,6 +327,11 @@ let database: Promise<SQLite.SQLiteDatabase> | null = null;
  * {@link LocalStore} interface, so they do not care where the data lives.
  */
 export async function openLocalStore(): Promise<LocalStore> {
+  return withOutbox(await openRawLocalStore());
+}
+
+/** The store without the sync outbox (the outbox itself writes through it). */
+async function openRawLocalStore(): Promise<LocalStore> {
   const db = await openLocalDatabase();
 
   return {

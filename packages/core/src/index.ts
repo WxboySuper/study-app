@@ -413,3 +413,21 @@ export {
   type QuestionRow,
   type QuestionStatusKind,
 } from './deckDetail';
+export {
+  appendOutbox,
+  dropFromOutbox,
+  foldRemoteEvents,
+  makeEvent,
+  outboxSize,
+  OUTBOX_MAX,
+  peekOutbox,
+  SYNCED_KV_KEYS,
+  walletDelta,
+  type BaselinePayload,
+  type ProgressEvent,
+  type ProgressEventType,
+  type ProgressPayloads,
+  type RemoteChanges,
+  type RemoteEvent,
+  type WalletDeltaPayload,
+} from './progressSync';

@@ -33,6 +33,7 @@ import type {
   SellDuplicatesResult,
   SpinResult,
 } from './types';
+import { withOutbox } from '@/sync/outbox';
 
 export type { LocalClass, LocalSet, LocalTopic, PendingReview } from './types';
 
@@ -460,6 +461,11 @@ function demo(): DemoState {
 
 /** Opens the local store of the web build. */
 export async function openLocalStore(): Promise<LocalStore> {
+  return withOutbox(await openRawLocalStore());
+}
+
+/** The store without the sync outbox (the outbox itself writes through it). */
+async function openRawLocalStore(): Promise<LocalStore> {
   return {
     listCards: async () => [...demo().cards],
     listCardStates: async () => new Map(demo().cardStates),
