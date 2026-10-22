@@ -12,7 +12,15 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import Animated, {
   Easing,
   FadeInDown,
@@ -32,7 +40,7 @@ import {
 import { critterArt } from '@/packs/critterArt';
 import { scopeTitle, useSettings } from '@/settings';
 import { play } from '@/sound/sfx';
-import { buildDecks, queueScopeOf, scopeOfDeck, selectedDeckId } from '@/study/decks';
+import { buildDecks, queueScopeOf, scopeOfDeck, selectedDeckId, type DeckCard } from '@/study/decks';
 import { DeckPicker } from '@/study/DeckPicker';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
 import {
@@ -84,6 +92,7 @@ export default function HomeScreen() {
   const [packTickets, setPackTickets] = useState(0);
   const [critterCount, setCritterCount] = useState(0);
   const [spinReady, setSpinReady] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<DeckCard | null>(null);
 
   const totalCritters = PACKS.reduce((sum, pack) => sum + pack.critters.length, 0);
   const cheapestPack = useMemo(() => {
@@ -121,37 +130,32 @@ export default function HomeScreen() {
     }, []),
   );
 
-  useEffect(() => {
-    let cancelled = false;
+  // The decks are read whenever Home comes back into focus: a deck that was
+  // just imported (or deleted) shows up right away.
+  const loadDecks = useCallback(async () => {
+    try {
+      const store = await openLocalStore();
+      const localCards = await store.listCards();
+      const localStates = await store.listCardStates();
+      const localSets = await store.listSets();
+      const localTopics = await store.listTopics();
 
-    void (async () => {
-      try {
-        const store = await openLocalStore();
-        const localCards = await store.listCards();
-        const localStates = await store.listCardStates();
-        const localSets = await store.listSets();
-        const localTopics = await store.listTopics();
-        if (cancelled) {
-          return;
-        }
-
-        setCards(localCards);
-        setCardStates(localStates);
-        setSets(localSets);
-        setTopics(localTopics);
-      } catch {
-        // The decks stay empty: the picker shows its empty state.
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+      setCards(localCards);
+      setCardStates(localStates);
+      setSets(localSets);
+      setTopics(localTopics);
+    } catch {
+      // The decks stay empty: the picker shows its empty state.
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadDecks();
+    }, [loadDecks]),
+  );
 
   // The decks of the picker, with the number of cards and the number of due
   // cards of every one of them.
@@ -209,6 +213,33 @@ export default function HomeScreen() {
           : { kind: scope.kind, id: scope.id, title: scope.title },
     });
   }, [router, scope, setScope]);
+
+  const goImport = useCallback(() => {
+    play('tap');
+    router.push('/import');
+  }, [router]);
+
+  // The deck is only gone when the player says so.
+  const onConfirmDelete = useCallback(() => {
+    const deck = pendingDelete;
+    setPendingDelete(null);
+    if (deck === null) {
+      return;
+    }
+
+    void (async () => {
+      try {
+        const store = await openLocalStore();
+        await store.deleteDeck(deck.id);
+        if (scope.kind !== 'all' && scope.id === deck.id) {
+          setScope({ kind: 'all' });
+        }
+        await loadDecks();
+      } catch {
+        // The deck stays where it is.
+      }
+    })();
+  }, [loadDecks, pendingDelete, scope, setScope]);
 
   return (
     <GameBackground variant="home">
@@ -303,6 +334,11 @@ export default function HomeScreen() {
               totalCards={everything.total}
               totalDue={everything.due}
               onSelect={onSelectDeck}
+              onImport={goImport}
+              onDelete={(deck) => {
+                play('tap');
+                setPendingDelete(deck);
+              }}
             />
           </Animated.View>
 
@@ -321,6 +357,37 @@ export default function HomeScreen() {
           </Animated.View>
         </ScrollView>
       </SafeAreaView>
+
+      {pendingDelete === null ? null : (
+        <Modal
+          visible
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            setPendingDelete(null);
+          }}
+        >
+          <View style={styles.modalBackdrop}>
+            <GlassCard style={styles.modalCard} contentStyle={styles.modalContent} tint={colors.danger}>
+              <Text style={styles.modalTitle}>DELETE THIS DECK?</Text>
+              <Text style={styles.modalText}>
+                “{pendingDelete.title}” and its {pendingDelete.cards} card
+                {pendingDelete.cards === 1 ? '' : 's'} leave the game. This cannot be undone.
+              </Text>
+
+              <GameButton
+                label="KEEP IT"
+                variant="ghost"
+                size="md"
+                onPress={() => {
+                  setPendingDelete(null);
+                }}
+              />
+              <GameButton label="DELETE" variant="danger" size="md" onPress={onConfirmDelete} />
+            </GlassCard>
+          </View>
+        </Modal>
+      )}
     </GameBackground>
   );
 }
@@ -741,5 +808,33 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontFamily: fonts.title,
     fontSize: 12,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(4, 5, 8, 0.72)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: radius.card,
+  },
+  modalContent: {
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalTitle: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 18,
+    letterSpacing: 0.5,
+  },
+  modalText: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 13,
+    lineHeight: 19,
   },
 });

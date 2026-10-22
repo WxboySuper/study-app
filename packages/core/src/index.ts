@@ -44,6 +44,14 @@ export {
 } from './types';
 
 export {
+  MAX_IMPORT_CARDS,
+  parseDeck,
+  type DeckFormat,
+  type ImportCard,
+  type ParsedDeck,
+} from './import';
+
+export {
   CRITTER_PACKS,
   CRITTER_RARITIES,
   CRITTER_RARITY_ODDS,

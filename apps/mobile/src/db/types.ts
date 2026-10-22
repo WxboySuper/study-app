@@ -1,5 +1,6 @@
 import type {
   CardState,
+  ImportCard,
   PackPurchaseError,
   ReviewLogRecord,
   Rng,
@@ -152,6 +153,20 @@ export type SpinResult =
       wallet: WalletSnapshot;
     };
 
+/** The result of importing a deck. */
+export interface ImportDeckResult {
+  /** `true` when the deck was imported. */
+  ok: boolean;
+  /** The id of the new set (`null` when the import failed). */
+  setId: string | null;
+  /** The id of the topic of the new set (`null` when it has none). */
+  topicId: string | null;
+  /** How many cards were imported. */
+  cards: number;
+  /** A message for the player when the import failed. */
+  message: string | null;
+}
+
 /**
  * The local store of the app.
  *
@@ -169,6 +184,10 @@ export interface LocalStore {
   listSets(): Promise<LocalSet[]>;
   /** Reads every locally known topic, sorted by name. */
   listTopics(): Promise<LocalTopic[]>;
+  /** Imports a new deck: a set, its cards and their fresh scheduling state. */
+  importDeck(name: string, cards: readonly ImportCard[]): Promise<ImportDeckResult>;
+  /** Deletes a deck with its cards, their states and their pending reviews. */
+  deleteDeck(setId: string): Promise<void>;
   /** Inserts or updates the scheduling state of a card. */
   upsertCardState(state: CardState): Promise<void>;
   /** Queues a review for the next sync. */

@@ -1,6 +1,6 @@
 import * as SQLite from 'expo-sqlite';
 
-import type { CardState, State, StudyCard } from '@study-app/core';
+import { createInitialState, type CardState, type ImportCard, type State, type StudyCard } from '@study-app/core';
 
 import {
   buyAndOpenPack,
@@ -9,7 +9,13 @@ import {
   sellDuplicates,
   spinDailyWheelLocal,
 } from './packs';
-import type { LocalSet, LocalTopic, LocalStore, PendingReview } from './types';
+import type {
+  ImportDeckResult,
+  LocalSet,
+  LocalTopic,
+  LocalStore,
+  PendingReview,
+} from './types';
 import { readCollection, readWallet, settleLocalSession } from './wallet';
 
 export type { LocalSet, LocalTopic, PendingReview } from './types';
@@ -113,6 +119,8 @@ export async function openLocalStore(): Promise<LocalStore> {
     listCardStates: () => listLocalCardStates(db),
     listSets: () => listLocalSets(db),
     listTopics: () => listLocalTopics(db),
+    importDeck: (name, cards) => importLocalDeck(db, name, cards),
+    deleteDeck: (setId) => deleteLocalDeck(db, setId),
     upsertCardState: (state) => upsertLocalCardState(db, state),
     enqueueReview: (review) => enqueueReview(db, review),
     readWallet: (today) => readWallet(db, today),
@@ -203,6 +211,113 @@ export async function upsertLocalTopic(db: SQLite.SQLiteDatabase, topic: LocalTo
     topic.name,
     topic.color,
   );
+}
+
+/**
+ * Imports a deck: a new set, its cards and their fresh scheduling state.
+ *
+ * Everything happens in one transaction: the deck is either there with all of
+ * its cards, or it is not there at all. The cards are normal multiple choice
+ * cards (the distractors come from the other cards of the set, like the
+ * cards of the demo decks) and they start as new cards, due right now.
+ */
+export async function importLocalDeck(
+  db: SQLite.SQLiteDatabase,
+  name: string,
+  cards: readonly ImportCard[],
+  now: number = Date.now(),
+): Promise<ImportDeckResult> {
+  const title = name.trim();
+
+  if (title === '') {
+    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck needs a name.' };
+  }
+
+  if (cards.length === 0) {
+    return { ok: false, setId: null, topicId: null, cards: 0, message: 'The deck has no cards.' };
+  }
+
+  const setId = makeId('set');
+
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      `INSERT INTO local_sets (id, topic_id, title, updated_at)
+       VALUES (?, ?, ?, ?)`,
+      setId,
+      null,
+      title,
+      now,
+    );
+
+    for (const [index, card] of cards.entries()) {
+      const cardId = `${setId}_card_${index + 1}`;
+
+      await db.runAsync(
+        `INSERT INTO local_cards (id, set_id, topic_id, type, front, back, choices_json, answer_index, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        cardId,
+        setId,
+        null,
+        'mc',
+        card.front,
+        card.back,
+        null,
+        null,
+        now,
+        now,
+      );
+
+      const state = createInitialState(cardId, new Date(now));
+      await db.runAsync(
+        `INSERT INTO local_card_state (card_id, due, stability, difficulty, elapsed_days, scheduled_days, learning_steps, reps, lapses, state, last_review)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        state.cardId,
+        state.due,
+        state.stability,
+        state.difficulty,
+        state.elapsedDays,
+        state.scheduledDays,
+        state.learningSteps ?? 0,
+        state.reps,
+        state.lapses,
+        state.state,
+        state.lastReview ?? null,
+      );
+    }
+  });
+
+  return { ok: true, setId, topicId: null, cards: cards.length, message: null };
+}
+
+/**
+ * Deletes a deck with everything that belongs to it.
+ *
+ * The cards, their scheduling state and the reviews that still wait for the
+ * server go away with the set, in one transaction.
+ */
+export async function deleteLocalDeck(
+  db: SQLite.SQLiteDatabase,
+  setId: string,
+): Promise<void> {
+  await db.withTransactionAsync(async () => {
+    await db.runAsync(
+      'DELETE FROM outbox WHERE card_id IN (SELECT id FROM local_cards WHERE set_id = ?)',
+      setId,
+    );
+    await db.runAsync(
+      'DELETE FROM local_card_state WHERE card_id IN (SELECT id FROM local_cards WHERE set_id = ?)',
+      setId,
+    );
+    await db.runAsync('DELETE FROM local_cards WHERE set_id = ?', setId);
+    await db.runAsync('DELETE FROM local_sets WHERE id = ?', setId);
+  });
+}
+
+/** A unique id for a new set. */
+function makeId(prefix: string): string {
+  const stamp = Date.now().toString(36);
+  const noise = Math.floor(Math.random() * 1_000_000).toString(36);
+  return `${prefix}_${stamp}_${noise}`;
 }
 
 /** Reads the scheduling state of every local card. */
