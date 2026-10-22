@@ -10,6 +10,7 @@ export {
   DEFAULT_BONUS_STABILITY_THRESHOLD,
   buildQueue,
   countScope,
+  type DeckClassMap,
   type QueueItem,
   type QueueItemKind,
   type QueueOptions,
@@ -17,6 +18,19 @@ export {
   type ScopeCount,
   type StateLookup,
 } from './queue';
+
+export {
+  buildDeckClassMap,
+  decksOfClass,
+  type ClassDeck,
+} from './classes';
+
+export {
+  compareSemver,
+  isNewerVersion,
+  parseSemver,
+  type SemVer,
+} from './version';
 
 export {
   createInitialState,

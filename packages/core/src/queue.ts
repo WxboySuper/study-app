@@ -5,13 +5,27 @@ import type { CardState, StudyCard } from './types';
 /**
  * What the player chose to study.
  *
- * The MVP supports the three scopes listed in docs/SPEC.md §3:
- * "Study All / Topic(tag) / Set".
+ * The scopes of docs/SPEC.md §3 ("Study All / Topic(tag) / Set") plus the
+ * class scope: a class is a pile of decks, so studying a class studies every
+ * question of every deck it holds.
  */
 export type QueueScope =
   | { kind: 'all' }
   | { kind: 'topic'; topicId: string }
-  | { kind: 'set'; setId: string };
+  | { kind: 'set'; setId: string }
+  /**
+   * A class of decks. `classId` is `null` for the "Unsorted" bucket: the
+   * decks that do not belong to any class.
+   */
+  | { kind: 'class'; classId: string | null };
+
+/**
+ * The class of every deck.
+ *
+ * The queue does not know the classes themselves, only the class every deck
+ * belongs to: a deck without a class is in the "Unsorted" bucket (`null`).
+ */
+export type DeckClassMap = ReadonlyMap<string, string | null>;
 
 /** A lookup of scheduling state, keyed by card id. */
 export type StateLookup =
@@ -31,6 +45,11 @@ export interface QueueOptions {
    * (they are the most likely to be forgotten). Stability is in days.
    */
   bonusStabilityThreshold?: number;
+  /**
+   * The class of every deck, needed by the "class" scope. Without it, every
+   * deck is in the "Unsorted" bucket.
+   */
+  deckClasses?: DeckClassMap;
 }
 
 /** Why a card is in the queue. */
@@ -74,7 +93,7 @@ export function buildQueue(
   const scope = options.scope ?? { kind: 'all' };
   const newCap = Math.max(0, Math.floor(options.newCap));
 
-  const inScope = cards.filter((card) => matchesScope(card, scope));
+  const inScope = cards.filter((card) => matchesScope(card, scope, options.deckClasses));
 
   const due: QueueItem[] = [];
   const fresh: StudyCard[] = [];
@@ -133,13 +152,14 @@ export function countScope(
   states: StateLookup,
   now: Date | number,
   scope: QueueScope = { kind: 'all' },
+  deckClasses?: DeckClassMap,
 ): ScopeCount {
   const nowMs = now instanceof Date ? now.getTime() : now;
   let total = 0;
   let due = 0;
 
   for (const card of cards) {
-    if (!matchesScope(card, scope)) {
+    if (!matchesScope(card, scope, deckClasses)) {
       continue;
     }
     total += 1;
@@ -228,7 +248,7 @@ function buildBonusQueue(
     }));
 }
 
-function matchesScope(card: StudyCard, scope: QueueScope): boolean {
+function matchesScope(card: StudyCard, scope: QueueScope, deckClasses?: DeckClassMap): boolean {
   switch (scope.kind) {
     case 'all':
       return true;
@@ -236,7 +256,18 @@ function matchesScope(card: StudyCard, scope: QueueScope): boolean {
       return card.topicId !== null && card.topicId !== undefined && card.topicId === scope.topicId;
     case 'set':
       return card.setId === scope.setId;
+    case 'class':
+      // A deck without a class is in the "Unsorted" bucket.
+      return classOfDeck(card.setId, deckClasses) === scope.classId;
   }
+}
+
+/** The class of a deck (`null` when it has none). */
+function classOfDeck(setId: string, deckClasses?: DeckClassMap): string | null {
+  if (deckClasses === undefined) {
+    return null;
+  }
+  return deckClasses.get(setId) ?? null;
 }
 
 function lookupState(states: StateLookup, cardId: string): CardState | undefined {
