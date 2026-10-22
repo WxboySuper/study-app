@@ -116,12 +116,22 @@ async function settle(page) {
  * The screenshots of the script.
  *
  * `path` is the route of the screen, `waitFor` is the text that only shows
- * up in that state and `wait` is how long the screen needs after it.
+ * up in that state, `scrollTo` is the test id of the part of the screen the
+ * camera has to look at, `actions` are the taps that happen before the
+ * picture and `wait` is how long the screen needs after it.
  */
 const SHOTS = [
   { name: 'home', path: '/' },
+  { name: 'home-decks', path: '/', scrollTo: 'deck-picker', wait: 900 },
   { name: 'packs', path: '/packs' },
   { name: 'pack-reveal', path: '/packs?demo=reveal', waitFor: 'CONTINUE', wait: 2600 },
+  {
+    name: 'pack-open-another',
+    path: '/packs?demo=reveal',
+    waitFor: 'OPEN ANOTHER',
+    actions: [{ click: 'OPEN ANOTHER' }],
+    wait: 2800,
+  },
   { name: 'collection', path: '/collection' },
   { name: 'collection-sheet', path: '/collection?demo=sheet', waitFor: 'SELL', wait: 1200 },
   { name: 'spin', path: '/spin' },
@@ -180,6 +190,27 @@ async function main() {
         shot.waitFor,
         { timeout: 30_000 },
       );
+    }
+
+    // The camera looks at a part of the screen (the deck picker of the home
+    // screen, for instance).
+    if (shot.scrollTo !== undefined) {
+      const target = page.locator(`[data-testid="${shot.scrollTo}"]`).first();
+      if ((await target.count()) > 0) {
+        await target.evaluate((node) => {
+          node.scrollIntoView({ block: 'center', inline: 'center' });
+        });
+        await page.waitForTimeout(600);
+      }
+    }
+
+    // The taps that happen before the picture (the "Open another" of the
+    // pack shop, for instance).
+    for (const action of shot.actions ?? []) {
+      if (action.click !== undefined) {
+        await page.getByText(action.click, { exact: false }).first().click();
+        await page.waitForTimeout(400);
+      }
     }
 
     if (shot.wait !== undefined) {
