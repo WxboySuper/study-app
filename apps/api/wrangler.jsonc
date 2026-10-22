@@ -1,23 +1,33 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "study-app-api",
+  "name": "cramcritters-api",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  // The Worker is served from *.workers.dev, no custom domain (yet).
+  // The account of the game. The Worker is served from *.workers.dev, no
+  // custom domain (yet).
+  "account_id": "3488c751e28fdbb1b31d95deac5e6cfd",
   "workers_dev": true,
   "observability": {
     "enabled": true
   },
+  // The web build of the app is served by the same Worker: the API answers
+  // under /api, everything else is the static export of Expo.
+  "assets": {
+    "directory": "../mobile/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "study-app",
-      // TODO: replace with the real D1 database id (`wrangler d1 create study-app`).
-      "database_id": "TODO",
+      "database_name": "cramcritters",
+      "database_id": "a23af248-9c5b-4431-8580-1319b3cf0869",
       "migrations_dir": "migrations"
     }
   ]
-  // Phase 2: the MCP server is mounted on /mcp in the same Worker and is
-  // protected by a bearer token stored as a Worker secret (`MCP_TOKEN`).
-  // Secrets are *not* listed here on purpose, they never live in the repo.
+  // The secrets never live in the repository:
+  // - MUSE_TOKEN guards the write endpoints (POST /api/decks, DELETE /api/decks/:id)
+  // - GH_TOKEN reads the releases of the game on GitHub
+  // They are set with `wrangler secret put` (never in this file).
 }
