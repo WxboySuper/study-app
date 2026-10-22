@@ -68,8 +68,8 @@ jobs:
         run: >-
           ./gradlew assembleRelease
           -PreactNativeArchitectures=arm64-v8a
-          --build-cache --parallel
-          "-Dorg.gradle.jvmargs=-Xmx6g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8"
+          --build-cache --max-workers=2
+          "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" -Pkotlin.daemon.jvmargs=-Xmx2g
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
           CMAKE_CXX_COMPILER_LAUNCHER: ccache
