@@ -1,5 +1,6 @@
 import { State } from 'ts-fsrs';
 
+import { isLeech, isMatureMastered } from './mastery';
 import { MASTERY_REQUIRED_CORRECT } from './sessionQueue';
 import type { CardState, StudyCard } from './types';
 
@@ -24,7 +25,10 @@ export interface QuestionRow {
   /** How many correct answers mastery needs. */
   masteryRequired: number;
   /** `true` once `mastery >= masteryRequired`. */
+  /** ★ Mastered: in Review with stability ≥ 21 days (Anki "mature"). */
   mastered: boolean;
+  /** 🐛 8+ lapses. */
+  leech: boolean;
   /** `true` when the next session of this deck would ask this question. */
   queued: boolean;
 }
@@ -86,7 +90,8 @@ export function buildQuestionRows(
       dueAt: status === 'new' || state === undefined ? null : state.due,
       mastery,
       masteryRequired,
-      mastered: mastery >= masteryRequired,
+      mastered: isMatureMastered(state),
+      leech: isLeech(state),
       queued: queuedIds.has(card.id),
     };
   });

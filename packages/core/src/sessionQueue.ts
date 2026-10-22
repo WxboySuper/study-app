@@ -302,10 +302,6 @@ export function answerSessionQuestion(
     ? { ...record, correctStreak: record.correctStreak + 1 }
     : { ...record, correctStreak: 0, missed: true };
 
-  const mastered =
-    state.mode === 'mastery' && nextRecord.correctStreak >= state.masteryRequired;
-  const finalRecord: MasteryRecord = { ...nextRecord, mastered };
-  const records = { ...state.records, [questionId]: finalRecord };
   const states = { ...state.states, [questionId]: nextState ?? state.states[questionId] };
 
   const missedIds = correct
@@ -338,6 +334,11 @@ export function answerSessionQuestion(
     dueAt: state.asked + Math.max(1, answer.gap),
   };
 
+  // Graduation (passing the last learning step) is what masters a card in a
+  // Mastery session; the n/3 count is only a visual meter.
+  const mastered = state.mode === 'mastery' && correct && answered.queue === 'review';
+  const finalRecord: MasteryRecord = { ...nextRecord, mastered };
+  const records = { ...state.records, [questionId]: finalRecord };
   const cards = { ...state.cards, [questionId]: answered };
   let queues = requeueAnkiCard(state.queues, answered, state.lastGroup ?? 'new');
 

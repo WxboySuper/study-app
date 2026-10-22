@@ -433,3 +433,17 @@ export {
   type RemoteEvent,
   type WalletDeltaPayload,
 } from './progressSync';
+
+export {
+  DEFAULT_DAILY_LIMITS,
+  DEFAULT_LEECH_THRESHOLD,
+  DEFAULT_MEDIAN_ANSWER_MS,
+  MATURE_STABILITY_DAYS,
+  gradeByAnswerTime,
+  gradeLabel,
+  isLeech,
+  isMatureMastered,
+  medianAnswerMs,
+  remainingToday,
+  type DailyLimits,
+} from './mastery';

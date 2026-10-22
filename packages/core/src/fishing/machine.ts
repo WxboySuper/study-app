@@ -27,7 +27,7 @@
 import { Rating, State, type Grade } from 'ts-fsrs';
 
 import type { QueueItem, QueueItemKind } from '../queue';
-import { autoRating } from '../rating';
+import { gradeByAnswerTime, medianAnswerMs } from '../mastery';
 import { grade } from '../scheduler';
 import type { CardState, ReviewLogRecord } from '../types';
 import type { CritterRarity } from '../critters';
@@ -497,15 +497,16 @@ function handleAnswer(
       ? correct
         ? Rating.Good
         : Rating.Again
-      : autoRating({
+      : gradeByAnswerTime({
           correct,
           durationMs: event.durationMs,
-          streak: state.session.streak,
+          medianMs: medianAnswerMs(
+            state.session.reviews
+              .filter((review) => review.cardId === item.cardId)
+              .map((review) => review.durationMs),
+          ),
         });
-  // `autoRating` never grades "Manual", but the FSRS API only accepts the
-  // four real grades.
-  /* v8 ignore next -- `autoRating` never returns "Manual" */
-  const fsrsGrade: Grade = rating === Rating.Manual ? Rating.Good : rating;
+  const fsrsGrade: Grade = rating;
 
   const previousState = state.session.cardStates.get(item.cardId) ?? item.state;
   const graded = grade(item.card, previousState, fsrsGrade, new Date(event.now));

@@ -262,7 +262,7 @@ describe('the fishing machine', () => {
     expect(state.session.correct).toBe(0);
   });
 
-  it('grades a fast streak as "Easy"', () => {
+  it('grades fast answers as "Easy"', () => {
     let state = createState({
       queue: [makeQueueItem('a'), makeQueueItem('b'), makeQueueItem('c'), makeQueueItem('d')],
     });
@@ -273,9 +273,9 @@ describe('the fishing machine', () => {
     }
 
     expect(state.session.reviews.map((review) => review.rating)).toEqual([
-      Rating.Good,
-      Rating.Good,
-      Rating.Good,
+      Rating.Easy,
+      Rating.Easy,
+      Rating.Easy,
       Rating.Easy,
     ]);
     expect(state.session.bestStreak).toBe(4);

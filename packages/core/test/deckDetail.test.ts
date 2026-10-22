@@ -51,7 +51,7 @@ describe('buildQuestionRows', () => {
   const states = new Map<string, CardState>([
     ['b', st('b', State.Review, NOW - H)],
     ['c', st('c', State.Learning, NOW + H)],
-    ['d', st('d', State.Review, NOW + 72 * H)],
+    ['d', { ...st('d', State.Review, NOW + 72 * H), stability: 30 }],
   ]);
   const rows = buildQuestionRows(cards, states, { a: 1, d: 7, c: Number.NaN }, new Set(['a', 'b']), NOW);
 
