@@ -942,7 +942,9 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
   const onTheLine = machine.onTheLine;
   const hintTier = onTheLine !== null && isCatchOutcome(onTheLine) ? onTheLine.tier : null;
-  const nothingToStudy = !loading && machine.session.queue.length === 0;
+  // The queue of the machine holds one question at a time: the scope of the
+  // session is what says whether there is something to study.
+  const nothingToStudy = !loading && progress.total === 0;
 
   /** The frame of the sequence the demo freezes the scene on. */
   const freezeStage = useMemo<LeadUpStage | null>(() => {
