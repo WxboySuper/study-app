@@ -12,11 +12,14 @@ import {
 } from '@study-app/core';
 
 /**
- * The local (offline first) wallet and critter collection.
+ * The local (offline first) wallet.
  *
  * The pure rules live in `@study-app/core` (`settleSession`); this file only
  * reads and writes SQLite. Settling is idempotent per session id, so a double
  * tap on "End" (or a re-render) can never pay twice.
+ *
+ * A session never writes to the collection: the critters of the collection
+ * come from the packs (`addCritter` is called by the pack opening alone).
  */
 
 const WALLET_SCHEMA = `
@@ -118,9 +121,11 @@ export async function addCritter(
 }
 
 /**
- * Settles a finished session: credits the tokens, the capped pack tickets and
- * the caught critters in one transaction. Returns `null` when the session was
- * already settled.
+ * Settles a finished session: credits the tokens and the capped pack tickets
+ * in one transaction. Returns `null` when the session was already settled.
+ *
+ * The collection is not touched: a caught critter is a catch, not a critter of
+ * the collection.
  */
 export async function settleLocalSession(
   db: SQLite.SQLiteDatabase,
@@ -144,14 +149,9 @@ export async function settleLocalSession(
     }
 
     const wallet = await readWallet(tx, today);
-    const owned = await readCollection(tx);
-    const result = settleSession(wallet, outcome, owned, today);
+    const result = settleSession(wallet, outcome, today);
 
     await writeWallet(tx, result.wallet);
-
-    for (const critter of result.critters) {
-      await addCritter(tx, critter.critterId, now);
-    }
 
     await tx.runAsync(
       'INSERT INTO settled_sessions (session_id, mode, tokens, pack_tickets, settled_at) VALUES (?, ?, ?, ?, ?)',

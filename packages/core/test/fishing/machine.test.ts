@@ -412,7 +412,7 @@ describe('the fishing machine', () => {
     expect(result.critters).toEqual([]);
   });
 
-  it('keeps the critters that were caught for the collection', () => {
+  it('keeps the critters that were caught, without granting them', () => {
     // The tier roll lands on "Easy One": the catch is a common critter.
     let state = createState({ rng: sequenceRng([0.5, 0.0, 0.5]), now: NOW });
     state = toHooked(state);
@@ -425,10 +425,12 @@ describe('the fishing machine', () => {
     expect(critter.rarity).toBe('common');
     expect(critter.tier).toBe('easy');
 
-    // The result of the session carries the critters, so the app can add
-    // them to the collection when the session ends.
+    // The result of the session carries the critters, so the app can show
+    // them on the payout screen. They are catches: they are never granted to
+    // the collection (only a pack grants a critter).
     const result = toSessionResult(state);
     expect(result.critters.map((entry) => entry.critterId)).toEqual(['nibbles_the_notecard']);
+    expect(result.haulLbs).toBeGreaterThan(0);
   });
 
   it('only catches the critters of the packs that are on sale', () => {

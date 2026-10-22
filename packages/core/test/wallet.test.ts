@@ -76,8 +76,7 @@ describe('settleSession', () => {
     ];
     const result = settleSession(
       emptyWallet(TODAY),
-      { correct: 30, reviews, critterIds: [], packTickets: 0 },
-      new Map(),
+      { correct: 30, reviews, packTickets: 0 },
       TODAY,
     );
     // 30 * 1.5 + 1 * 1 + 4 * 0.25 = 47
@@ -89,14 +88,12 @@ describe('settleSession', () => {
   it('pays the heavy catch bonus', () => {
     const plain = settleSession(
       emptyWallet(TODAY),
-      { correct: 10, reviews: [], critterIds: [], packTickets: 0 },
-      new Map(),
+      { correct: 10, reviews: [], packTickets: 0 },
       TODAY,
     );
     const heavy = settleSession(
       emptyWallet(TODAY),
-      { correct: 10, reviews: [], critterIds: [], packTickets: 0, heavyCatches: 2 },
-      new Map(),
+      { correct: 10, reviews: [], packTickets: 0, heavyCatches: 2 },
       TODAY,
     );
 
@@ -106,7 +103,7 @@ describe('settleSession', () => {
   });
 
   it('applies the soft daily cap', () => {    const wallet = { ...emptyWallet(TODAY), balance: 10, tokensToday: 490 };
-    const result = settleSession(wallet, { correct: 20, reviews: [], critterIds: [], packTickets: 0 }, new Map(), TODAY);
+    const result = settleSession(wallet, { correct: 20, reviews: [], packTickets: 0 }, TODAY);
     // 30 gross, 10 headroom, 20 overflow at 0.25 = 5
     expect(result.payout.tokens).toBe(15);
     expect(result.payout.capped).toBe(true);
@@ -115,38 +112,37 @@ describe('settleSession', () => {
 
   it('forgets yesterday when settling today', () => {
     const wallet = { balance: 5, day: '2026-10-20', tokensToday: 500, packTicketsToday: 1, packTickets: 0 };
-    const result = settleSession(wallet, { correct: 2, reviews: [], critterIds: [], packTickets: 1 }, new Map(), TODAY);
+    const result = settleSession(wallet, { correct: 2, reviews: [], packTickets: 1 }, TODAY);
     expect(result.payout.capped).toBe(false);
     expect(result.packTicketsAwarded).toBe(1);
     expect(result.wallet).toEqual({ balance: 8, day: TODAY, tokensToday: 3, packTicketsToday: 1, packTickets: 1 });
   });
 
   it('caps pack tickets per session and per day', () => {
-    const first = settleSession(emptyWallet(TODAY), { correct: 0, reviews: [], critterIds: [], packTickets: 3 }, new Map(), TODAY);
+    const first = settleSession(emptyWallet(TODAY), { correct: 0, reviews: [], packTickets: 3 }, TODAY);
     expect(first.packTicketsAwarded).toBe(1);
-    const second = settleSession(first.wallet, { correct: 0, reviews: [], critterIds: [], packTickets: 1 }, new Map(), TODAY);
+    const second = settleSession(first.wallet, { correct: 0, reviews: [], packTickets: 1 }, TODAY);
     expect(second.packTicketsAwarded).toBe(0);
     expect(second.wallet.packTickets).toBe(1);
-    const odd = settleSession(emptyWallet(TODAY), { correct: 0, reviews: [], critterIds: [], packTickets: -2 }, new Map(), TODAY);
+    const odd = settleSession(emptyWallet(TODAY), { correct: 0, reviews: [], packTickets: -2 }, TODAY);
     expect(odd.packTicketsAwarded).toBe(0);
   });
 
-  it('flags duplicate critters, including repeats inside one session', () => {
+  it('never grants a critter to the collection', () => {
+    // A session pays the wallet, nothing else: the settlement carries no
+    // critter, so there is no way for a session to fill the collection.
     const result = settleSession(
       emptyWallet(TODAY),
-      { correct: 0, modeScore: 0, reviews: [], critterIds: ['mnemo', 'owl', 'mnemo'], packTickets: 0 },
-      new Map([['owl', 2]]),
+      { correct: 0, modeScore: 0, reviews: [], packTickets: 0 },
       TODAY,
     );
-    expect(result.critters).toEqual([
-      { critterId: 'mnemo', duplicate: false },
-      { critterId: 'owl', duplicate: true },
-      { critterId: 'mnemo', duplicate: true },
-    ]);
+
+    expect(Object.keys(result)).not.toContain('critters');
+    expect(result.wallet.balance).toBe(0);
   });
 
   it('has a no-op sync seam', async () => {
-    const result = settleSession(emptyWallet(TODAY), { correct: 0, reviews: [], critterIds: [], packTickets: 0 }, new Map(), TODAY);
+    const result = settleSession(emptyWallet(TODAY), { correct: 0, reviews: [], packTickets: 0 }, TODAY);
     await expect(NOOP_WALLET_SYNC.pushSettlement('s', result)).resolves.toBeUndefined();
   });
 });

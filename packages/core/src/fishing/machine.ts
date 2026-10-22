@@ -81,7 +81,13 @@ export interface CaughtCatch {
   critterId?: string;
 }
 
-/** A critter that was caught. The API validates these when the session ends. */
+/**
+ * A critter that was caught.
+ *
+ * A critter catch is a catch like any other: it counts for the haul and it is
+ * shown on the reveal and on the payout screen. It never grants the critter
+ * to the collection: only a pack does.
+ */
 export interface CritterCatchRecord {
   critterId: string;
   name: string;
@@ -133,7 +139,12 @@ export interface FishingSession {
   byTier: Record<CatchTier, number>;
   /** The catches in the order they landed. */
   log: CaughtCatch[];
-  /** The critters that were caught. */
+  /**
+   * The critters that were caught.
+   *
+   * They are part of the haul and of the payout screen only: a catch never
+   * grants a critter to the collection.
+   */
   critters: CritterCatchRecord[];
   /** How many pack tickets the session produced. */
   packTickets: number;
@@ -666,9 +677,10 @@ export function biggestCatch(state: FishingState): CaughtCatch | null {
 /**
  * The result of the session.
  *
- * The critters and the pack tickets are validated by the API when the session
- * ends, exactly like the tokens (which the server computes from the review
- * logs).
+ * The critters are the ones that were caught (they count for the haul and for
+ * the payout screen) and the pack tickets are validated by the API when the
+ * session ends, exactly like the tokens (which the server computes from the
+ * review logs). A caught critter never grants a critter to the collection.
  */
 export interface FishingSessionResult {
   mode: 'fishing';
@@ -678,6 +690,7 @@ export interface FishingSessionResult {
   haulLbs: number;
   byTier: Record<CatchTier, number>;
   biggest: CaughtCatch | null;
+  /** The critters that were caught (never granted to the collection). */
   critters: CritterCatchRecord[];
   packTickets: number;
   /** How many heavy catches landed (every one of them pays a token bonus). */

@@ -129,9 +129,6 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   const persistedRef = useRef(0);
   const sessionIdRef = useRef(`fishing-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [settledTokens, setSettledTokens] = useState<number | null>(null);
-  const [newCritterIds, setNewCritterIds] = useState<ReadonlySet<string>>(new Set());
-  /** The critters the player already owns (for the "NEW!" stamp). */
-  const [ownedCritters, setOwnedCritters] = useState<ReadonlySet<string>>(new Set());
   /** The tokens of the player (the HUD counts them). */
   const [balance, setBalance] = useState(0);
 
@@ -197,14 +194,6 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         statesRef.current = states;
         deckClassesRef.current = buildDeckClassMap(sets);
         dispatch({ type: 'set_queue', queue: buildQueueNow() });
-
-        // The collection knows which critters are already owned: a critter
-        // that is new gets the "NEW!" stamp on the reveal card.
-        const collection = await store.readCollection();
-        if (cancelled) {
-          return;
-        }
-        setOwnedCritters(new Set(collection.keys()));
 
         // The wallet knows how many pack tickets were already earned today:
         // the mode must not roll a second one.
@@ -469,7 +458,8 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   }, [result.correct, result.reviews, result.heavyCatches]);
   const tokens = settledTokens ?? estimate;
 
-  // Credit the wallet and the collection once, when the session ends.
+  // Credit the wallet once, when the session ends. A catch never grants a
+  // critter to the collection: only a pack does.
   const ended = machine.ended;
   const resultRef = useRef(result);
   resultRef.current = result;
@@ -487,7 +477,6 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
           {
             correct: final.correct,
             reviews: final.reviews,
-            critterIds: final.critters.map((critter) => critter.critterId),
             packTickets: final.packTickets,
             heavyCatches: final.heavyCatches,
           },
@@ -496,9 +485,6 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         if (settlement !== null) {
           setSettledTokens(settlement.payout.tokens);
           setBalance(settlement.wallet.balance);
-          setNewCritterIds(
-            new Set(settlement.critters.filter((critter) => !critter.duplicate).map((critter) => critter.critterId)),
-          );
         }
       } catch {
         // The estimate stays on screen; nothing was credited.
@@ -641,26 +627,12 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
   const hintTier = onTheLine !== null && isCatchOutcome(onTheLine) ? onTheLine.tier : null;
   const nothingToStudy = !loading && machine.session.queue.length === 0;
 
-  // A critter that is not in the collection yet (and that was not caught
-  // earlier in this session) is new.
-  const revealIsNew = useMemo(() => {
-    const revealed = machine.reveal;
-    if (revealed === null || revealed.kind !== 'critter') {
-      return false;
-    }
-    if (ownedCritters.has(revealed.critter.id)) {
-      return false;
-    }
-    return machine.session.critters.filter((entry) => entry.critterId === revealed.critter.id).length === 1;
-  }, [machine.reveal, machine.session.critters, ownedCritters]);
-
   // The session is over: the payout screen takes over.
   if (machine.ended) {
     return (
       <PayoutScreen
         result={result}
         tokens={tokens}
-        newCritterIds={newCritterIds}
         onPlayAgain={onPlayAgain}
         onHome={onHome}
         reduceMotion={reduceMotion}
@@ -707,7 +679,6 @@ export function FishingScreen({ scope, onHome, onPlayAgain, demo = null }: Fishi
         <RevealCard
           visible
           catch={machine.reveal}
-          isNew={revealIsNew}
           reduceMotion={reduceMotion}
           onContinue={() => {
             dispatch({ type: 'continue' });

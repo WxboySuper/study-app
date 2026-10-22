@@ -14,9 +14,14 @@ import { Sprite } from './Sprite';
 /**
  * The payout screen of the fishing mode (docs/design/fishing.md §10).
  *
- * It shows the tokens, the haul, the catches per tier, the critters and the
- * pack tickets. The server pays the session out, so the tokens that are shown
- * here are the estimate of `computePayout` until the API answers.
+ * It shows the tokens, the haul, the catches per tier, the critters that
+ * were caught and the pack tickets. The server pays the session out, so the
+ * tokens that are shown here are the estimate of `computePayout` until the API
+ * answers.
+ *
+ * The critters are listed because they were caught (they count for the haul),
+ * not because they were collected: a catch never grants a critter, only a
+ * pack does.
  */
 
 /** The tokens a heavy catch pays at the end of the session. */
@@ -33,8 +38,6 @@ export interface PayoutScreenProps {
   onHome: () => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
-  /** The critters that were new to the collection. */
-  newCritterIds?: ReadonlySet<string>;
 }
 
 export function PayoutScreen({
@@ -43,7 +46,6 @@ export function PayoutScreen({
   onPlayAgain,
   onHome,
   reduceMotion,
-  newCritterIds,
 }: PayoutScreenProps) {
   const cardScale = useSharedValue(0.9);
   const [burst, setBurst] = useState(0);
@@ -130,9 +132,6 @@ export function PayoutScreen({
                       <Text style={styles.critterName} numberOfLines={1}>
                         {critter.name}
                       </Text>
-                      {newCritterIds?.has(critter.critterId) === true ? (
-                        <Text style={styles.critterNew}>NEW</Text>
-                      ) : null}
                     </View>
                   </View>
                 ))}
@@ -342,12 +341,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     fontFamily: fonts.titleSemi,
-  },
-  critterNew: {
-    color: colors.danger,
-    fontSize: 9,
-    fontFamily: fonts.title,
-    letterSpacing: 1.4,
   },
   tierRow: {
     flexDirection: 'row',

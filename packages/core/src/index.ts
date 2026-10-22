@@ -270,7 +270,6 @@ export {
   settleSession,
   type SessionOutcome,
   type SessionReviewLike,
-  type SettledCritter,
   type Settlement,
   type StudyProgress,
   type WalletSnapshot,

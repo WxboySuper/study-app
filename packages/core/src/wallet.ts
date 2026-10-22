@@ -4,11 +4,14 @@ import { computePayout, type Payout, type PayoutRules } from './payout';
 import type { CardState, ReviewLogRecord } from './types';
 
 /**
- * The local wallet and collection logic (offline first).
+ * The local wallet logic (offline first).
  *
  * Everything here is pure: the app reads a snapshot from its store, asks
  * `settleSession` what changes and writes the result back in one transaction.
  * The server can later re-run the exact same code to validate a sync.
+ *
+ * A session never grants a critter: the critters of the collection come from
+ * the packs alone (see `packs.ts`). A catch is a catch, nothing more.
  */
 
 /** Pack tickets are capped at one per session and one per day. */
@@ -99,19 +102,10 @@ export interface SessionOutcome {
   correct: number;
   modeScore?: number;
   reviews: readonly SessionReviewLike[];
-  /** The critter ids that were caught, in order (duplicates allowed). */
-  critterIds: readonly string[];
   /** The pack tickets the game produced (before the caps). */
   packTickets: number;
   /** The heavy catches the game produced (each of them pays a bonus). */
   heavyCatches?: number;
-}
-
-/** One caught critter after settlement. */
-export interface SettledCritter {
-  critterId: string;
-  /** `true` when the player already owned at least one before this catch. */
-  duplicate: boolean;
 }
 
 /** The result of settling a session. */
@@ -119,20 +113,21 @@ export interface Settlement {
   progress: StudyProgress;
   payout: Payout;
   packTicketsAwarded: number;
-  critters: SettledCritter[];
   /** The wallet after the session. */
   wallet: WalletSnapshot;
 }
 
 /**
  * Settles a finished session against the wallet: the real payout formula
- * (with the soft daily cap), the capped pack tickets and the critters with
- * their duplicate flags.
+ * (with the soft daily cap) and the capped pack tickets.
+ *
+ * The session does not touch the collection: a caught critter is a catch (it
+ * counts for the haul and for the payout), never a critter of the collection.
+ * Only a pack grants a critter.
  */
 export function settleSession(
   wallet: WalletSnapshot,
   outcome: SessionOutcome,
-  owned: ReadonlyMap<string, number>,
   today: string,
   rules: Partial<PayoutRules> = {},
 ): Settlement {
@@ -157,18 +152,10 @@ export function settleSession(
     ticketsLeftToday,
   );
 
-  const counts = new Map(owned);
-  const critters = outcome.critterIds.map((critterId) => {
-    const before = counts.get(critterId) ?? 0;
-    counts.set(critterId, before + 1);
-    return { critterId, duplicate: before > 0 };
-  });
-
   return {
     progress,
     payout,
     packTicketsAwarded,
-    critters,
     wallet: {
       ...current,
       balance: current.balance + payout.tokens,

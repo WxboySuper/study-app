@@ -67,7 +67,12 @@ export function captionOf(landed: RolledCatch): string | undefined {
   return undefined;
 }
 
-/** `true` when the catch is a critter of the collection. */
+/**
+ * `true` when the catch is a critter.
+ *
+ * A critter catch is a catch like any other: it is never granted to the
+ * collection (only a pack grants a critter).
+ */
 export function isCritterCatch(landed: RolledCatch): boolean {
   return isCatchOutcome(landed) && landed.kind === 'critter';
 }

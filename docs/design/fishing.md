@@ -8,6 +8,12 @@ Status: design, pre-build. Owner: Alex. Supersedes the AI Studio "Cast" prototyp
 > The fish are gone: their registry (`packages/core/src/content/fish.ts`) is
 > typed and empty, so the first fish is a data change. See §7 and
 > `docs/ADDING-CONTENT.md`.
+>
+> **Update (Oct 2026): a catch never grants a critter.** The critters of the
+> collection come from the **packs** alone. A critter that swims up in the
+> lake is a catch: it counts for the haul, it is shown on the reveal card and
+> on the payout screen, and that is all it does. The session end never
+> touches the collection. See §7, §10 and §15.
 
 ## 1. Goal
 Look and play like Blooket's Fishing Frenzy, solo and untimed: an animated lake you fish in, where every catch is gated by answering one card. The card lives *inside* the scene (a speech bubble / note pinned to the line) — never a full-screen quiz card with a fishing label. The session ends only when you tap **End**, which triggers the server payout.
@@ -21,8 +27,8 @@ Design pillars:
 ## 1b. Faithfulness and session flow
 - **Stay faithful to Blooket's Fishing Frenzy.** Same loop, same HOOKED! moment, lure ranks reeled up during play, the 7-tier rarity ladder, the ~10× weight ladder, Frenzy, and the lbs haul as score. The only changes are what solo, untimed play needs: **no timer**, **no distractions** (Blooket solo has none either), FSRS card selection, and the End payout.
 - **Additions Alex asked for, kept small:** powerups, persistent bait/lure upgrades, extra silly junk, and critter/pack-ticket catches.
-- **Our twist:** the catches are **critters**, not fish. Every tier of the ladder holds the critters of the packs that are on sale, so the mode is another way to fill the collection (and to farm duplicates to sell).
-- **Session flow** (see SPEC "Session flow"): Home → Fishing → set/topic/All → **Go** lands you on the dock, ready to cast. **End** → payout summary (tokens, haul lbs, catches by tier, biggest catch, new/dupe critters, pack tickets) → **Play again** (one tap, same set) or **Home**. Lure rank and Frenzy reset each session.
+- **Our twist:** the catches are **critters**, not fish. Every tier of the ladder holds the critters of the packs that are on sale. They are catches, **not** collectibles: only the packs fill the collection.
+- **Session flow** (see SPEC "Session flow"): Home → Fishing → set/topic/All → **Go** lands you on the dock, ready to cast. **End** → payout summary (tokens, haul lbs, catches by tier, biggest catch, the critters that were caught, pack tickets) → **Play again** (one tap, same set) or **Home**. Lure rank and Frenzy reset each session.
 
 ## 2. Research: how Blooket's Fishing Frenzy works
 Sources: the [Fandom wiki](https://blooket.fandom.com/wiki/Fishing_Frenzy), the [Blooket help center overview](https://help.blooket.com/hc/en-us/articles/42439256581655-Game-Overview-Fishing-Frenzy), the Miraheze wiki and the blooketiq.com guide (all checked Oct 21, 2026).
@@ -65,7 +71,8 @@ any ─End─▶ END_CONFIRM ─▶ PAYOUT
 
 ## 5. Reveal card
 - It springs in (scale 0.6→1.05→1) over a burst in the rarity colour.
-- It shows the art, name, **rarity ribbon** using Blooket-style tier names (below), **weight** counting up, and a **NEW!** stamp the first time you catch something. Silly catches get a one-line joke caption ("Smells like detention"), critters show their vibe.
+- It shows the art, name, **rarity ribbon** using Blooket-style tier names (below) and **weight** counting up. Silly catches get a one-line joke caption ("Smells like detention"), critters show their vibe.
+- **No "NEW!" stamp:** a catch never grants a critter to the collection, so there is nothing to stamp. The stamp stays on the pack opening, where the critter really is granted.
 - The card is built from the UI art: the rays of `ui_reveal_rays` turn slowly behind the catch, the tier name sits on the ribbon of `ui_tier_ribbon` (tinted with the colour of the tier) and the name and the weight of the catch hang on the wooden tag of `ui_tag_wood`.
 - Catch of the Day and Angler's Legend get a full-screen flash, a slow-mo leap, a fanfare and a triple haptic.
 - A **Heavy Catch** gets its own deep sea theme: a gold **"HEAVY CATCH!"** banner, extra rays, a bigger splash and a heavy haptic of its own.
@@ -113,10 +120,13 @@ catalogue: the fish registry is typed and empty (`packages/core/src/content/fish
 - **Heavy Catch (the deep end of the lake):** Galaxy Fish, Golden Koi, Ice Fish, Skeleton Fish, Swamp Monster, Treasure Chest and Void Fish. 2,500,000–25,000,000 lbs, so a heavy catch is always the biggest haul of the session. They live in their own registry (`packages/core/src/content/heavy.ts`), they are **not** the gameplay specials of §8 and every one of them pays 15 tokens at the end of the session.
 - **Specials (§8):** New Lure!, FRENZY!, a powerup bottle and a Pack Ticket. They are not catches of the ladder: they change the session or give something.
 
-A critter catch **is added to the collection at End** of the session (a duplicate
-only bumps the count, so it can be sold). The critters of a pack that is not
-on sale never swim up: the pool of a tier is built from the packs that are
-available at the time of the session.
+A critter catch is **a catch, not a collectible**: it counts for the haul, it
+is shown on the reveal card and on the payout screen, and it is **never added
+to the collection**. The critters of the collection come from the packs alone
+(`buyAndOpenPack` is the only thing that writes to the collection), so a
+session can never fill it and can never farm duplicates to sell. The critters
+of a pack that is not on sale never swim up: the pool of a tier is built from
+the packs that are available at the time of the session.
 
 Data lives in the content registries (`packages/core/src/content/`): the
 critters in `critters.ts`, the junk in `junk.ts`, the heavy catches in
@@ -130,7 +140,7 @@ The "Special" slice in §6 rolls on this table:
 | **New Lure!** | 30% (plus guarantees) | lure rank +1 for this session (max 5), with a big reel-up and a lure-glow trail |
 | **FRENZY!** | 15% | rainbow sky and water, music tempo up. The **next 5 catches** roll at rank +2 with ×2 weight. Counted in catches, not seconds, so it fits untimed play |
 | **Powerup bottle** | 40% | one of: **Double Hook** (next correct lands 2 catches), **Lucky Charm** (next catch rerolls Trash/Easy once), **Second Chance** (next wrong answer lets the catch stay on, so you can retry the same card once; the SRS still logs the first miss as Again), **Heavy Sinker** (×3 weight on the next catch) |
-| **Critter catch** | 12% | a bonus critter swims up, whatever the tier roll was. Rarity is rolled with the SPEC pack odds. It goes into the collection like any other critter catch |
+| **Critter catch** | 12% | a bonus critter swims up, whatever the tier roll was. Rarity is rolled with the SPEC pack odds. It is a catch like any other (haul, reveal, payout): it does **not** go into the collection |
 | **Pack Ticket** | 3% | one free Brain Buddies pack, max 1 per session and 1 per day. It counts against the SPEC economy, so a ticket ≈ 20 tokens of value inside the daily cap |
 The critter special and the ticket **only roll on due or new cards** (never bonus review) and are validated server-side at End, as tokens are, so they can't be farmed.
 
@@ -152,7 +162,7 @@ You equip one bait at a time on the pre-session screen. Prices stay below pack p
 - A catch log strip shows the last 5 catches.
 
 ## 10. End and payout
-End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:id/end` → the payout screen: the fisher holds the biggest catch, the haul total, the catches by rarity, the critters that were caught (new ones are stamped **NEW**), tokens earned (count-up, coin sfx) and a "Open pack" CTA. The critters are added to the collection when the session ends (a duplicate only bumps the count). The client works offline. The outbox syncs and the server stays the source of truth for tokens.
+End → confirm sheet ("Pack up? 14 catches, 86,240 lbs") → `POST /sessions/:id/end` → the payout screen: the fisher holds the biggest catch, the haul total, the catches by rarity, the critters that were caught (they are catches: they are listed, never stamped **NEW**), tokens earned (count-up, coin sfx) and a "Open pack" CTA. **The critters are not added to the collection when the session ends: only a pack grants a critter.** The client works offline. The outbox syncs and the server stays the source of truth for tokens.
 
 Every **heavy catch** of the session pays **15 tokens** on top of the payout of the SPEC (a multiple of 5, like every other price of the game). The rule lives in `packages/core/src/payout.ts` (`tokensPerHeavyCatch`); every other payout rule is unchanged.
 
@@ -250,12 +260,12 @@ Multiplayer, real distractions against other players, timers, an aquarium displa
 - [ ] The full loop works: cast → wait → HOOKED! → answer → reel + reveal, or got away → cast again.
 - [ ] The haul counter rolls up, and the End confirmation leads to the server payout screen.
 - [ ] The HOOKED! banner, GOT_AWAY and the in-session lure ranks 1–5 work. Frenzy lasts 5 catches. Powerups, critter catches and the Pack Ticket caps all work.
-- [ ] A critter catch is added to the collection when the session ends; a duplicate only bumps the count.
+- [ ] A critter catch is a catch: it counts for the haul and it is shown on the reveal and on the payout screen, but it **never** enters the collection. Only a pack grants a critter (a duplicate only bumps the count there).
 - [ ] Only the critters of the packs that are on sale swim up.
 - [ ] Bonus cards roll at rank 1 at most and never roll the critter special or a ticket.
 - [ ] About 2 % of the catches are heavy catches: they weigh more than any critter tier and pay 15 tokens each at the end of the session.
 - [ ] Sound, haptics and Reduce Motion all have toggles.
-- [ ] Unit tests cover the reducer, the tier odds per rank, the weight roll, the specials and their caps (seeded RNG).
+- [ ] Unit tests cover the reducer, the tier odds per rank, the weight roll, the specials and their caps (seeded RNG), and that a simulated session leaves the collection unchanged.
 
 ---
 
@@ -264,7 +274,7 @@ Multiplayer, real distractions against other players, timers, an aquarium displa
 > You are implementing the Fishing ("Fish Frenzy") game mode in the `WxboySuper/study-app` monorepo (pnpm workspaces; Expo SDK 58 app in `apps/mobile`, expo-router; shared logic in `packages/core`; React Native 0.88, react-native-reanimated 4.7 + react-native-worklets already installed). Read `docs/SPEC.md` and `docs/design/fishing.md` first. The design doc is the source of truth for look and feel.
 >
 > Build:
-> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and the catch list from §7: the junk of the bottom tier, the critters of the packs that are on sale in the other tiers and the specials), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critter special/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). The content (the critters, the packs, the junk and the specials) lives in the registries of `packages/core/src/content/`: the logic only reads them. Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End.
+> 1. `packages/core/src/fishing/`: `catches.ts` (the tiers from §6 and the catch list from §7: the junk of the bottom tier, the critters of the packs that are on sale in the other tiers and the specials), `roll.ts` (the per-lure-rank tier odds table, weight roll, the special table from §8 with Frenzy (5 catches, rank +2, ×2 weight), powerups, critter catches, Pack Ticket caps of 1/session and 1/day, the bonus-card rule (rank 1 at most, no critter special/tickets) and in-session lure guarantees at 5/12/22/35 correct; inject a seeded RNG), `machine.ts` (pure reducer for states IDLE, CASTING, WAITING, HOOKED, QUESTION, REELING, REVEAL, GOT_AWAY, END_CONFIRM with typed events; the catch is rolled on HOOKED and the next FSRS card is pulled then), `lures.ts` (shop items from §9). The content (the critters, the packs, the junk and the specials) lives in the registries of `packages/core/src/content/`: the logic only reads them. Export them from the package index. Write vitest tests for all of it, with ≥90% coverage on this folder. Do not change the existing payout or scheduler semantics. Tokens still come from `payout.ts`. Critter catches and Pack Tickets go into the session result and are validated by the API at End. A critter catch never grants a critter to the collection: only a pack does.
 > 2. Add `expo-haptics` and `expo-audio` with `npx expo install`. **Do not add Skia.** Animate with react-native-reanimated (§11).
 > 3. `apps/mobile/src/modes/fishing/`: `FishingScreen.tsx` (wires the machine to the existing FSRS queue from `@study-app/core`), `LakeScene.tsx` (layered Images: background, wave strips, shadow, bobber, line, fisher; Reanimated loops), `HookedBanner.tsx`, `QuestionNote.tsx` (an in-scene parchment note with 2 to 4 wooden-tag answers, at least 56dp each), `RevealCard.tsx`, `Hud.tsx` (haul lbs roll-up, streak, due count, lure pips, End with confirm), `PayoutScreen.tsx` (tokens, haul, catches by tier, critters, tickets; **Play again** with the same mode and set in one tap, and Home), `sfx.ts`, `haptics.ts`, and Reduce Motion support. Add a `app/fishing.tsx` route and a one-tap start from Home: mode → set/topic/All → Go.
 > 4. Assets: the art resolver of the app (`apps/mobile/src/content/art.ts`) maps the art key of every entry to its PNG and falls back to the placeholder of its type, so the game runs with no art. Sound: CC0 SFX only (Kenney audio packs or Freesound CC0), credited in `assets/CREDITS.md`. Stay lean: if you're short on time, ship the core loop first (§3–6, 10) and leave the specials from §8–9 for run 2.

@@ -243,7 +243,12 @@ export interface LocalStore {
   readWallet(today: string): Promise<WalletSnapshot>;
   /** Reads how many of each critter the player owns. */
   readCollection(): Promise<Map<string, number>>;
-  /** Settles a finished session and credits the wallet and the collection. */
+  /**
+   * Settles a finished session and credits the wallet.
+   *
+   * The collection is never touched by a session: only a pack grants a
+   * critter.
+   */
   settleSession(
     sessionId: string,
     mode: string,
