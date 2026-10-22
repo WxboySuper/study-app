@@ -3,6 +3,16 @@ import { Hono, type Context } from 'hono';
 
 import { hasMuseToken } from './auth';
 import { deleteDeck, readDeck, readDecksSince, upsertDeck } from './decks';
+import {
+  authDevice,
+  claimPairing,
+  listDevices,
+  pullEvents,
+  pushEvents,
+  registerDevice,
+  revokeDevice,
+  startPairing,
+} from './progress';
 import { latestRelease, RELEASE_ASSET_URL, RELEASE_USER_AGENT } from './release';
 import type { Bindings } from './types';
 
@@ -118,6 +128,38 @@ app.get('/api/sync', async (c) => {
   const decks = await readDecksSince(dbOf(c), since);
 
   return c.json({ now: Date.now(), decks });
+});
+
+/*
+ * Phone <-> web progress sync (docs/design/sync.md, docs/API.md).
+ * The device routes authenticate with the device token, not MUSE_TOKEN.
+ */
+app.post('/api/devices/register', (c) => registerDevice(c));
+app.post('/api/pair/claim', (c) => claimPairing(c));
+
+app.post('/api/pair/start', async (c) => {
+  const device = await authDevice(c);
+  return device === null ? c.json({ error: 'unauthorized' }, 401) : startPairing(c, device);
+});
+
+app.get('/api/devices', async (c) => {
+  const device = await authDevice(c);
+  return device === null ? c.json({ error: 'unauthorized' }, 401) : listDevices(c, device);
+});
+
+app.delete('/api/devices/:id', async (c) => {
+  const device = await authDevice(c);
+  return device === null ? c.json({ error: 'unauthorized' }, 401) : revokeDevice(c, device, c.req.param('id'));
+});
+
+app.post('/api/sync/push', async (c) => {
+  const device = await authDevice(c);
+  return device === null ? c.json({ error: 'unauthorized' }, 401) : pushEvents(c, device);
+});
+
+app.get('/api/sync/pull', async (c) => {
+  const device = await authDevice(c);
+  return device === null ? c.json({ error: 'unauthorized' }, 401) : pullEvents(c, device);
 });
 
 /**

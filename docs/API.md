@@ -18,17 +18,35 @@ Never log tokens.
 | GET | `/sync` | none | Deck snapshot for the apps. |
 | GET | `/update`, `/update/apk` | none | Latest release and its APK. |
 
-## Sync (planned, docs/design/sync.md §4)
+## Sync (docs/design/sync.md §2-§4)
+
+Device routes authenticate with `Authorization: Bearer <device_token>` (not
+`MUSE_TOKEN`). Tokens are 32 random bytes; the server stores only their
+SHA-256. Ids (`player_id`, `device_id`, event `id`) are 8-64 chars of
+`[A-Za-z0-9_-]`.
 
 | Method | Path | Auth | Body → response |
 |---|---|---|---|
-| POST | `/devices/register` | none (rate-limited) | `{player_id, device_id, kind}` → `{device_token}` |
-| POST | `/pair/start` | device (phone) | → `{code, expires_at}` |
-| POST | `/pair/claim` | none | `{code, device_id}` → `{player_id, device_token}` |
-| DELETE | `/devices/:id` | device (phone) | Revokes a device. |
-| POST | `/sync/push` | device | `{events[]}` → `{accepted, cursor}` |
-| GET | `/sync/pull?cursor=` | device | → `{events[], cursor, more}` |
-| GET | `/sync/snapshot` | device | → folded state + `cursor` |
+| POST | `/devices/register` | none | `{player_id, device_id, label?}` → 201 `{player_id, device_id, device_token}` |
+| POST | `/pair/start` | device (phone) | → 201 `{code, expires_at}` (8 chars Crockford, 10 min, single use) |
+| POST | `/pair/claim` | none | `{code, device_id, label?}` → 201 `{player_id, device_id, device_token}` |
+| GET | `/devices` | device | → `{devices: [{id, kind, label, created_at, last_seen, current}]}` |
+| DELETE | `/devices/:id` | device (phone; a browser only itself) | → `{ok, id}` |
+| POST | `/sync/push` | device | `{events: [{id, seq, at, type, payload}] ≤ 500}` → `{accepted, inserted, duplicates, rejected, cursor}` |
+| GET | `/sync/pull?cursor=&all=1` | device | → `{events[], cursor, more, player_id}` (500 per page) |
+
+Notes:
+
+- `register` creates the player on first use. A player that already has a
+  live phone only gains devices through pairing (409 `player_taken`).
+  Re-registering the same device rotates its token.
+- `push` is idempotent by event `id`; malformed events (or payloads over
+  16 KB) are listed by index in `rejected`, the rest are kept.
+- `pull` skips the caller's own events unless `all=1`. The snapshot of §4
+  is `pull?cursor=0&all=1` paged until `more` is false; the folding is done
+  on the device (`packages/core`), the server never interprets payloads.
+- Codes are case-insensitive; spaces and dashes are ignored, `O`→`0`,
+  `I`/`L`→`1`. Wrong/expired/used codes all answer 400 `invalid_code`.
 
 ## Quizzes (planned)
 
