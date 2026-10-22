@@ -3,7 +3,7 @@
  *
  * The app asks the Worker for the latest release of the game and the
  * Worker reads it on GitHub: the feed of GitHub is behind a cache and a
- * rate limit, so the Worker keeps the answer for ten minutes and shares
+ * rate limit, so the Worker keeps the answer for one minute and shares
  * it with every device.
  *
  * The answer of the endpoint is small and simple:
@@ -29,7 +29,7 @@ export const RELEASE_ASSET_URL =
   'https://api.github.com/repos/WxboySuper/study-app/releases/assets';
 
 /** How long the Worker keeps the answer of the feed. */
-export const RELEASE_CACHE_TTL_MS = 10 * 60 * 1000;
+export const RELEASE_CACHE_TTL_MS = 60 * 1000;
 
 /** The key of the answer in the cache of the Worker. */
 export const RELEASE_CACHE_KEY = 'https://cache.cramcritters.app/releases/latest';
@@ -164,10 +164,16 @@ function readApkAsset(assets: unknown): { url: string | null; id: number | null 
 export async function latestRelease(
   token?: string,
   fetchImpl: typeof fetch = fetch,
+  fresh = false,
 ): Promise<ReleasePayload | null> {
-  const cached = await readCachedRelease();
-  if (cached !== null) {
-    return cached;
+  // The cache of the Worker lives in each Cloudflare colo: a check the
+  // player asked for (`?fresh=1`) skips it, so a release published a
+  // minute ago is never hidden by a colo that read the feed before it.
+  if (!fresh) {
+    const cached = await readCachedRelease();
+    if (cached !== null) {
+      return cached;
+    }
   }
 
   let release: ReleasePayload | null = null;

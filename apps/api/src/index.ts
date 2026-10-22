@@ -189,7 +189,9 @@ app.delete('/api/quizzes/:id', async (c) =>
 );
 
 app.get('/api/update', async (c) => {
-  const release = await latestRelease(c.env?.GH_TOKEN);
+  const fresh = c.req.query('fresh') === '1';
+  const release = await latestRelease(c.env?.GH_TOKEN, fetch, fresh);
+  c.header('Cache-Control', 'no-store');
 
   if (release === null) {
     return c.json({ error: 'update_unavailable' }, 502);
