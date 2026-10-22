@@ -36,6 +36,29 @@ export {
 export { parseRelease, type ReleaseInfo } from './release';
 
 export {
+  ADMIN_TOKEN_GRANT,
+  applyTokenAdminAction,
+  type TokenAdminAction,
+} from './admin';
+
+export {
+  parseSyncSnapshot,
+  planDeckSync,
+  type LocalSyncClass,
+  type LocalSyncDeck,
+  type LocalSyncQuestion,
+  type LocalSyncState,
+  type PlannedClass,
+  type PlannedDeck,
+  type PlannedQuestion,
+  type RemoteSyncDeck,
+  type RemoteSyncQuestion,
+  type RemoteSyncSnapshot,
+  type SyncPlan,
+  type SyncPlanOptions,
+} from './sync';
+
+export {
   DEFAULT_CORRECT_REINSERT_MAX,
   DEFAULT_CORRECT_REINSERT_MIN,
   DEFAULT_REINSERT_MAX,
