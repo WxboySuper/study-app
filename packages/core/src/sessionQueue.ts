@@ -28,9 +28,9 @@ import type { CardState, StudyCard } from './types';
  * interval. The wrapper maps Anki's minutes and days to question gaps so a
  * 1 minute step is about three questions and a 10 minute step about ten.
  *
- * Mastery mode uses the same picker, but a question only leaves the session
- * after {@link MASTERY_REQUIRED_CORRECT} correct answers in a row. The Anki
- * intervals space those answers out naturally.
+ * Mastery mode uses the same picker, but a question leaves the session as
+ * soon as it graduates to the review queue (Anki's rule). The n/3 count of
+ * {@link MASTERY_REQUIRED_CORRECT} is only a visual meter.
  */
 
 /** How a session treats its questions. */
@@ -177,37 +177,23 @@ export function createSessionQueue(options: SessionQueueOptions): SessionQueueSt
     cards[question.id] = createCard(question, settings, now, questions.length);
   }
 
-  // The progress of earlier sessions. A deck that is fully mastered starts
-  // a fresh round instead of an empty session.
+  // The progress of earlier sessions. The n/3 count is a display-only
+  // meter (sync design §6.1): it never masters a card by itself. In a
+  // Mastery session a card is done when it graduates (passes its last
+  // learning step) or, for a due review, when it is answered right. The
+  // pool of the session is already cut to today's due, learning and new
+  // cards by the daily limits, so every card of it is still to do.
   const required = toCount(options.masteryRequired, MASTERY_REQUIRED_CORRECT, 1);
   const seeds = options.masteryCounts ?? {};
-  const seeded = (id: string): number => {
-    const value = seeds[id];
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
-  };
-  const allMastered =
-    questions.length > 0 && questions.every((question) => seeded(question.id) >= required);
-  if (!allMastered) {
-    for (const question of questions) {
-      const count = seeded(question.id);
-      records[question.id] = {
-        correctStreak: count,
-        missed: false,
-        mastered: options.mode === 'mastery' && count >= required,
-      };
-    }
+  for (const question of questions) {
+    const value = seeds[question.id];
+    const count =
+      typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+    records[question.id] = { correctStreak: count, missed: false, mastered: false };
   }
 
-  let queues = buildAnkiQueues(cards, options.rng);
-  if (options.mode === 'mastery') {
-    for (const question of questions) {
-      if (records[question.id]?.mastered === true) {
-        queues = removeAnkiCard(queues, question.id);
-      }
-    }
-  }
+  const queues = buildAnkiQueues(cards, options.rng);
   const pending = questions
-    .filter((question) => options.mode !== 'mastery' || records[question.id]?.mastered !== true)
     .map((question) => question.id);
 
   return {
@@ -282,9 +268,9 @@ export function nextSessionQuestion(state: SessionQueueState): {
  *
  * The Anki scheduler computes the next state: a miss goes to the short
  * relearning step, a correct answer follows the learning steps and then a
- * growing review interval. In mastery mode a question is mastered after
- * {@link MASTERY_REQUIRED_CORRECT} correct answers in a row and leaves the
- * session; otherwise it stays in the queues and comes back when it is due.
+ * growing review interval. In mastery mode a question that graduates to the
+ * review queue is done for today and leaves the session; otherwise it stays
+ * in the queues and comes back when it is due.
  */
 export function answerSessionQuestion(
   state: SessionQueueState,
@@ -511,6 +497,42 @@ export function masteryCounts(state: SessionQueueState): Record<string, number> 
   const counts: Record<string, number> = {};
   for (const [id, record] of Object.entries(state.records)) {
     counts[id] = record.correctStreak;
+  }
+  return counts;
+}
+
+/** The Anki stage of a question, as the Mastery HUD and badge show it. */
+export type SessionStage = 'new' | 'learning' | 'review';
+
+/** The stage of one question of the session. */
+export function sessionStageOf(state: SessionQueueState, questionId: string): SessionStage {
+  const card = state.cards[questionId];
+  if (card === undefined || card.queue === 'new') {
+    return 'new';
+  }
+  return card.queue === 'review' ? 'review' : 'learning';
+}
+
+/** The questions still to do today, by stage (the Mastery HUD). */
+export interface SessionStageCounts {
+  new: number;
+  learning: number;
+  review: number;
+  /** Questions done today (graduated or reviewed). */
+  done: number;
+  /** Every question of today's session. */
+  total: number;
+}
+
+/** Counts the questions of a Mastery session by stage. */
+export function sessionStageCounts(state: SessionQueueState): SessionStageCounts {
+  const counts: SessionStageCounts = { new: 0, learning: 0, review: 0, done: 0, total: state.questions.length };
+  for (const question of state.questions) {
+    if (state.records[question.id]?.mastered === true) {
+      counts.done += 1;
+      continue;
+    }
+    counts[sessionStageOf(state, question.id)] += 1;
   }
   return counts;
 }

@@ -168,10 +168,13 @@ export interface FishingScreenProps {
   /**
    * `true` when the session plays in mastery mode.
    *
-   * The session then lasts until every question of the scope is mastered,
-   * and it ends by itself (with the "MASTERED!" celebration).
+   * The session plays today's Anki queue (due reviews, learning steps and
+   * the new questions the daily limits allow) and stops on the
+   * Done-for-today screen.
    */
   mastery?: boolean;
+  /** Done for today: keep playing the same scope in Normal mode. */
+  onKeepPlaying?: () => void;
   /** Called when the player goes home. */
   onHome: () => void;
   /** Called when the player plays the same scope again. */
@@ -224,7 +227,7 @@ function saveMasteryCounts(state: Parameters<typeof masteryCounts>[0]): void {
   })();
 }
 
-export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, demo = null }: FishingScreenProps) {
+export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onKeepPlaying, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { bait } = useSettings();
   const insets = useSafeAreaInsets();
@@ -647,8 +650,8 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
   /**
    * The celebration of the mastery mode.
    *
-   * Every question of the scope is mastered: the screen says it with a
-   * banner and the session ends by itself (the payout comes next).
+   * Today's queue is empty: a short banner, then the Done-for-today
+   * screen (Keep playing in Normal mode, or see the haul).
    */
   const celebrate = useCallback(() => {
     setCelebrating(true);
@@ -656,8 +659,8 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
     hapticLegend();
 
     const timer = setTimeout(() => {
-      dispatch({ type: 'request_end' });
-      dispatch({ type: 'confirm_end' });
+      setCelebrating(false);
+      setDoneToday(true);
     }, MASTERED_CELEBRATION_MS);
 
     return () => {
@@ -1365,9 +1368,9 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
       {celebrating ? (
         <View style={styles.celebration} pointerEvents="none">
           <View style={styles.celebrationCard}>
-            <Text style={styles.celebrationTitle}>MASTERED!</Text>
+            <Text style={styles.celebrationTitle}>DONE FOR TODAY!</Text>
             <Text style={styles.celebrationBody}>
-              Every question of this deck is mastered. The session is over.
+              Every question due today is done.
             </Text>
           </View>
         </View>
@@ -1407,7 +1410,22 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
               tomorrow. Change the limits in Study options, or play Endless mode to keep practicing.
             </Text>
             <View style={styles.sheetActions}>
-              <GameButton label="HOME" variant="primary" size="md" onPress={onHome} />
+              {onKeepPlaying ? (
+                <GameButton label="KEEP PLAYING (NORMAL)" variant="primary" size="md" onPress={onKeepPlaying} />
+              ) : null}
+              {machine.session.catches > 0 ? (
+                <GameButton
+                  label="SEE THE HAUL"
+                  variant="ghost"
+                  size="md"
+                  onPress={() => {
+                    dispatch({ type: 'request_end' });
+                    dispatch({ type: 'confirm_end' });
+                  }}
+                />
+              ) : (
+                <GameButton label="HOME" variant="ghost" size="md" onPress={onHome} />
+              )}
             </View>
           </GlassCard>
         </View>

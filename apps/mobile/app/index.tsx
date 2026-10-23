@@ -6,7 +6,6 @@ import {
   findCritter,
   isPackAvailable,
   localDayKey,
-  MASTERY_REQUIRED_CORRECT,
   PACKS,
   type CardState,
   type StudyCard,
@@ -558,7 +557,7 @@ export default function HomeScreen() {
             <Toggle label="MASTERY MODE" value={mastery} onChange={setMastery} />
             <Text style={styles.masteryHint}>
               {mastery
-                ? `Every question needs ${MASTERY_REQUIRED_CORRECT} right answers in a row. A miss starts it over.`
+                ? "Today's due questions, Anki style: graded by speed, stops when you're done for today."
                 : 'Endless play: the questions that are due come first.'}
             </Text>
           </Animated.View>

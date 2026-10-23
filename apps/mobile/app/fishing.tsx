@@ -72,7 +72,7 @@ export default function FishingRoute() {
   return (
     <View style={styles.container}>
       <FishingScreen
-        key={session}
+        key={`${session}-${mastery ? 'm' : 'n'}`}
         scope={scope}
         mastery={mastery}
         demo={demo}
@@ -81,6 +81,10 @@ export default function FishingRoute() {
         }}
         onPlayAgain={() => {
           setSession((current) => current + 1);
+        }}
+        onKeepPlaying={() => {
+          // Done for today: Normal mode stays open on the same scope.
+          router.setParams({ mastery: '0' });
         }}
       />
     </View>
