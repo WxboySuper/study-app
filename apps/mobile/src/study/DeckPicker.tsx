@@ -12,6 +12,7 @@ import { hapticImpact } from '@/haptics';
 import { critterArt } from '@/packs/critterArt';
 import { play } from '@/sound/sfx';
 import { colors, fonts, radius, shadow, spacing } from '@/theme';
+import { STAGE_COLORS } from '@/modes/fishing/stage';
 import { GlassCard } from '@/ui';
 
 import { chipKey, classGradient, type ClassChip, type DeckCard } from './decks';
@@ -375,7 +376,24 @@ function DeckTile({
                 {deck.questions} question{deck.questions === 1 ? '' : 's'} ›
               </Text>
             </Pressable>
-            {deck.due > 0 ? (
+            {deck.today !== undefined ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Today: ${deck.today.new} new, ${deck.today.learning} learning, ${deck.today.due} due`}
+                testID={`deck-today-${deck.id}`}
+                hitSlop={6}
+                onPress={() => {
+                  hapticImpact('light');
+                  play('tap');
+                  onOpen('due');
+                }}
+                style={({ pressed }) => [styles.todayBadge, pressed && styles.trashPressed]}
+              >
+                <Text style={[styles.todayNum, { color: STAGE_COLORS.new }]}>{deck.today.new}</Text>
+                <Text style={[styles.todayNum, { color: STAGE_COLORS.learning }]}>{deck.today.learning}</Text>
+                <Text style={[styles.todayNum, { color: STAGE_COLORS.review }]}>{deck.today.due}</Text>
+              </Pressable>
+            ) : deck.due > 0 ? (
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`See the ${deck.due} due questions of ${deck.title}`}
@@ -599,6 +617,18 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     borderWidth: 1,
     borderColor: colors.gold,
+  },
+  todayBadge: {
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(6, 12, 28, 0.6)',
+  },
+  todayNum: {
+    fontFamily: fonts.titleSemi,
+    fontSize: 12,
   },
   dueText: {
     color: colors.gold,

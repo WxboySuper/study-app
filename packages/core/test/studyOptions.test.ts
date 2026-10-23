@@ -5,6 +5,7 @@ import {
   BUILT_IN_PRESETS,
   EMPTY_STUDY_OPTIONS,
   limitSessionPool,
+  masteryForecast,
   noteAnswered,
   parseDailyDone,
   parseStudyOptions,
@@ -126,5 +127,27 @@ describe("study options", () => {
     expect(parseDailyDone(JSON.stringify(done), DAY).seen.length).toBe(
       done.seen.length,
     );
+  });
+});
+
+describe("masteryForecast", () => {
+  it("counts today's buckets within the limits and forecasts tomorrow", () => {
+    const qs = [
+      ...Array.from({ length: 30 }, (_, i) => ({ id: `n${i}`, deckId: "d1" })),
+      { id: "l", deckId: "d1", state: st({ state: State.Learning, due: NOW + 60_000 }) },
+      { id: "r", deckId: "d1", state: st({ due: NOW - 1 }) },
+      { id: "t", deckId: "d1", state: st({ due: NOW + 20 * 3_600_000 }) },
+      { id: "w", deckId: "d1", state: st({ due: NOW + 9 * 86_400_000 }) },
+    ];
+    const f = masteryForecast(qs, {
+      options: EMPTY_STUDY_OPTIONS,
+      done: parseDailyDone(null, DAY),
+      now: NOW,
+      classOf: () => null,
+    });
+    expect(f.today).toEqual({ new: 20, learning: 1, due: 1 });
+    expect(f.tomorrowReviews).toBe(1);
+    expect(f.tomorrowNew).toBe(10);
+    expect(f.nextDueAt).toBe(NOW + 60_000);
   });
 });

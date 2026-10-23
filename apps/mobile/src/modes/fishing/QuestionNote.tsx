@@ -4,6 +4,7 @@ import {
   type FishingFeedback,
   type FishingQuestion,
   type MasteryStatus,
+  type SessionStage,
 } from '@study-app/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -30,6 +31,7 @@ import { fonts, radius } from '@/theme';
 import { GameButton, Particles } from '@/ui';
 
 import { MathAnswerPanel } from './MathAnswerPanel';
+import { STAGE_COLORS, STAGE_LABELS } from './stage';
 
 /**
  * The question of the fishing mode (docs/design/fishing.md §4).
@@ -75,6 +77,11 @@ export interface QuestionNoteProps {
    * pill in mastery mode. `null` hides it.
    */
   masteryStreak?: { correct: number; required: number } | null;
+  /**
+   * The bucket of today's Mastery queue the question came from (New,
+   * Learning or Due, in Anki's colours). `null` outside Mastery.
+   */
+  stage?: SessionStage | null;
   /** Called when the player picks an answer. */
   onAnswer: (choiceIndex: number) => void;
   /** Called when the player grades a self-graded card. */
@@ -103,7 +110,7 @@ const FONT_STEP = 2;
  * The dev pill of mastery mode: the streak of the current question toward
  * mastery. Flip to `false` (or delete it and the pill) to remove it.
  */
-export const SHOW_MASTERY_DEV_PILL = true;
+export const SHOW_MASTERY_DEV_PILL = false;
 
 /** The Blooket colours of the four tiles, with their darker bottom edge. */
 const TILE_COLORS = [
@@ -131,6 +138,7 @@ export function QuestionNote({
   lockoutUntil = null,
   mastery = 'unknown',
   masteryStreak = null,
+  stage = null,
   onAnswer,
   onSelfGrade,
   onMathAnswer,
@@ -223,6 +231,15 @@ export function QuestionNote({
   const badge = (
     <>
       <MasteryBadge status={mastery} />
+      {stage !== null ? (
+        <View
+          testID={`mastery-stage-${stage}`}
+          style={[styles.devPill, { backgroundColor: STAGE_COLORS[stage] }]}
+          accessibilityLabel={`${STAGE_LABELS[stage]} question`}
+        >
+          <Text style={[styles.devPillText, { color: '#0b1020' }]}>{STAGE_LABELS[stage].toUpperCase()}</Text>
+        </View>
+      ) : null}
       {SHOW_MASTERY_DEV_PILL && masteryStreak !== null ? (
         <View testID="mastery-dev-pill" style={styles.devPill}>
           <Text style={styles.devPillText}>

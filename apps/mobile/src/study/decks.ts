@@ -5,6 +5,7 @@ import {
   type CardState,
   type QueueScope,
   type StudyCard,
+  type TodayCounts,
 } from '@study-app/core';
 
 import type { LocalClass, LocalSet } from '@/db/local';
@@ -47,6 +48,11 @@ export type DeckKind = 'class' | 'set';
 
 /** One deck of the picker. */
 export interface DeckCard {
+  /**
+   * Today's Mastery queue of the deck (Anki's New / Learn / Due), shown
+   * instead of the due badge while Mastery mode is on.
+   */
+  today?: TodayCounts;
   /** The id of the deck (the id of the class or of the set). */
   id: string;
   /** What kind of deck this is. */

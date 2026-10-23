@@ -1,6 +1,5 @@
-import type { CatchTier, FishingSession, MasteryProgress } from '@study-app/core';
+import type { CatchTier, FishingSession, SessionStage, SessionStageCounts } from '@study-app/core';
 import { CATCH_TIERS, LURE_RANKS, POWERUPS, formatLbs } from '@study-app/core';
-import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radius } from '@/theme';
@@ -8,6 +7,7 @@ import { GlassCard, TokenCounter } from '@/ui';
 
 import { tierColor } from './assets';
 import { Sprite } from './Sprite';
+import { STAGE_COLORS, STAGE_LABELS } from './stage';
 
 /**
  * The HUD of the fishing mode (docs/design/fishing.md §9).
@@ -16,19 +16,11 @@ import { Sprite } from './Sprite';
  * the haul counts itself up under the top bar. The log of the last five
  * catches keeps the eyes on the water.
  *
- * In mastery mode the bottom bar counts the mastered questions ("3/12
- * mastered") and the dots under it show how many right answers every
- * question of the deck has.
+ * In mastery mode the HUD shows *today's* queue the way Anki's study screen
+ * does: New / Learning / Due counts (blue / red / green) with the bucket of
+ * the current question underlined, and a bar of today's progress. The
+ * whole-deck mastered count lives on the deck screen and in Stats.
  */
-
-
-/**
- * How many questions of the deck get their own dots in the HUD.
- *
- * A deck with more than twenty questions does not fit on the screen, so it
- * collapses into one compact bar with an "X/Y mastered" label instead.
- */
-const MAX_MASTERY_DOTS = 20;
 
 export interface HudProps {
   /** The session, for the counters. */
@@ -37,18 +29,10 @@ export interface HudProps {
   remaining: number;
   /** `true` when the session plays in mastery mode. */
   mastery?: boolean;
-  /** How many questions of the scope are mastered. */
-  mastered?: number;
-  /** How many questions the scope holds. */
-  total?: number;
-  /**
-   * The progress of every question of the scope.
-   *
-   * The mastery view draws one dot per right answer of every question.
-   */
-  progress?: readonly MasteryProgress[];
-  /** The question that is on the screen (its dots are the lit ones). */
-  currentQuestionId?: string | null;
+  /** Today's queue of a mastery session, by stage. */
+  today?: SessionStageCounts | null;
+  /** The bucket the question on the screen came from. */
+  currentStage?: SessionStage | null;
   /** The tier of the biggest catch, for the colour of the counter. */
   biggestTier: CatchTier | null;
   /** The tokens of the player. */
@@ -63,10 +47,8 @@ export function Hud({
   session,
   remaining: _remaining,
   mastery = false,
-  mastered = 0,
-  total = 0,
-  progress = [],
-  currentQuestionId = null,
+  today = null,
+  currentStage = null,
   biggestTier,
   tokens,
   onEnd,
@@ -80,29 +62,8 @@ export function Hud({
 
   const log = session.log.slice(-5);
 
-  /**
-   * The dots of the mastery view.
-   *
-   * Every question of the deck has its own dots (one per right answer it
-   * needs), but a huge deck does not fit on the screen: the dots of the
-   * question that is on the screen always show up.
-   */
-  const { dots, hidden } = useMemo(() => {
-    const visible = progress.slice(0, MAX_MASTERY_DOTS);
-    const current = progress.find((entry) => entry.id === currentQuestionId);
-
-    if (current === undefined || visible.some((entry) => entry.id === current.id)) {
-      return { dots: visible, hidden: progress.length - visible.length };
-    }
-
-    return {
-      dots: [...visible.slice(0, MAX_MASTERY_DOTS - 1), current],
-      hidden: progress.length - visible.length,
-    };
-  }, [progress, currentQuestionId]);
-
-  const compactMastery = progress.length > MAX_MASTERY_DOTS;
-  const masteryRatio = total > 0 ? Math.max(0, Math.min(1, mastered / total)) : 0;
+  const todayRatio =
+    today !== null && today.total > 0 ? Math.max(0, Math.min(1, today.done / today.total)) : 0;
 
   return (
     <View style={styles.container} pointerEvents="box-none">
@@ -168,56 +129,43 @@ export function Hud({
 
         <View style={styles.stats}>
           <Text style={styles.stat}>{session.answered} answered</Text>
-          {mastery ? (
-            compactMastery && progress.length > 0 ? null : (
-              <Text style={styles.stat}>
-                {mastered}/{total} mastered
-              </Text>
-            )
-          ) : null}
         </View>
       </View>
 
-      {mastery && progress.length > 0 ? (
-        compactMastery ? (
-          <View
-            style={styles.masteryBarRow}
-            pointerEvents="none"
-            accessible
-            accessibilityLabel={`${mastered} of ${total} questions mastered`}
-          >
-            <View style={styles.masteryTrack}>
-              <View style={[styles.masteryFill, { width: `${Math.round(masteryRatio * 100)}%` }]} />
-            </View>
-            <Text style={styles.masteryBarLabel}>
-              {mastered}/{total} mastered
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.masteryRow} pointerEvents="none">
-            {dots.map((entry) => (
-              <View
-                key={entry.id}
-                style={styles.masteryDots}
-                accessible
-                accessibilityLabel={`${entry.correct} of ${entry.required} right answers`}
-              >
-                {Array.from({ length: entry.required }, (_, index) => (
-                  <View
-                    key={`${entry.id}-${index}`}
-                    style={[
-                      styles.masteryDot,
-                      index < entry.correct ? styles.masteryDotOn : styles.masteryDotOff,
-                      entry.id === currentQuestionId ? styles.masteryDotCurrent : null,
-                    ]}
-                  />
-                ))}
+      {mastery && today !== null ? (
+        <View
+          style={styles.todayBox}
+          pointerEvents="none"
+          testID="mastery-today"
+          accessible
+          accessibilityLabel={`Today: ${today.new} new, ${today.learning} learning, ${today.review} due left. ${today.done} of ${today.total} done.`}
+        >
+          <View style={styles.todayCounts}>
+            <Text style={styles.todayTitle}>TODAY</Text>
+            {(['new', 'learning', 'review'] as const).map((stage) => (
+              <View key={stage} style={styles.todayCount} testID={`mastery-today-${stage}`}>
+                <Text
+                  style={[
+                    styles.todayValue,
+                    { color: STAGE_COLORS[stage] },
+                    currentStage === stage ? [styles.todayCurrent, { borderBottomColor: STAGE_COLORS[stage] }] : null,
+                  ]}
+                >
+                  {today[stage]}
+                </Text>
+                <Text style={styles.todayLabel}>{STAGE_LABELS[stage]}</Text>
               </View>
             ))}
-
-            {hidden > 0 ? <Text style={styles.masteryMore}>+{hidden}</Text> : null}
           </View>
-        )
+          <View style={styles.masteryBarRow}>
+            <View style={styles.masteryTrack}>
+              <View style={[styles.masteryFill, { width: `${Math.round(todayRatio * 100)}%` }]} />
+            </View>
+            <Text style={styles.masteryBarLabel}>
+              {today.done}/{today.total} done today
+            </Text>
+          </View>
+        </View>
       ) : null}
 
       {log.length === 0 ? null : (
@@ -405,12 +353,44 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(6, 12, 28, 0.9)',
     textShadowRadius: 4,
   },
-  masteryRow: {
+  todayBox: {
+    alignSelf: 'flex-end',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: 'rgba(6, 12, 28, 0.55)',
+  },
+  todayCounts: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'flex-end',
     justifyContent: 'flex-end',
-    gap: 6,
-    paddingTop: 2,
+    gap: 12,
+  },
+  todayTitle: {
+    color: 'rgba(255,255,255,0.7)',
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
+    letterSpacing: 0.8,
+    alignSelf: 'center',
+  },
+  todayCount: {
+    alignItems: 'center',
+  },
+  todayValue: {
+    fontFamily: fonts.titleSemi,
+    fontSize: 18,
+    lineHeight: 22,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent',
+  },
+  todayCurrent: {
+    borderBottomWidth: 2,
+  },
+  todayLabel: {
+    color: 'rgba(255,255,255,0.75)',
+    fontFamily: fonts.titleSemi,
+    fontSize: 9,
   },
   masteryBarRow: {
     flexDirection: 'row',
@@ -439,31 +419,6 @@ const styles = StyleSheet.create({
     fontFamily: fonts.titleSemi,
     fontSize: 10,
     letterSpacing: 0.4,
-  },
-  masteryDots: {
-    flexDirection: 'row',
-    gap: 3,
-  },
-  masteryDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  masteryDotOn: {
-    backgroundColor: colors.gold,
-  },
-  masteryDotOff: {
-    backgroundColor: 'rgba(248, 250, 252, 0.28)',
-  },
-  masteryDotCurrent: {
-    borderWidth: 1,
-    borderColor: colors.text,
-  },
-  masteryMore: {
-    color: 'rgba(255,255,255,0.72)',
-    fontFamily: fonts.titleSemi,
-    fontSize: 10,
-    alignSelf: 'center',
   },
   logRow: {
     gap: 4,
