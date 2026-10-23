@@ -29,6 +29,8 @@ import { MathText } from '@/math/MathText';
 import { fonts, radius } from '@/theme';
 import { GameButton, Particles } from '@/ui';
 
+import { MathAnswerPanel } from './MathAnswerPanel';
+
 /**
  * The question of the fishing mode (docs/design/fishing.md §4).
  *
@@ -77,6 +79,8 @@ export interface QuestionNoteProps {
   onAnswer: (choiceIndex: number) => void;
   /** Called when the player grades a self-graded card. */
   onSelfGrade?: (gotIt: boolean) => void;
+  /** Called with the grade of a typed math answer (every step included). */
+  onMathAnswer?: (correct: boolean) => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
 }
@@ -129,6 +133,7 @@ export function QuestionNote({
   masteryStreak = null,
   onAnswer,
   onSelfGrade,
+  onMathAnswer,
   reduceMotion,
 }: QuestionNoteProps) {
   const { height: windowHeight } = useWindowDimensions();
@@ -203,7 +208,11 @@ export function QuestionNote({
   }
 
   const fontSize = promptFontSize(question.prompt);
-  const promptMaxHeight = Math.max(100, Math.min(210, windowHeight * 0.24));
+  // A math question leaves room for its keyboard: the note gets shorter.
+  const promptMaxHeight =
+    question.math === undefined
+      ? Math.max(100, Math.min(210, windowHeight * 0.24))
+      : Math.max(70, Math.min(150, windowHeight * 0.16));
 
   // The answers decide the layout of the tiles: a long answer needs the
   // whole width of the screen and a smaller font.
@@ -373,6 +382,17 @@ export function QuestionNote({
         </View>
       ) : null}
 
+      {question.math !== undefined ? (
+        <MathAnswerPanel
+          questionId={question.cardId}
+          spec={question.math}
+          feedback={feedback}
+          locked={locked}
+          onSubmit={(correct) => {
+            onMathAnswer?.(correct);
+          }}
+        />
+      ) : (
       <View style={styles.answers} pointerEvents="box-none">
         {question.choices.slice(0, 4).map((choice, index) => (
           <AnswerTile
@@ -389,6 +409,7 @@ export function QuestionNote({
           />
         ))}
       </View>
+      )}
 
       {feedback?.correct === true && !reduceMotion ? (
         <Particles

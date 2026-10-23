@@ -228,6 +228,30 @@ describe('the fishing machine', () => {
     expect(state.question?.answer).toBe('back of self-graded');
   });
 
+  it('asks a math question as a typed question and grades it by time', () => {
+    const math = { kind: 'expression' as const, answers: ['2x'] };
+    let state = createState({ queue: [makeQueueItem('math-1', { wrong: null, answerIndex: null, choices: null, math })] });
+    state = toHooked(state);
+    expect(state.question?.selfGrade).toBe(false);
+    expect(state.question?.math).toEqual(math);
+    state = apply(state, { type: 'reel' });
+    state = apply(state, { type: 'answer', choiceIndex: -1, durationMs: 15_000, now: NOW, correct: true });
+    expect(state.phase).toBe('answered');
+    expect(state.feedback?.correct).toBe(true);
+    // 15 s is quick enough for a typed answer (the median is 20 s): Good.
+    expect(state.session.reviews[0]?.rating).toBe(Rating.Good);
+  });
+
+  it('counts a wrong typed math answer as a miss', () => {
+    const math = { kind: 'expression' as const, answers: ['2x'] };
+    let state = createState({ queue: [makeQueueItem('math-1', { wrong: null, answerIndex: null, choices: null, math })] });
+    state = toHooked(state);
+    state = apply(state, { type: 'reel' });
+    state = apply(state, { type: 'answer', choiceIndex: -1, durationMs: 5_000, now: NOW, correct: false });
+    expect(state.feedback?.correct).toBe(false);
+    expect(state.session.reviews[0]?.rating).toBe(Rating.Again);
+  });
+
   it('grades a self-graded card "Got it" as "Good"', () => {
     let state = createState({ queue: [makeQueueItem('self-graded', { wrong: null })] });
     state = toHooked(state);

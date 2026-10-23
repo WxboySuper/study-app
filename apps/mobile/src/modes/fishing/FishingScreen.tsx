@@ -683,10 +683,11 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
   }, []);
 
   const onAnswer = useCallback(
-    (choiceIndex: number) => {
+    (choiceIndex: number, typed?: boolean) => {
       const now = Date.now();
       const question = machineRef.current.question;
-      const correct = question !== null && choiceIndex === question.answerIndex;
+      // A typed (math) answer brings its own grade.
+      const correct = typed ?? (question !== null && choiceIndex === question.answerIndex);
 
       // The session queue learns from the answer: a missed question comes
       // back a few questions later, and a mastered one leaves the queue.
@@ -713,9 +714,17 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
         choiceIndex,
         durationMs: Math.max(0, now - questionStartedAt.current),
         now,
+        ...(typed === undefined ? {} : { correct: typed }),
       });
     },
     [mastery, celebrate, noteDone],
+  );
+
+  const onMathAnswer = useCallback(
+    (correct: boolean) => {
+      onAnswer(-1, correct);
+    },
+    [onAnswer],
   );
 
   const onReel = useCallback(() => {
@@ -1291,6 +1300,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, dem
             masteryStreak={masteryStreak}
             onAnswer={onAnswer}
             onSelfGrade={onSelfGrade}
+            onMathAnswer={onMathAnswer}
             reduceMotion={reduceMotion}
           />
 

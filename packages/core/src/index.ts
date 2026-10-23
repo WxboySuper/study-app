@@ -369,6 +369,8 @@ export {
   toSessionResult,
   LEAD_UP_FULL_MS,
   LEAD_UP_SHORT_MS,
+  MATH_MEDIAN_MS_PER_PART,
+  mathMedianMs,
   type CaughtCatch,
   type CritterCatchRecord,
   type FishingEvent,
@@ -466,3 +468,4 @@ export {
 export * from './reviewHistory';
 export * from './mathQuestion';
 export * from './mathGrade';
+export * from './mathKeyboard';

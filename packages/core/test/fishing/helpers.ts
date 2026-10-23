@@ -1,3 +1,4 @@
+import type { MathSpec } from '../../src/mathQuestion';
 import { CATCHES, findCatch } from '../../src/fishing/catches';
 import type { Rng } from '../../src/fishing/roll';
 import type { QueueItem, QueueItemKind } from '../../src/queue';
@@ -41,6 +42,8 @@ export function makeQueueItem(
     /** The wrong answers of the card (they belong to the card). */
     wrong?: string[] | null;
     setId?: string;
+    /** The typed-answer spec of a math question. */
+    math?: MathSpec;
   } = {},
 ): QueueItem {
   const choices = options.choices === null ? undefined : (options.choices ?? ['alpha', 'beta', 'gamma', 'delta']);
@@ -55,6 +58,7 @@ export function makeQueueItem(
     ...(choices === undefined ? {} : { choices }),
     ...(answerIndex === undefined ? {} : { answerIndex }),
     ...(wrong === undefined ? {} : { wrong }),
+    ...(options.math === undefined ? {} : { math: options.math }),
   };
 
   return {
