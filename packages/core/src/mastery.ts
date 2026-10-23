@@ -41,12 +41,22 @@ export function gradeByAnswerTime(input: {
   correct: boolean;
   durationMs: number;
   medianMs?: number;
+  /**
+   * Lenient timing (math): only a very slow answer is `Hard`, and speed
+   * never turns into `Easy` before the median.
+   */
+  lenient?: boolean;
 }): Grade {
   if (!input.correct) return Rating.Again;
   const median =
     input.medianMs !== undefined && input.medianMs > 0
       ? input.medianMs
       : DEFAULT_MEDIAN_ANSWER_MS;
+  if (input.lenient === true) {
+    if (input.durationMs > median * 3) return Rating.Hard;
+    if (input.durationMs < median * 0.35) return Rating.Easy;
+    return Rating.Good;
+  }
   if (input.durationMs > median * 1.5) return Rating.Hard;
   if (input.durationMs < median * 0.5) return Rating.Easy;
   return Rating.Good;

@@ -1,6 +1,7 @@
 import { State } from "ts-fsrs";
 
 import { DEFAULT_LEECH_THRESHOLD } from "./mastery";
+import type { QuestionTrack } from "./track";
 import type { CardState } from "./types";
 
 /**
@@ -56,6 +57,46 @@ export const BUILT_IN_PRESETS: readonly StudyPreset[] = [
   },
 ];
 
+/**
+ * The built-in presets of the Math section. Math questions are slow to
+ * solve, so the defaults are smaller: 5 new questions a day and a day
+ * between the learning steps.
+ */
+export const MATH_PRESETS: readonly StudyPreset[] = [
+  {
+    id: "math",
+    name: "Math",
+    newPerDay: 5,
+    reviewsPerDay: 50,
+    leechThreshold: DEFAULT_LEECH_THRESHOLD,
+    learnStepsMinutes: [10, 1440],
+    relearnStepsMinutes: [10],
+  },
+  {
+    id: "math-light",
+    name: "Math light",
+    newPerDay: 3,
+    reviewsPerDay: 25,
+    leechThreshold: DEFAULT_LEECH_THRESHOLD,
+    learnStepsMinutes: [10, 1440],
+    relearnStepsMinutes: [10],
+  },
+  {
+    id: "math-push",
+    name: "Math push",
+    newPerDay: 10,
+    reviewsPerDay: 100,
+    leechThreshold: DEFAULT_LEECH_THRESHOLD,
+    learnStepsMinutes: [10, 60],
+    relearnStepsMinutes: [10],
+  },
+];
+
+/** The presets a track offers. The first one is its default. */
+export function presetsOfTrack(track: QuestionTrack = "mc"): readonly StudyPreset[] {
+  return track === "math" ? MATH_PRESETS : BUILT_IN_PRESETS;
+}
+
 /** The study options the app saves. */
 export interface StudyOptions {
   /** Preset id by deck id. Overrides the class preset. */
@@ -66,11 +107,17 @@ export interface StudyOptions {
   suspended: string[];
   /** Buried card ids, with the day (YYYY-MM-DD) they are buried for. */
   buried: Record<string, string>;
+  /** Math preset id by deck id (the Math section has its own presets). */
+  mathDeckPresets: Record<string, string>;
+  /** Math preset id by class id. */
+  mathClassPresets: Record<string, string>;
 }
 
 export const EMPTY_STUDY_OPTIONS: StudyOptions = {
   deckPresets: {},
   classPresets: {},
+  mathDeckPresets: {},
+  mathClassPresets: {},
   suspended: [],
   buried: {},
 };
@@ -93,6 +140,8 @@ export function parseStudyOptions(raw: string | null): StudyOptions {
     return {
       deckPresets: stringRecord(value.deckPresets),
       classPresets: stringRecord(value.classPresets),
+      mathDeckPresets: stringRecord(value.mathDeckPresets),
+      mathClassPresets: stringRecord(value.mathClassPresets),
       suspended: Array.isArray(value.suspended)
         ? value.suspended.filter((id): id is string => typeof id === "string")
         : [],
@@ -104,8 +153,12 @@ export function parseStudyOptions(raw: string | null): StudyOptions {
 }
 
 /** A preset by id (the default one when unknown). */
-export function presetById(id: string | undefined): StudyPreset {
-  return BUILT_IN_PRESETS.find((p) => p.id === id) ?? BUILT_IN_PRESETS[0]!;
+export function presetById(
+  id: string | undefined,
+  track: QuestionTrack = "mc",
+): StudyPreset {
+  const presets = presetsOfTrack(track);
+  return presets.find((p) => p.id === id) ?? presets[0]!;
 }
 
 /** The preset of a deck: its own, else its class's, else the default. */
@@ -113,14 +166,17 @@ export function presetForDeck(
   options: StudyOptions,
   deckId: string,
   classId: string | null | undefined,
+  track: QuestionTrack = "mc",
 ): StudyPreset {
-  const own = options.deckPresets[deckId];
-  if (own !== undefined) return presetById(own);
+  const decks = track === "math" ? options.mathDeckPresets : options.deckPresets;
+  const classes = track === "math" ? options.mathClassPresets : options.classPresets;
+  const own = decks?.[deckId];
+  if (own !== undefined) return presetById(own, track);
   if (classId !== null && classId !== undefined) {
-    const viaClass = options.classPresets[classId];
-    if (viaClass !== undefined) return presetById(viaClass);
+    const viaClass = classes?.[classId];
+    if (viaClass !== undefined) return presetById(viaClass, track);
   }
-  return presetById(undefined);
+  return presetById(undefined, track);
 }
 
 /** Sets (or clears with `null`) the preset of a deck or class. */
@@ -128,8 +184,16 @@ export function setPreset(
   options: StudyOptions,
   target: { deckId: string } | { classId: string },
   presetId: string | null,
+  track: QuestionTrack = "mc",
 ): StudyOptions {
-  const key = "deckId" in target ? "deckPresets" : "classPresets";
+  const key =
+    track === "math"
+      ? "deckId" in target
+        ? "mathDeckPresets"
+        : "mathClassPresets"
+      : "deckId" in target
+        ? "deckPresets"
+        : "classPresets";
   const id = "deckId" in target ? target.deckId : target.classId;
   const next = { ...options[key] };
   if (presetId === null) delete next[id];
@@ -284,6 +348,8 @@ export function limitSessionPool<
     done: DailyDone;
     now: number;
     classOf: (deckId: string) => string | null | undefined;
+    /** The track of the questions (its presets apply). */
+    track?: QuestionTrack;
   },
 ): LimitedPool<T> {
   const day = input.done.day;
@@ -295,6 +361,7 @@ export function limitSessionPool<
         input.options,
         deckId,
         input.classOf(deckId),
+        input.track,
       );
       newLeft[deckId] = Math.max(
         0,
@@ -355,9 +422,13 @@ export function sessionStepsFor(
   options: StudyOptions,
   deckIds: readonly string[],
   classOf: (deckId: string) => string | null | undefined,
+  track: QuestionTrack = "mc",
 ): { learnStepsMinutes: readonly number[]; relearnStepsMinutes: readonly number[] } {
-  const ids = new Set(deckIds.map((deckId) => presetForDeck(options, deckId, classOf(deckId)).id));
-  const preset = ids.size === 1 ? presetById([...ids][0]) : presetById(undefined);
+  const ids = new Set(
+    deckIds.map((deckId) => presetForDeck(options, deckId, classOf(deckId), track).id),
+  );
+  const preset =
+    ids.size === 1 ? presetById([...ids][0], track) : presetById(undefined, track);
   return {
     learnStepsMinutes: preset.learnStepsMinutes,
     relearnStepsMinutes: preset.relearnStepsMinutes,
@@ -406,6 +477,7 @@ export function masteryForecast<
     done: DailyDone;
     now: number;
     classOf: (deckId: string) => string | null | undefined;
+    track?: QuestionTrack;
   },
 ): MasteryForecast {
   const limited = limitSessionPool(questions, input);
@@ -438,7 +510,7 @@ export function masteryForecast<
   }
   let tomorrowNew = 0;
   for (const [deckId, count] of Object.entries(newLeftByDeck)) {
-    const preset = presetForDeck(input.options, deckId, input.classOf(deckId));
+    const preset = presetForDeck(input.options, deckId, input.classOf(deckId), input.track);
     tomorrowNew += Math.min(count, preset.newPerDay);
   }
   return { today, nextDueAt, tomorrowReviews, tomorrowNew };
