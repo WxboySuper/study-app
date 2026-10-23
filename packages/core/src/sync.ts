@@ -10,6 +10,8 @@
  * the rules are tested in `packages/core/test/sync.test.ts`.
  */
 
+import { parseStoredMathSpec, type MathSpec } from './mathQuestion';
+
 /** A question as `GET /api/sync` answers it. */
 export interface RemoteSyncQuestion {
   /** The id of the question on the server. */
@@ -26,6 +28,8 @@ export interface RemoteSyncQuestion {
   selfGraded: boolean;
   /** `true` when the question left the deck (hidden from play, progress kept). */
   retired: boolean;
+  /** The math part of a math question (`type: 'math'` in the answer). */
+  math?: MathSpec;
 }
 
 /** A deck as `GET /api/sync` answers it. */
@@ -101,6 +105,8 @@ export interface PlannedQuestion {
   created: boolean;
   /** The question left the deck on the server: hidden from play, progress kept. */
   retired: boolean;
+  /** The math part of a math question. */
+  math?: MathSpec;
 }
 
 /** A deck that the merge writes. */
@@ -230,6 +236,8 @@ function parseSyncQuestion(payload: unknown): RemoteSyncQuestion | null {
     position?: unknown;
     selfGraded?: unknown;
     retired?: unknown;
+    type?: unknown;
+    math?: unknown;
   };
 
   if (
@@ -255,7 +263,13 @@ function parseSyncQuestion(payload: unknown): RemoteSyncQuestion | null {
     position: question.position,
     selfGraded: typeof question.selfGraded === 'boolean' ? question.selfGraded : wrong.length === 0,
     retired: question.retired === true,
+    ...withMath(question.type === 'math' ? parseStoredMathSpec(question.math) : undefined),
   };
+}
+
+/** The `math` field of a question, only when there is one. */
+function withMath(math: MathSpec | undefined): { math?: MathSpec } {
+  return math === undefined ? {} : { math };
 }
 
 /**
@@ -362,6 +376,7 @@ export function planDeckSync(
         wrong: [...remoteQuestion.wrong],
         created: knownQuestion === undefined,
         retired: remoteQuestion.retired,
+        ...withMath(remoteQuestion.math),
       });
     }
 

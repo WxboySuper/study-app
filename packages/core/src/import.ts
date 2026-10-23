@@ -16,6 +16,7 @@
  */
 
 import { MAX_WRONG_ANSWERS } from './choices';
+import { readMathSpec, type MathSpec } from './mathQuestion';
 
 /** The formats an imported deck can have. */
 export type DeckFormat = 'json' | 'tsv' | 'double-colon' | 'pipe';
@@ -33,6 +34,11 @@ export interface ImportCard {
    * server keys the question with it, so an edit keeps the progress.
    */
   id?: string;
+  /**
+   * The math part of a math question (`"type": "math"`). A math question is
+   * answered on the math keyboard; `back` holds its first answer.
+   */
+  math?: MathSpec;
 }
 
 /** How many cards of a deck are asked as a multiple choice question. */
@@ -43,6 +49,8 @@ export interface DeckCounts {
   multipleChoice: number;
   /** The cards without wrong answers (they are self-graded). */
   selfGrade: number;
+  /** The math questions (typed on the math keyboard). */
+  math: number;
 }
 
 /** The result of parsing an imported deck. */
@@ -205,6 +213,10 @@ function parseJsonEntry(
     return { card: { front, back, wrong: [] } };
   }
 
+  if (entry.type === 'math') {
+    return parseMathEntry(entry, number);
+  }
+
   if (typeof entry.question !== 'string') {
     return { error: `Question ${number}: it needs a "question" (or a "front").` };
   }
@@ -266,6 +278,22 @@ function parseJsonEntry(
   }
 
   return { error: `Question ${number}: the correct answer is missing.` };
+}
+
+/** Reads a math question (`"type": "math"`). */
+function parseMathEntry(
+  entry: Record<string, unknown>,
+  number: number,
+): { card?: ImportCard; error?: string } {
+  const question = typeof entry.question === 'string' ? entry.question.trim() : '';
+  if (question === '') {
+    return { error: `Question ${number}: the question is missing.` };
+  }
+  const math = readMathSpec(entry);
+  if (typeof math === 'string') {
+    return { error: `Question ${number}: ${math}` };
+  }
+  return { card: { front: question, back: math.answers[0] as string, wrong: [], math } };
 }
 
 /**
@@ -441,9 +469,12 @@ function cardKey(front: string, back: string): string {
 /** Counts the multiple choice cards and the self-graded ones. */
 function countsOf(cards: readonly ImportCard[]): DeckCounts {
   let multipleChoice = 0;
+  let math = 0;
 
   for (const card of cards) {
-    if (card.wrong.length > 0) {
+    if (card.math !== undefined) {
+      math += 1;
+    } else if (card.wrong.length > 0) {
       multipleChoice += 1;
     }
   }
@@ -451,13 +482,14 @@ function countsOf(cards: readonly ImportCard[]): DeckCounts {
   return {
     total: cards.length,
     multipleChoice,
-    selfGrade: cards.length - multipleChoice,
+    selfGrade: cards.length - multipleChoice - math,
+    math,
   };
 }
 
 /** The counts of an empty deck. */
 function emptyCounts(): DeckCounts {
-  return { total: 0, multipleChoice: 0, selfGrade: 0 };
+  return { total: 0, multipleChoice: 0, selfGrade: 0, math: 0 };
 }
 
 /** `true` when the value is a plain object. */
