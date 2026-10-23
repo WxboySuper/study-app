@@ -2,13 +2,15 @@ import {
   dropStaleOutbox,
   MASTERY_EPOCH,
   needsMasteryReset,
+  NORMAL_MODE_FIX_AT,
+  normalModeResets,
   parseStudyOptions,
 } from "@study-app/core";
 
 import type { LocalStore } from "@/db/types";
 import { OUTBOX_KEY } from "@/sync/outbox";
 
-import { MASTERY_COUNTS_KEY } from "./masteryCounts";
+import { MASTERY_COUNTS_KEY, readMasteryCounts } from "./masteryCounts";
 import { DAILY_DONE_KEY, STUDY_OPTIONS_KEY } from "./studyOptions";
 
 /** The key/value key of the Mastery epoch this device runs. */
@@ -51,4 +53,42 @@ export function ensureMasteryReset(store: LocalStore): Promise<unknown> {
     once = null;
   });
   return once;
+}
+
+/** The key/value key set once the plain-mode undo ran on this device. */
+export const NORMAL_MODE_UNDO_KEY = "mastery.normalModeUndo.v1";
+
+/**
+ * Undoes the scheduling that plain Normal / Math wrote before v0.1.23
+ * (see `normalModeResets` in core). Runs on the outbox store, so the reset
+ * questions sync as fresh New states to the server and the other devices.
+ * Review history and stats stay.
+ */
+export async function undoNormalModeScheduleOnce(store: LocalStore): Promise<number> {
+  if ((await store.readKv(NORMAL_MODE_UNDO_KEY)) !== null) {
+    return 0;
+  }
+  const states = await store.listCardStates();
+  const now = Date.now();
+  const resets = normalModeResets(
+    states.values(),
+    await readMasteryCounts(store),
+    now,
+    Math.min(now, NORMAL_MODE_FIX_AT),
+  );
+  for (const state of resets) {
+    await store.upsertCardState(state);
+  }
+  await store.writeKv(NORMAL_MODE_UNDO_KEY, String(Date.now()));
+  return resets.length;
+}
+
+let undoOnce: Promise<unknown> | null = null;
+
+/** Runs {@link undoNormalModeScheduleOnce} once per app start. */
+export function ensureNormalModeUndo(store: LocalStore): Promise<unknown> {
+  undoOnce ??= undoNormalModeScheduleOnce(store).catch(() => {
+    undoOnce = null;
+  });
+  return undoOnce;
 }

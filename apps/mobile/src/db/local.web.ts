@@ -35,7 +35,7 @@ import type {
   SellDuplicatesResult,
   SpinResult,
 } from './types';
-import { ensureMasteryReset } from '@/study/masteryReset';
+import { ensureMasteryReset, ensureNormalModeUndo } from '@/study/masteryReset';
 import { withOutbox } from '@/sync/outbox';
 
 export type { LocalClass, LocalSet, LocalTopic, PendingReview } from './types';
@@ -650,7 +650,9 @@ function applyRemoteChangesOfDemo(
 export async function openLocalStore(): Promise<LocalStore> {
   const raw = await openRawLocalStore();
   await ensureMasteryReset(raw);
-  return withOutbox(raw);
+  const store = withOutbox(raw);
+  await ensureNormalModeUndo(store);
+  return store;
 }
 
 /** The store without the sync outbox (the outbox itself writes through it). */
