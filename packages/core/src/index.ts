@@ -465,3 +465,4 @@ export {
 } from './progressSync';
 export * from './reviewHistory';
 export * from './mathQuestion';
+export * from './mathGrade';
