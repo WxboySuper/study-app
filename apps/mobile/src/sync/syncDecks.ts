@@ -1,4 +1,4 @@
-import { parseSyncSnapshot, planDeckSync } from '@study-app/core';
+import { DECK_SYNC_FORMAT, deckSyncSince, parseSyncSnapshot, planDeckSync } from '@study-app/core';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { API_BASE_URL } from '@/config';
@@ -30,6 +30,14 @@ export const SYNC_INTERVAL_MS = 10 * 60 * 1000;
 
 /** The key of the cursor of the next sync in the key/value store. */
 export const SYNC_CURSOR_KEY = 'sync:lastSync';
+
+/**
+ * The key of the deck format the local decks were last fully synced with.
+ * When the app learns a new question format (math questions, steps-only math
+ * questions), the decks it stored before were saved in the old shape and the
+ * cursor alone would never send them again; see `deckSyncSince`.
+ */
+export const SYNC_FORMAT_KEY = 'sync:format';
 
 /** The key of the moment of the last automatic sync. */
 export const SYNC_LAST_RUN_KEY = 'sync:lastRun';
@@ -132,7 +140,10 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
     // return from the background.
     await store.writeKv(SYNC_LAST_RUN_KEY, String(now));
 
-    const since = await readCursor(store);
+    const since = deckSyncSince(
+      await readCursor(store),
+      await store.readKv(SYNC_FORMAT_KEY),
+    );
     const controller = new AbortController();
     const timer = setTimeout(() => {
       controller.abort();
@@ -166,6 +177,7 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
 
     await store.applySyncPlan(plan);
     await store.writeKv(SYNC_CURSOR_KEY, String(plan.cursor));
+    await store.writeKv(SYNC_FORMAT_KEY, String(DECK_SYNC_FORMAT));
 
     const decks = plan.decks.length + plan.deletedDeckIds.length;
     return { decks, message: summaryMessage(decks), cursor: plan.cursor };
