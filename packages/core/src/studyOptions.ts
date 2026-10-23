@@ -363,3 +363,83 @@ export function sessionStepsFor(
     relearnStepsMinutes: preset.relearnStepsMinutes,
   };
 }
+
+/** Today's Mastery queue of a scope, by bucket (Anki's New / Learn / Due). */
+export interface TodayCounts {
+  new: number;
+  learning: number;
+  due: number;
+}
+
+/** What a scope holds for today and tomorrow (the deck list and Done screen). */
+export interface MasteryForecast {
+  /** Today's queue that is still to do, within the daily limits. */
+  today: TodayCounts;
+  /** The next time a studied card comes due after `now` (epoch ms), if any. */
+  nextDueAt: number | null;
+  /** Reviews due by the end of tomorrow (not counting today's). */
+  tomorrowReviews: number;
+  /** New questions tomorrow's limits will bring in. */
+  tomorrowNew: number;
+}
+
+/** The epoch ms of the end of tomorrow (local midnight after next). */
+function endOfTomorrow(now: number): number {
+  const date = new Date(now);
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() + 2);
+  return date.getTime();
+}
+
+/**
+ * Today's Mastery queue of a scope and the forecast of tomorrow.
+ *
+ * Today's numbers are exactly what {@link limitSessionPool} lets into a
+ * session, so the deck list never promises more than one day holds.
+ */
+export function masteryForecast<
+  T extends { id: string; deckId: string; state?: CardState | undefined },
+>(
+  questions: readonly T[],
+  input: {
+    options: StudyOptions;
+    done: DailyDone;
+    now: number;
+    classOf: (deckId: string) => string | null | undefined;
+  },
+): MasteryForecast {
+  const limited = limitSessionPool(questions, input);
+  const today: TodayCounts = { new: 0, learning: 0, due: 0 };
+  const kept = new Set<string>();
+  for (const q of limited.questions) {
+    kept.add(q.id);
+    const kind = limitKind(q.state, input.now);
+    if (kind === "new") today.new += 1;
+    else if (kind === "learning") today.learning += 1;
+    else today.due += 1;
+  }
+
+  const horizon = endOfTomorrow(input.now);
+  let nextDueAt: number | null = null;
+  let tomorrowReviews = 0;
+  const newLeftByDeck: Record<string, number> = {};
+  for (const q of questions) {
+    if (isHidden(input.options, q.id, input.done.day)) continue;
+    const kind = limitKind(q.state, input.now);
+    if (kind === "new") {
+      if (!kept.has(q.id)) newLeftByDeck[q.deckId] = (newLeftByDeck[q.deckId] ?? 0) + 1;
+      continue;
+    }
+    const due = q.state!.due;
+    if (due > input.now) {
+      if (nextDueAt === null || due < nextDueAt) nextDueAt = due;
+      if (due < horizon && kind === "later") tomorrowReviews += 1;
+    }
+  }
+  let tomorrowNew = 0;
+  for (const [deckId, count] of Object.entries(newLeftByDeck)) {
+    const preset = presetForDeck(input.options, deckId, input.classOf(deckId));
+    tomorrowNew += Math.min(count, preset.newPerDay);
+  }
+  return { today, nextDueAt, tomorrowReviews, tomorrowNew };
+}

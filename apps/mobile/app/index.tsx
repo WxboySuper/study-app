@@ -3,9 +3,14 @@ import {
   buildQueue,
   canSpin,
   countScope,
+  filterByScope,
   findCritter,
   isPackAvailable,
   localDayKey,
+  masteryForecast,
+  parseDailyDone,
+  type DailyDone,
+  type StudyOptions,
   PACKS,
   type CardState,
   type StudyCard,
@@ -55,6 +60,7 @@ import {
   type DeckCard,
 } from '@/study/decks';
 import { DeckPicker } from '@/study/DeckPicker';
+import { DAILY_DONE_KEY, readStudyOptions } from '@/study/studyOptions';
 import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
 import { syncDecks } from '@/sync/syncDecks';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
@@ -116,6 +122,8 @@ export default function HomeScreen() {
   const [cards, setCards] = useState<StudyCard[]>([]);
   const [cardStates, setCardStates] = useState<Map<string, CardState>>(new Map());
   const [loading, setLoading] = useState(true);
+  /** The study options and today's done counts (Mastery's daily queue). */
+  const [studyDay, setStudyDay] = useState<{ options: StudyOptions; done: DailyDone } | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [packTickets, setPackTickets] = useState(0);
   const [critterCount, setCritterCount] = useState(0);
@@ -179,7 +187,10 @@ export default function HomeScreen() {
       const localStates = await store.listCardStates();
       const localSets = await store.listSets();
       const localClasses = await store.listClasses();
+      const options = await readStudyOptions(store);
+      const done = parseDailyDone(await store.readKv(DAILY_DONE_KEY), localDayKey(new Date()));
 
+      setStudyDay({ options, done });
       setCards(localCards);
       setCardStates(localStates);
       setSets(localSets);
@@ -311,10 +322,25 @@ export default function HomeScreen() {
 
   // The decks of the picker, with the number of questions and the number of
   // due questions of every one of them.
-  const decks = useMemo(
-    () => buildDecks(sets, classes, cards, cardStates, Date.now(), filter),
-    [cardStates, cards, classes, filter, sets],
-  );
+  const decks = useMemo(() => {
+    const list = buildDecks(sets, classes, cards, cardStates, Date.now(), filter);
+    if (!mastery || studyDay === null) {
+      return list;
+    }
+    // Mastery: every deck shows today's queue (New / Learn / Due), exactly
+    // what a session of the deck would serve within the daily limits.
+    const classOf = new Map(sets.map((set) => [set.id, set.classId]));
+    const now = Date.now();
+    return list.map((deck) => ({
+      ...deck,
+      today: masteryForecast(
+        cards
+          .filter((card) => card.setId === deck.id)
+          .map((card) => ({ id: card.id, deckId: card.setId, state: cardStates.get(card.id) })),
+        { options: studyDay.options, done: studyDay.done, now, classOf: (id) => classOf.get(id) },
+      ).today,
+    }));
+  }, [cardStates, cards, classes, filter, sets, mastery, studyDay]);
 
   // The line under the play card: what the player is about to study.
   const status = useMemo(() => {
@@ -326,6 +352,23 @@ export default function HomeScreen() {
     });
     const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope), deckClasses).due;
 
+    if (mastery && studyDay !== null) {
+      // Mastery: today's queue of the scope, the way Anki's deck list counts it.
+      const classOf = new Map(sets.map((set) => [set.id, set.classId]));
+      const today = masteryForecast(
+        filterByScope(cards, queueScopeOf(scope), deckClasses).map((card) => ({
+          id: card.id,
+          deckId: card.setId,
+          state: cardStates.get(card.id),
+        })),
+        { options: studyDay.options, done: studyDay.done, now: Date.now(), classOf: (id) => classOf.get(id) },
+      ).today;
+      const left = today.new + today.learning + today.due;
+      return left === 0
+        ? 'Done for today in Mastery. Normal mode stays open.'
+        : `Today: ${today.new} new · ${today.learning} learning · ${today.due} due.`;
+    }
+
     if (queue.length === 0) {
       return due === 0
         ? 'No questions yet. Import a deck to start studying.'
@@ -334,7 +377,7 @@ export default function HomeScreen() {
     return `${queue.length} question${queue.length === 1 ? '' : 's'} queued${
       due > 0 ? ` · ${due} due` : ''
     }.`;
-  }, [cardStates, cards, scope, sets]);
+  }, [cardStates, cards, scope, sets, mastery, studyDay]);
 
   // The chip of the class row that is selected.
   const selectedChip = useMemo(() => {

@@ -21,9 +21,12 @@ import {
   leadUpOf,
   masteredCount,
   masteryCounts,
+  masteryForecast,
   masteryProgress,
   masteryStatusOf,
   nextSessionQuestion,
+  sessionStageCounts,
+  sessionStageOf,
   sessionComplete,
   sessionRemaining,
   sessionTotal,
@@ -39,7 +42,10 @@ import {
   type Rng,
   type SessionQuestion,
   type SessionQueueState,
+  type SessionStage,
+  type SessionStageCounts,
   type StudyCard,
+  type StudyOptions,
   sessionStepsFor,
 } from '@study-app/core';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -63,6 +69,7 @@ import { LakeScene, type LeadUpStage } from './LakeScene';
 import { PayoutScreen } from './PayoutScreen';
 import { QuestionNote } from './QuestionNote';
 import { RevealCard } from './RevealCard';
+import { STAGE_COLORS } from './stage';
 import { buildQuestionCards } from './questions';
 import { playSfx, prepareSfx } from './sfx';
 
@@ -234,6 +241,12 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
 
   const cardsRef = useRef<StudyCard[]>([]);
   const statesRef = useRef<Map<string, CardState>>(new Map());
+  /** The Mastery inputs of the forecast on the Done-for-today screen. */
+  const forecastInputRef = useRef<{
+    options: StudyOptions;
+    scoped: StudyCard[];
+    classOf: (deckId: string) => string | null | undefined;
+  } | null>(null);
   /** The class of every deck (a class scope needs it). */
   const deckClassesRef = useRef<ReadonlyMap<string, string | null>>(new Map());
   /**
@@ -255,6 +268,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
     total: 0,
     left: 0,
     dots: [] as readonly MasteryProgress[],
+    today: null as SessionStageCounts | null,
   });
   /** `true` while the "MASTERED!" celebration is on the screen. */
   const [celebrating, setCelebrating] = useState(false);
@@ -329,6 +343,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
    * The queue of the machine is empty: the questions come from the session
    * queue of the core, one at a time.
    */
+  const servedStageRef = useRef<{ id: string; stage: SessionStage } | null>(null);
   const buildQueueNow = useCallback((): QueueItem[] => {
     const engine = engineRef.current;
     if (engine === null) {
@@ -341,6 +356,8 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
     if (next.question === null) {
       return [];
     }
+    // The bucket the question came from (the HUD underlines it, like Anki).
+    servedStageRef.current = { id: next.question.id, stage: sessionStageOf(next.state, next.question.id) };
 
     return [toQueueItem(next.question)];
   }, [toQueueItem]);
@@ -402,6 +419,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           }
           doneRef.current = done;
           const classOfDeck = new Map(sets.map((set) => [set.id, set.classId]));
+          forecastInputRef.current = { options, scoped, classOf: (deckId) => classOfDeck.get(deckId) };
           const limited = limitSessionPool(
             scoped.map((card) => ({ id: card.id, deckId: card.setId, state: states.get(card.id) })),
             { options, done, now: Date.now(), classOf: (deckId) => classOfDeck.get(deckId) },
@@ -438,6 +456,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           total: pool.length,
           left: sessionRemaining(engine),
           dots: masteryProgress(engine),
+          today: sessionStageCounts(engine),
         });
         dispatch({
           type: 'set_queue',
@@ -705,6 +724,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           total: sessionTotal(next),
           left: sessionRemaining(next),
           dots: masteryProgress(next),
+          today: sessionStageCounts(next),
         });
 
         if (mastery && sessionComplete(next)) {
@@ -763,6 +783,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           total: sessionTotal(next),
           left: sessionRemaining(next),
           dots: masteryProgress(next),
+          today: sessionStageCounts(next),
         });
 
         if (mastery && sessionComplete(next)) {
@@ -1158,6 +1179,25 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
     };
   }, [demo, loading]);
 
+  // Done for today: when the next questions come due, and tomorrow's queue
+  // (Anki's "Congratulations" screen).
+  const forecast = useMemo(() => {
+    const input = forecastInputRef.current;
+    const done = doneRef.current;
+    if (!doneToday || input === null || done === null) {
+      return null;
+    }
+    const states = machine.session.cardStates;
+    return masteryForecast(
+      input.scoped.map((card) => ({
+        id: card.id,
+        deckId: card.setId,
+        state: states.get(card.id) ?? statesRef.current.get(card.id),
+      })),
+      { options: input.options, done, now: Date.now(), classOf: input.classOf },
+    );
+  }, [doneToday, machine.session.cardStates]);
+
   const biggestTier = machine.session.biggest?.tier ?? null;
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
   const onTheLine = machine.onTheLine;
@@ -1282,10 +1322,12 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           session={machine.session}
           remaining={progress.left}
           mastery={mastery}
-          mastered={progress.mastered}
-          total={progress.total}
-          progress={progress.dots}
-          currentQuestionId={machine.question?.cardId ?? null}
+          today={progress.today}
+          currentStage={
+            machine.question !== null && servedStageRef.current?.id === machine.question.cardId
+              ? servedStageRef.current.stage
+              : null
+          }
           biggestTier={biggestTier}
           tokens={balance}
           onEnd={onRequestEnd}
@@ -1301,6 +1343,11 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
             lockoutUntil={machine.lockoutUntil}
             mastery={currentMastery}
             masteryStreak={masteryStreak}
+            stage={
+              mastery && machine.question !== null && servedStageRef.current?.id === machine.question.cardId
+                ? servedStageRef.current.stage
+                : null
+            }
             onAnswer={onAnswer}
             onSelfGrade={onSelfGrade}
             onMathAnswer={onMathAnswer}
@@ -1406,9 +1453,26 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           <GlassCard contentStyle={styles.sheet} tint={colors.ticket}>
             <Text style={styles.sheetTitle}>Done for today 🎉</Text>
             <Text style={styles.sheetBody}>
-              You reached today&apos;s new-question and review limits for this scope. New questions and due reviews come back
-              tomorrow. Change the limits in Study options, or play Endless mode to keep practicing.
+              You finished today&apos;s Mastery questions for this scope
+              {machine.session.answered > 0 ? ` (${machine.session.answered} answered this session)` : ''}.
             </Text>
+            {forecast !== null ? (
+              <View style={styles.forecastBox} testID="fishing-forecast">
+                <Text style={styles.forecastLine}>
+                  {forecast.nextDueAt === null
+                    ? 'Nothing else is scheduled yet.'
+                    : `Next questions due ${formatNextDue(forecast.nextDueAt, Date.now())}.`}
+                </Text>
+                <View style={styles.forecastRow}>
+                  <Text style={styles.forecastTitle}>TOMORROW</Text>
+                  <Text style={[styles.forecastCount, { color: STAGE_COLORS.new }]}>{forecast.tomorrowNew} new</Text>
+                  <Text style={[styles.forecastCount, { color: STAGE_COLORS.review }]}>
+                    {forecast.tomorrowReviews} due
+                  </Text>
+                </View>
+              </View>
+            ) : null}
+            <Text style={styles.sheetBody}>Normal mode stays open if you want to keep playing.</Text>
             <View style={styles.sheetActions}>
               {onKeepPlaying ? (
                 <GameButton label="KEEP PLAYING (NORMAL)" variant="primary" size="md" onPress={onKeepPlaying} />
@@ -1616,8 +1680,59 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 19,
   },
+  forecastBox: {
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'rgba(6, 12, 28, 0.35)',
+  },
+  forecastLine: {
+    color: colors.text,
+    fontSize: 14,
+    fontFamily: fonts.bodySemi,
+    textAlign: 'center',
+  },
+  forecastRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  forecastTitle: {
+    color: colors.textMuted,
+    fontSize: 11,
+    fontFamily: fonts.titleSemi,
+    letterSpacing: 0.8,
+  },
+  forecastCount: {
+    fontSize: 15,
+    fontFamily: fonts.titleSemi,
+  },
   sheetActions: {
     gap: 10,
     marginTop: 6,
   },
 });
+
+/** "in 12 min", "today at 3:40 PM", "tomorrow at 9:00 AM" or a date. */
+export function formatNextDue(at: number, now: number): string {
+  const minutes = Math.max(1, Math.round((at - now) / 60_000));
+  if (minutes < 60) {
+    return `in ${minutes} min`;
+  }
+  const time = new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const day = (value: number) => {
+    const date = new Date(value);
+    date.setHours(0, 0, 0, 0);
+    return date.getTime();
+  };
+  const days = Math.round((day(at) - day(now)) / 86_400_000);
+  if (days <= 0) {
+    return `today at ${time}`;
+  }
+  if (days === 1) {
+    return `tomorrow at ${time}`;
+  }
+  return `on ${new Date(at).toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+}
