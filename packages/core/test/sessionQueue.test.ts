@@ -9,6 +9,8 @@ import {
   createSessionQueue,
   masteredCount,
   masteryCounts,
+  sessionStageCounts,
+  sessionStageOf,
   masteryProgress,
   nextSessionQuestion,
   sessionComplete,
@@ -886,21 +888,21 @@ describe('mastery across sessions (regression: 0/36 mastered after 40 answers)',
     expect(masteredCount(state)).toBe(1);
   });
 
-  it('leaves seeded mastered questions out of the session', () => {
+  it('never masters a card from the n/3 meter alone (regression: old 3-correct path)', () => {
     const counts = { metr_0: 3, metr_1: 3 };
-    let state = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(6), masteryCounts: counts });
-    expect(masteredCount(state)).toBe(2);
-    for (let index = 0; index < 60; index += 1) {
-      const next = nextSessionQuestion(state);
-      state = next.state;
-      expect(['metr_0', 'metr_1']).not.toContain(next.question?.id);
-      if (next.question) state = answerSessionQuestion(state, next.question.id, false);
-    }
+    const state = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(6), masteryCounts: counts });
+    expect(masteredCount(state)).toBe(0);
+    expect(state.pending).toContain('metr_0');
+    expect(masteryCounts(state).metr_0).toBe(3);
   });
 
-  it('starts a fresh round when the whole deck was already mastered', () => {
-    const counts = Object.fromEntries(deck.map((q) => [q.id, 3]));
-    const state = createSessionQueue({ questions: deck, mode: 'mastery', rng: createSeededRng(7), masteryCounts: counts });
-    expect(masteredCount(state)).toBe(0);
+  it('counts the questions of the session by stage', () => {
+    let state = createSessionQueue({ questions: deck.slice(0, 3), mode: 'mastery', rng: createSeededRng(8) });
+    expect(sessionStageCounts(state)).toMatchObject({ new: 3, learning: 0, review: 0, done: 0, total: 3 });
+    state = answerSessionQuestion(state, 'metr_0', true);
+    expect(sessionStageOf(state, 'metr_0')).toBe('learning');
+    expect(sessionStageCounts(state)).toMatchObject({ new: 2, learning: 1 });
+    state = answerSessionQuestion(state, 'metr_0', true);
+    expect(sessionStageCounts(state)).toMatchObject({ new: 2, learning: 0, done: 1 });
   });
 });

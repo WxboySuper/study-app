@@ -75,6 +75,8 @@ export {
   nextSessionQuestion,
   sessionComplete,
   sessionRemaining,
+  sessionStageCounts,
+  sessionStageOf,
   sessionTotal,
   updateSessionStates,
   type MasteryProgress,
@@ -83,6 +85,8 @@ export {
   type SessionQuestion,
   type SessionQueueOptions,
   type SessionQueueState,
+  type SessionStage,
+  type SessionStageCounts,
 } from './sessionQueue';
 
 export {
