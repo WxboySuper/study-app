@@ -233,6 +233,9 @@ How does the temperature of a fluid change over time? :: $\frac{dT}{dt} = \frac{
 
 ## Math questions (typed answers)
 
+A ready-to-import sampler (derivatives, integrals, setups and multi-step
+questions) lives in [`docs/samples/calculus.json`](samples/calculus.json).
+
 A **math question** is answered by typing on the math keyboard of the game,
 not by picking a choice. It only exists in the JSON format: add
 `"type": "math"` to a question.

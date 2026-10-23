@@ -1,0 +1,54 @@
+{
+  "name": "Calculus — Math mode sampler",
+  "questions": [
+    { "id": "d-power", "type": "math", "question": "$\\frac{d}{dx}\\left(x^3\\right)$", "answer": "3x^2" },
+    { "id": "d-poly", "type": "math", "question": "$\\frac{d}{dx}\\left(4x^3 - 5x^2 + 7x - 2\\right)$", "answer": "12x^2 - 10x + 7" },
+    { "id": "d-sqrt", "type": "math", "question": "$\\frac{d}{dx}\\sqrt{x}$", "answer": "1/(2sqrt(x))" },
+    { "id": "d-sin", "type": "math", "question": "$\\frac{d}{dx}\\sin(3x)$", "answer": "3cos(3x)" },
+    { "id": "d-exp", "type": "math", "question": "$\\frac{d}{dx}e^{2x}$", "answer": "2e^(2x)" },
+    { "id": "d-ln", "type": "math", "question": "$\\frac{d}{dx}\\ln(x^2+1)$", "answer": "2x/(x^2+1)" },
+    { "id": "d-product", "type": "math", "question": "Product rule: $\\frac{d}{dx}\\left(x^2\\sin x\\right)$", "answer": "2x sin(x) + x^2 cos(x)" },
+    { "id": "d-quotient", "type": "math", "question": "Quotient rule: $\\frac{d}{dx}\\frac{x}{x+1}$", "answer": "1/(x+1)^2" },
+    { "id": "d-at-point", "type": "math", "question": "Slope of $y = x^2 + 3x$ at $x = 2$", "answer": 7 },
+    { "id": "d-partial", "type": "math", "question": "$\\frac{\\partial}{\\partial x}\\left(x^2 y + y^3\\right)$", "answer": "2xy" },
+    { "id": "d-chain-steps", "type": "math",
+      "question": "Chain rule: $\\frac{d}{dx}\\left(3x^2+1\\right)^5$",
+      "answer": "30x(3x^2+1)^4",
+      "steps": [
+        { "prompt": "The inside function $u(x)$", "answer": "3x^2 + 1" },
+        { "prompt": "$u'(x)$", "answer": "6x" },
+        { "prompt": "$\\frac{d}{du}u^5$ (in terms of $u$)", "answer": "5u^4" }
+      ] },
+    { "id": "i-2x", "type": "math", "question": "$\\int 2x\\,dx$", "answer": "x^2 + C" },
+    { "id": "i-poly", "type": "math", "question": "$\\int \\left(3x^2 + 4x\\right)dx$", "answer": "x^3 + 2x^2 + C" },
+    { "id": "i-cos", "type": "math", "question": "$\\int \\cos x\\,dx$", "answer": "sin(x) + C" },
+    { "id": "i-recip", "type": "math", "question": "$\\int \\frac{1}{x}\\,dx \\quad (x>0)$", "answer": "ln(x) + C" },
+    { "id": "i-exp", "type": "math", "question": "$\\int e^{3x}\\,dx$", "answer": "e^(3x)/3 + C" },
+    { "id": "i-def", "type": "math", "question": "$\\int_0^2 x^2\\,dx$", "answer": "8/3" },
+    { "id": "i-def-sin", "type": "math", "question": "$\\int_0^{\\pi} \\sin x\\,dx$", "answer": 2 },
+    { "id": "s-area", "type": "math", "setup": true,
+      "question": "Set up (don't solve) the area under $y = x^2$ from $x=0$ to $x=2$.",
+      "answer": "int(x^2, x, 0, 2)" },
+    { "id": "s-derivative", "type": "math", "setup": true,
+      "question": "Set up (don't solve) the rate of change of $f(t) = t^3 - t$.",
+      "answer": "diff(t^3 - t, t)" },
+    { "id": "s-volume", "type": "math", "setup": true,
+      "question": "Set up the disk-method volume of $y=\\sqrt{x}$ on $[0,4]$ around the $x$-axis.",
+      "answers": ["int(pi*x, x, 0, 4)", "pi*int(x, x, 0, 4)"] },
+    { "id": "m-between", "type": "math",
+      "question": "Area between $y = 2x$ and $y = x^2$.",
+      "answer": "4/3",
+      "steps": [
+        { "prompt": "Where do the curves meet? (the right one)", "answer": "2" },
+        { "prompt": "Set up the area", "setup": true, "answer": "int(2x - x^2, x, 0, 2)" },
+        { "prompt": "An antiderivative of $2x - x^2$", "answer": "x^2 - x^3/3 + C" }
+      ] },
+    { "id": "m-usub", "type": "math",
+      "question": "$\\int 2x\\cos(x^2)\\,dx$",
+      "answer": "sin(x^2) + C",
+      "steps": [
+        { "prompt": "Pick $u$", "answer": "x^2" },
+        { "prompt": "$du$ in terms of $dx$: $du = (\\;?\\;)\\,dx$", "answer": "2x" }
+      ] }
+  ]
+}
