@@ -41,9 +41,11 @@ describe('questionStatus', () => {
   it('maps FSRS states to the deck screen statuses', () => {
     expect(questionStatus(undefined, NOW)).toBe('new');
     expect(questionStatus(st('a', State.New, NOW - H), NOW)).toBe('new');
-    expect(questionStatus(st('a', State.Learning, NOW + H), NOW)).toBe('learning');
-    expect(questionStatus(st('a', State.Relearning, NOW + H), NOW)).toBe('learning');
-    expect(questionStatus(st('a', State.Learning, NOW - 1), NOW)).toBe('due');
+    // Learning counts once its step is due (20 minute learn-ahead).
+    expect(questionStatus(st('a', State.Learning, NOW + H / 6), NOW)).toBe('learning');
+    expect(questionStatus(st('a', State.Relearning, NOW + H / 6), NOW)).toBe('learning');
+    expect(questionStatus(st('a', State.Learning, NOW - 1), NOW)).toBe('learning');
+    expect(questionStatus(st('a', State.Learning, NOW + H), NOW)).toBe('scheduled');
     expect(questionStatus(st('a', State.Review, NOW), NOW)).toBe('due');
     expect(questionStatus(st('a', State.Review, NOW + 48 * H), NOW)).toBe('scheduled');
   });
@@ -53,7 +55,7 @@ describe('buildQuestionRows', () => {
   const cards = ['a', 'b', 'c', 'd'].map(card);
   const states = new Map<string, CardState>([
     ['b', st('b', State.Review, NOW - H)],
-    ['c', st('c', State.Learning, NOW + H)],
+    ['c', st('c', State.Learning, NOW + H / 6)],
     ['d', { ...st('d', State.Review, NOW + 72 * H), stability: 30 }],
   ]);
   const rows = buildQuestionRows(cards, states, { a: 1, d: 7, c: Number.NaN }, new Set(['a', 'b']), NOW);
