@@ -803,7 +803,8 @@ export const MATH_MEDIAN_MS_PER_PART = 20_000;
 
 /** The median answer time of a math question without history. */
 export function mathMedianMs(spec: MathSpec): number {
-  return MATH_MEDIAN_MS_PER_PART * ((spec.steps?.length ?? 0) + 1);
+  const steps = spec.steps?.length ?? 0;
+  return MATH_MEDIAN_MS_PER_PART * Math.max(1, spec.answers.length === 0 ? steps : steps + 1);
 }
 
 /** Turns a rolled catch into the shape the UI and the session log use. */

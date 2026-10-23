@@ -49,6 +49,13 @@
       "steps": [
         { "prompt": "Pick $u$", "answer": "x^2" },
         { "prompt": "$du$ in terms of $dx$: $du = (\\;?\\;)\\,dx$", "answer": "2x" }
+      ] },
+    { "id": "m-tangent", "type": "math",
+      "question": "Tangent line to $y = x^2$ at $x = 3$ (the last step is the final answer).",
+      "steps": [
+        { "prompt": "$y(3)$", "answer": 9 },
+        { "prompt": "The slope $y'(3)$", "answer": 6 },
+        { "prompt": "The tangent line: $y = \\;?$", "answer": "6x - 9" }
       ] }
   ]
 }

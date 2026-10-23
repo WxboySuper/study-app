@@ -479,6 +479,10 @@ export function mathParts(spec: MathSpec): MathPart[] {
     kind: step.kind,
     constant: step.answers.some((answer) => /\+\s*C\s*$/.test(answer)),
   }));
+  // No answer of its own: the last step is the final answer.
+  if (spec.answers.length === 0 && steps.length > 0) {
+    return steps;
+  }
   return [
     ...steps,
     { prompt: null, answers: spec.answers, kind: spec.kind, constant: spec.constant === true },

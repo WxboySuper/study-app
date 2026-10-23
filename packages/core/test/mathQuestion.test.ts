@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { parseDeck } from '../src/import';
-import { mathSpecToEntry, parseStoredMathSpec, readMathSpec } from '../src/mathQuestion';
+import { mathFinalAnswers, mathSpecToEntry, parseStoredMathSpec, readMathSpec } from '../src/mathQuestion';
 import { parseSyncSnapshot, planDeckSync } from '../src/sync';
 
 const deck = (questions: unknown[]) => JSON.stringify({ name: 'Calc', questions });
@@ -120,5 +120,36 @@ describe('math questions in the deck format', () => {
     const plan = planDeckSync({ classes: [], decks: [], questions: [] }, snapshot);
     expect(plan.decks[0]?.questions[0]?.math).toEqual({ kind: 'expression', answers: ['2x'] });
     expect(plan.decks[0]?.questions[1]).not.toHaveProperty('math');
+  });
+
+  it('makes the last step the final answer when the question has no answer', () => {
+    const parsed = parseDeck(
+      deck([
+        {
+          id: 's1',
+          type: 'math',
+          question: 'Area',
+          steps: [
+            { prompt: 'Set it up', setup: true, answer: 'int(2x - x^2, x, 0, 2)' },
+            { prompt: 'Evaluate', answer: '4/3' },
+          ],
+        },
+      ]),
+      'x',
+    );
+    expect(parsed.errors).toEqual([]);
+    const card = parsed.cards[0]!;
+    expect(card.back).toBe('4/3');
+    expect(card.math?.answers).toEqual([]);
+    expect(mathFinalAnswers(card.math!)).toEqual(['4/3']);
+    // It survives the round trip through the stores.
+    expect(parseStoredMathSpec(JSON.stringify(card.math))).toEqual(card.math);
+    expect(readMathSpec(mathSpecToEntry(card.math!))).toEqual(card.math);
+  });
+
+  it('still needs an answer without steps', () => {
+    const parsed = parseDeck(deck([{ type: 'math', question: '?', steps: [] }]), 'x');
+    expect(parsed.cards).toEqual([]);
+    expect(parsed.errors.join(' ')).toMatch(/answer is missing/);
   });
 });

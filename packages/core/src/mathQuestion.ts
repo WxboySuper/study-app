@@ -34,7 +34,12 @@ export interface MathStep {
 export interface MathSpec {
   /** What the final answer is compared as. */
   kind: MathAnswerKind;
-  /** The accepted final answers (at least one; the first one is shown). */
+  /**
+   * The accepted final answers (the first one is shown).
+   *
+   * Empty when the question has steps and no answer of its own: the last
+   * step is then the final answer (see {@link mathFinalAnswers}).
+   */
   answers: string[];
   /** The steps, asked in order before the final answer (optional). */
   steps?: MathStep[];
@@ -51,6 +56,8 @@ export const MAX_MATH_STEPS = 8;
 export const MAX_MATH_ANSWERS = 8;
 /** The longest answer expression. */
 export const MAX_MATH_ANSWER_LENGTH = 300;
+
+const MISSING = 'the answer is missing ("answer" or "answers").';
 
 /** Reads a list of answers (`answer` or `answers`, a string or strings). */
 function readAnswers(entry: Record<string, unknown>): string[] | string {
@@ -70,7 +77,7 @@ function readAnswers(entry: Record<string, unknown>): string[] | string {
     }
   }
   if (answers.length === 0) {
-    return 'the answer is missing ("answer" or "answers").';
+    return MISSING;
   }
   if (answers.length > MAX_MATH_ANSWERS) {
     return `at most ${MAX_MATH_ANSWERS} accepted answers.`;
@@ -101,9 +108,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @returns the spec, or the message of what is wrong with it.
  */
 export function readMathSpec(entry: Record<string, unknown>): MathSpec | string {
-  const answers = readAnswers(entry);
+  // A question with steps may leave its own answer out: the last step is the
+  // final answer then.
+  const omitted =
+    entry.answer === undefined &&
+    (entry.answers === undefined || (Array.isArray(entry.answers) && entry.answers.length === 0)) &&
+    entry.correct === undefined &&
+    Array.isArray(entry.steps) &&
+    entry.steps.length > 0;
+  const answers = omitted ? [] : readAnswers(entry);
   if (typeof answers === 'string') {
-    return answers;
+    return answers === MISSING ? `${MISSING.slice(0, -1)} (or give "steps": the last step is the final answer).` : answers;
   }
 
   const spec: MathSpec = { kind: readKind(entry), answers };
@@ -138,6 +153,17 @@ export function readMathSpec(entry: Record<string, unknown>): MathSpec | string 
 }
 
 /**
+ * The accepted final answers of a question: its own, or the last step's
+ * when it has none.
+ */
+export function mathFinalAnswers(spec: MathSpec): string[] {
+  if (spec.answers.length > 0) {
+    return spec.answers;
+  }
+  return spec.steps?.[spec.steps.length - 1]?.answers ?? [];
+}
+
+/**
  * Reads a stored math spec back (from the server or the local store).
  *
  * Broken data never breaks the app: `undefined` when it cannot be read.
@@ -166,7 +192,7 @@ export function parseStoredMathSpec(value: unknown): MathSpec | undefined {
 export function mathSpecToEntry(spec: MathSpec): Record<string, unknown> {
   return {
     type: 'math',
-    answers: [...spec.answers],
+    ...(spec.answers.length === 0 ? {} : { answers: [...spec.answers] }),
     ...(spec.kind === 'setup' ? { setup: true } : {}),
     ...(spec.constant === true ? { constant: true } : {}),
     ...(spec.steps === undefined

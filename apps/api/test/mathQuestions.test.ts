@@ -104,4 +104,35 @@ describe("math questions", () => {
     });
     expect(created.status).toBe(400);
   });
+
+  it("accepts a multi-step math question without a top-level answer", async () => {
+    const env = setup();
+    const created = await call(env, "POST", "/api/decks", {
+      name: "Calc",
+      questions: [
+        {
+          id: "steps",
+          type: "math",
+          question: "Area between $y=2x$ and $y=x^2$",
+          steps: [
+            { prompt: "Set it up", setup: true, answer: "int(2x - x^2, x, 0, 2)" },
+            { prompt: "Evaluate", answer: "4/3" },
+          ],
+        },
+      ],
+    });
+    expect(created.status).toBe(201);
+    const [q] = created.json.questions;
+    expect(q).toMatchObject({ type: "math", correct: "4/3", math: { answers: [] } });
+    expect(q.math.steps).toHaveLength(2);
+
+    const sync = await call(env, "GET", "/api/sync?since=0");
+    expect(sync.json.decks[0].questions[0].math.steps).toHaveLength(2);
+
+    const patched = await call(env, "PATCH", `/api/decks/${created.json.id}/questions/${q.id}`, {
+      question: "Area between the curves",
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.json.math.steps).toHaveLength(2);
+  });
 });
