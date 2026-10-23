@@ -10,6 +10,7 @@ import {
   type ProgressEventType,
   type ProgressPayloads,
 } from "@study-app/core";
+import { getRandomBytes } from "expo-crypto";
 import { AppState, Platform } from "react-native";
 
 import { API_BASE_URL } from "@/config";
@@ -75,8 +76,12 @@ export function subscribeProgressSync(
 }
 
 function randomId(prefix: string): string {
-  const bytes = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(bytes);
+  // Hermes (Android) has no `globalThis.crypto`: use expo-crypto there.
+  const webCrypto = (globalThis as { crypto?: Crypto }).crypto;
+  const bytes =
+    webCrypto?.getRandomValues !== undefined
+      ? webCrypto.getRandomValues(new Uint8Array(16))
+      : getRandomBytes(16);
   return `${prefix}_${[...bytes].map((b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
@@ -323,6 +328,19 @@ export function authedRequest<T>(
   return authed<T>(path, init, fetchImpl);
 }
 
+/** Why a request failed: no network, or something else (shown as is). */
+function failure(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === "AbortError") return "offline";
+    // fetch rejects with a TypeError ("Network request failed") offline.
+    if (error instanceof TypeError && /network|fetch/i.test(error.message))
+      return "offline";
+    setStatus({ lastError: error.message });
+    return "app_error";
+  }
+  return "app_error";
+}
+
 async function authed<T>(
   path: string,
   init: RequestInit,
@@ -330,27 +348,41 @@ async function authed<T>(
 ): Promise<Result<T>> {
   try {
     const store = await openLocalStore();
-    const identity =
-      (await ensurePhoneIdentity(store, fetchImpl)) ??
-      (await readIdentity(store));
-    if (identity === null) return { ok: false, error: "not_linked" };
-    const response = await api(
-      path,
-      { ...init, token: identity.deviceToken },
-      fetchImpl,
-    );
-    if (response.status === 401) {
-      await forgetIdentity(store);
-      return { ok: false, error: "unlinked" };
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const identity =
+        (await ensurePhoneIdentity(store, fetchImpl)) ??
+        (await readIdentity(store));
+      if (identity === null)
+        return {
+          ok: false,
+          error: Platform.OS === "web" ? "not_linked" : "register_failed",
+        };
+      const response = await api(
+        path,
+        { ...init, token: identity.deviceToken },
+        fetchImpl,
+      );
+      if (response.status === 401) {
+        await forgetIdentity(store);
+        // A phone whose token is gone or revoked registers again (once).
+        if (Platform.OS !== "web" && attempt === 0) continue;
+        return { ok: false, error: "unlinked" };
+      }
+      const body = (await response.json().catch(() => ({}))) as {
+        error?: string;
+      };
+      if (!response.ok)
+        return {
+          ok: false,
+          error:
+            body.error ??
+            (response.status >= 500 ? "server_error" : `http_${response.status}`),
+        };
+      return { ok: true, value: body as T };
     }
-    const body = (await response.json().catch(() => ({}))) as {
-      error?: string;
-    };
-    if (!response.ok)
-      return { ok: false, error: body.error ?? `http_${response.status}` };
-    return { ok: true, value: body as T };
-  } catch {
-    return { ok: false, error: "offline" };
+    return { ok: false, error: "unlinked" };
+  } catch (error) {
+    return { ok: false, error: failure(error) };
   }
 }
 
@@ -432,8 +464,8 @@ export async function claimPairing(
     setStatus({ registered: true, lastError: null });
     await syncProgress({ store, fetchImpl });
     return { ok: true, value: true };
-  } catch {
-    return { ok: false, error: "offline" };
+  } catch (error) {
+    return { ok: false, error: failure(error) };
   }
 }
 

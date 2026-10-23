@@ -32,7 +32,11 @@ import { GameBackground, GameButton, GlassCard, ScreenHeader } from "@/ui";
 const ERRORS: Record<string, string> = {
   invalid_code: "That code is wrong or expired. Make a new one on the phone.",
   offline: "No connection. Try again in a moment.",
-  unlinked: "This device was unlinked.",
+  unlinked: "This device was unlinked. Try again to link it again.",
+  unauthorized: "This device is not signed in to sync. Try again.",
+  register_failed: "Could not register this phone with the server. Try again.",
+  server_error: "The server had a problem. Try again in a moment.",
+  app_error: "Something went wrong in the app. Try again.",
   not_linked: "Not linked yet.",
   phone_only: "Only the phone can do that.",
 };
