@@ -102,6 +102,16 @@ Graduation is what actually schedules the card, so it is the real rule. The 3-co
 
 Migration: saved `fishing.masteryCounts.v1` values become a `mastery_count` field on each card. Cards with no FSRS state stay New.
 
+#### Math is its own section
+
+Math questions (`"type": "math"`) are slow to solve, so they never mix with
+multiple choice. Home has a QUESTIONS tab and a MATH tab; a session plays
+one track only (`track` route param, `filterByTrack` in core). A mixed deck
+is split by question type and shows up in both tabs. Math Mastery has its
+own daily counts (`study.dailyDone.math.v1`), its own presets
+(`mathDeckPresets` / `mathClassPresets`, default Math: 5 new / 50 reviews,
+steps 10m 1d) and lenient timing (`Hard` only past 3x the expected time).
+
 ### 6.2 Normal: fun, unlimited
 
 This is today's endless shuffle: no limits, no stop screen. Answers are still logged as review events (so they sync and count toward stats). They only move FSRS state for cards that are due. Cards that aren't due get a "practice" event that doesn't change the schedule. That way Normal mode can't break the Anki schedule.
