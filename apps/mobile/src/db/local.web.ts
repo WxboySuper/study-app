@@ -62,6 +62,8 @@ interface DemoState {
   cards: StudyCard[];
   /** The remote id of every card that came from the server. */
   cardRemoteIds: Map<string, string>;
+  /** The cards retired on the server (hidden from play, state kept). */
+  retiredCards: Set<string>;
   cardStates: Map<string, CardState>;
   sets: LocalSet[];
   topics: LocalTopic[];
@@ -389,6 +391,7 @@ function createEmptyState(): DemoState {
     collection: new Map(),
     cards: [],
     cardRemoteIds: new Map(),
+    retiredCards: new Set(),
     cardStates: new Map(),
     sets: [],
     topics: [],
@@ -425,6 +428,7 @@ function createDemoState(layoutDeck = false): DemoState {
     collection: new Map(Object.entries(DEMO_COLLECTION)),
     cards: layoutDeck ? [...DEMO_CARDS, ...LAYOUT_CARDS] : DEMO_CARDS,
     cardRemoteIds: new Map(),
+    retiredCards: new Set(),
     cardStates: demoCardStates(),
     sets,
     topics: DEMO_TOPICS,
@@ -495,6 +499,7 @@ interface SerializedState {
   collection: [string, number][];
   cards: StudyCard[];
   cardRemoteIds: [string, string][];
+  retiredCards?: string[];
   cardStates: [string, CardState][];
   sets: LocalSet[];
   topics: LocalTopic[];
@@ -511,6 +516,7 @@ function serializeState(value: DemoState): SerializedState {
     collection: [...value.collection],
     cards: value.cards,
     cardRemoteIds: [...value.cardRemoteIds],
+    retiredCards: [...value.retiredCards],
     cardStates: [...value.cardStates],
     sets: value.sets,
     topics: value.topics,
@@ -529,6 +535,7 @@ function deserializeState(raw: Partial<SerializedState>): DemoState {
     collection: new Map(raw.collection ?? []),
     cards: raw.cards ?? empty.cards,
     cardRemoteIds: new Map(raw.cardRemoteIds ?? []),
+    retiredCards: new Set(raw.retiredCards ?? []),
     cardStates: new Map(raw.cardStates ?? []),
     sets: raw.sets ?? empty.sets,
     topics: raw.topics ?? empty.topics,
@@ -651,7 +658,10 @@ async function openRawLocalStore(): Promise<LocalStore> {
   await hydrate();
   return persisting({
     applyRemoteChanges: async (changes, options) => applyRemoteChangesOfDemo(changes, options),
-    listCards: async () => [...demo().cards],
+    listCards: async () => {
+      const current = demo();
+      return current.cards.filter((card) => !current.retiredCards.has(card.id));
+    },
     listCardStates: async () => new Map(demo().cardStates),
     listSets: async () => [...demo().sets],
     listTopics: async () => [...demo().topics],
@@ -884,6 +894,11 @@ async function applySyncPlanOfDemo(plan: SyncPlan): Promise<void> {
 
     for (const question of deck.questions) {
       current.cardRemoteIds.set(question.localId, question.remoteId);
+      if (question.retired) {
+        current.retiredCards.add(question.localId);
+      } else {
+        current.retiredCards.delete(question.localId);
+      }
 
       if (question.created) {
         current.cards = [
@@ -938,6 +953,7 @@ async function applySyncPlanOfDemo(plan: SyncPlan): Promise<void> {
 function removeCardOfDemo(current: DemoState, cardId: string): void {
   current.cards = current.cards.filter((card) => card.id !== cardId);
   current.cardRemoteIds.delete(cardId);
+  current.retiredCards.delete(cardId);
   current.cardStates.delete(cardId);
   current.outbox = current.outbox.filter((review) => review.cardId !== cardId);
 }

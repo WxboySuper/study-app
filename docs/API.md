@@ -15,6 +15,7 @@ Never log tokens.
 |---|---|---|---|
 | GET | `/health` | none | `{ok:true}` |
 | POST | `/decks` | Muse | Upserts a deck (docs/DECK-FORMAT.md). |
+| GET, PATCH, DELETE | `/decks`, `/decks/:id`, `/decks/:id/questions/:qid` | Muse | See Decks (Muse) below. |
 | GET | `/sync` | none | Deck snapshot for the apps. |
 | GET | `/update`, `/update/apk` | none | Latest release and its APK. |
 
@@ -47,6 +48,33 @@ Notes:
   on the device (`packages/core`), the server never interprets payloads.
 - Codes are case-insensitive; spaces and dashes are ignored, `O`→`0`,
   `I`/`L`→`1`. Wrong/expired/used codes all answer 400 `invalid_code`.
+
+## Decks (Muse)
+
+All of these need the Muse token. Every answer carries the ids of the deck and of its questions.
+
+| Method | Path | Body → response |
+|---|---|---|
+| POST | `/decks` | a deck (docs/DECK-FORMAT.md) → `{id, name, class, questions[], changes: {kept, added, retired}}` |
+| GET | `/decks` | → `{decks: [{id, name, class, updatedAt, questionCount, retiredCount}]}` |
+| GET | `/decks/:id?retired=1` | → the deck with its questions (retired ones only with `retired=1`, marked `retired: true`) |
+| PATCH | `/decks/:id` | `{name?, class?}` (class `null` clears it) → the deck. 409 `name_taken` |
+| DELETE | `/decks/:id` | → `{ok, id, deleted: true}`. The apps remove the deck and its progress. |
+| POST | `/decks/:id/questions` | one question `{id?, question, correct, wrong?, selfGraded?}` → 201 the question, or 200 with `restored: true` when it brings back a retired question of the same id or text. 409 `question_exists` |
+| PATCH | `/decks/:id/questions/:qid` | any of `{question, correct, wrong, selfGraded}` → the question. The id (and so the progress) stays. |
+| DELETE | `/decks/:id/questions/:qid` | → `{ok, id, retired: true}`. The question is retired, not deleted. |
+
+Errors of these routes look like `{error: code, errors: [message]}`.
+
+### For Muse: updating a deck
+
+- **Ids are stable.** A question keeps its id for good, and the progress of the player (mastery, the review schedule, quiz results) is keyed by that id.
+- **Re-POSTing a whole deck is safe.** To update a deck, send it again with the same deck `id` (or the same name). Each question is matched, in order: by its `id` if you send one, else by its text (case and spacing ignored). A match keeps its id and progress even when its answers change. Reordering is fine.
+- **A reworded question with no `id` counts as new** (and the old one is retired). To reword and keep the progress, send the question `id` from `GET /decks/:id`, or use `PATCH /decks/:id/questions/:qid`.
+- **Questions you leave out are retired**: hidden from play and from new quizzes, progress and quiz history kept. Sending them again (or POSTing them) brings them back with their progress.
+- Prefer the small routes for small changes: PATCH one question, POST one question, DELETE one question, PATCH the deck for a rename or a class.
+- `DELETE /decks/:id` really removes a deck from the apps, progress included. Use it only when asked.
+- Look at `changes` in the answer of `POST /decks` to check what happened.
 
 ## Quizzes
 

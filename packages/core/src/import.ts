@@ -28,6 +28,11 @@ export interface ImportCard {
   back: string;
   /** The wrong answers the author wrote for this card (0 to 3). */
   wrong: string[];
+  /**
+   * The id the author gave the question (JSON decks only, optional). The
+   * server keys the question with it, so an edit keeps the progress.
+   */
+  id?: string;
 }
 
 /** How many cards of a deck are asked as a multiple choice question. */
@@ -150,6 +155,10 @@ function parseJsonDeck(text: string, fallbackName: string): ParsedDeck {
     if (parsed.card === undefined) {
       errors.push(parsed.error ?? `Question ${number}: it could not be read.`);
       return;
+    }
+
+    if (isRecord(entry) && typeof entry.id === 'string' && entry.id.trim() !== '') {
+      parsed.card.id = entry.id.trim();
     }
 
     const key = cardKey(parsed.card.front, parsed.card.back);

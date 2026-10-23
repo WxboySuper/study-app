@@ -46,7 +46,7 @@ export const LOCAL_DATABASE_NAME = 'study-app.db';
  * the migrations below, which run once, in a transaction, when the database
  * is opened.
  */
-export const LOCAL_SCHEMA_VERSION = 4;
+export const LOCAL_SCHEMA_VERSION = 5;
 
 /**
  * The schema of the local database.
@@ -101,7 +101,8 @@ CREATE TABLE IF NOT EXISTS local_cards (
   answer_index INTEGER,
   remote_id    TEXT,
   created_at   INTEGER NOT NULL,
-  updated_at   INTEGER NOT NULL
+  updated_at   INTEGER NOT NULL,
+  retired      INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS local_card_state (
@@ -179,6 +180,11 @@ async function migrateLocalDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
     }
     if (version < 4) {
       await migrateRemoteIds(db);
+    }
+    if (version < 5) {
+      // Migration 5: a question retired on the server stays (with its
+      // progress) but is hidden from play.
+      await addColumnIfMissing(db, 'local_cards', 'retired', 'INTEGER NOT NULL DEFAULT 0');
     }
     await db.execAsync(`PRAGMA user_version = ${LOCAL_SCHEMA_VERSION}`);
   });
@@ -380,7 +386,7 @@ async function openRawLocalStore(): Promise<LocalStore> {
 /** Reads every locally known card. */
 export async function listLocalCards(db: SQLite.SQLiteDatabase): Promise<StudyCard[]> {
   const rows = await db.getAllAsync<LocalCardRow>(
-    'SELECT id, set_id, topic_id, type, front, back, choices_json, answer_index FROM local_cards ORDER BY id ASC',
+    'SELECT id, set_id, topic_id, type, front, back, choices_json, answer_index FROM local_cards WHERE retired = 0 ORDER BY id ASC',
   );
 
   return rows.map((row) => ({
@@ -808,8 +814,8 @@ export async function applyLocalSyncPlan(
         if (question.created) {
           await db.runAsync(
             `INSERT INTO local_cards
-               (id, set_id, topic_id, type, front, back, choices_json, answer_index, remote_id, created_at, updated_at)
-             VALUES (?, ?, NULL, 'mc', ?, ?, ?, NULL, ?, ?, ?)`,
+               (id, set_id, topic_id, type, front, back, choices_json, answer_index, remote_id, created_at, updated_at, retired)
+             VALUES (?, ?, NULL, 'mc', ?, ?, ?, NULL, ?, ?, ?, ?)`,
             question.localId,
             deck.localId,
             question.question,
@@ -818,6 +824,7 @@ export async function applyLocalSyncPlan(
             question.remoteId,
             now,
             now,
+            question.retired ? 1 : 0,
           );
 
           const state = createInitialState(question.localId, new Date(now));
@@ -840,7 +847,7 @@ export async function applyLocalSyncPlan(
         } else {
           await db.runAsync(
             `UPDATE local_cards
-             SET set_id = ?, front = ?, back = ?, choices_json = ?, remote_id = ?, updated_at = ?
+             SET set_id = ?, front = ?, back = ?, choices_json = ?, remote_id = ?, updated_at = ?, retired = ?
              WHERE id = ?`,
             deck.localId,
             question.question,
@@ -848,6 +855,7 @@ export async function applyLocalSyncPlan(
             choices,
             question.remoteId,
             now,
+            question.retired ? 1 : 0,
             question.localId,
           );
         }

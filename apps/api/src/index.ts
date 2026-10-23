@@ -2,7 +2,20 @@ import { cors } from 'hono/cors';
 import { Hono, type Context } from 'hono';
 
 import { hasMuseToken } from './auth';
-import { deleteDeck, readDeck, readDecksSince, upsertDeck } from './decks';
+import {
+  addQuestion,
+  DeckError,
+  deleteDeck,
+  editQuestion,
+  getDeck,
+  listDecks,
+  patchDeck,
+  readDeck,
+  readDecksSince,
+  retireQuestion,
+  upsertDeck,
+  type QuestionBody,
+} from './decks';
 import {
   authDevice,
   claimPairing,
@@ -28,6 +41,9 @@ import type { Bindings } from './types';
  *
  * - `POST /api/decks` pushes a deck (the bearer token of the Worker).
  * - `DELETE /api/decks/:id` deletes a deck (the bearer token).
+ * - `GET /api/decks`, `GET|PATCH /api/decks/:id` and
+ *   `POST|PATCH|DELETE /api/decks/:id/questions[/:qid]` let Muse read and
+ *   edit the decks one piece at a time (docs/API.md "For Muse").
  * - `GET /api/sync` reads the decks that changed (public, read only).
  * - `GET /api/update` reads the latest release of the game (public).
  * - `GET /api/health` says that the Worker is alive (public).
@@ -63,7 +79,9 @@ app.get('/api/health', (c) => c.json({ ok: true as const }));
  *
  * The deck is saved with its id, or with the id of the deck that has the
  * same name (a deck that is pushed twice does not become two decks), and
- * its questions are replaced by the ones of the push.
+ * its questions are matched with the ones it already has (by `id`, then by
+ * text): they keep their id and the progress of the player. The questions
+ * the push leaves out are retired (hidden from play, history kept).
  */
 app.post('/api/decks', async (c) => {
   if (!isMuse(c)) {
@@ -87,14 +105,120 @@ app.post('/api/decks', async (c) => {
     return c.json({ error: 'invalid_deck', errors: ['The deck needs a name.'] }, 400);
   }
 
-  const result = await upsertDeck(dbOf(c), {
-    id: meta.id,
-    name,
-    class: meta.class,
-    cards: deck.cards,
-  });
+  try {
+    const result = await upsertDeck(dbOf(c), {
+      id: meta.id,
+      name,
+      class: meta.class,
+      cards: deck.cards,
+    });
 
-  return c.json(result.deck, result.created ? 201 : 200);
+    return c.json(
+      { ...result.deck, class: meta.class, changes: result.changes },
+      result.created ? 201 : 200,
+    );
+  } catch (error) {
+    return deckError(c, error);
+  }
+});
+
+/** Lists the decks with their ids (Muse). */
+app.get('/api/decks', async (c) => {
+  if (!isMuse(c)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  return c.json({ decks: await listDecks(dbOf(c)) });
+});
+
+/** One deck with its questions and their ids (Muse); `?retired=1` adds the retired ones. */
+app.get('/api/decks/:id', async (c) => {
+  if (!isMuse(c)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const deck = await getDeck(dbOf(c), c.req.param('id'), c.req.query('retired') === '1');
+  return deck === null ? c.json({ error: 'not_found' }, 404) : c.json(deck);
+});
+
+/** Renames a deck and/or moves it to a class (Muse): `{name?, class?}`. */
+app.patch('/api/decks/:id', async (c) => {
+  if (!isMuse(c)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const body = await readBody(c);
+  if (body === null) {
+    return c.json({ error: 'bad_request', detail: 'The body must be a JSON object.' }, 400);
+  }
+
+  const patch: { name?: string; class?: string | null } = {};
+  if ('name' in body) {
+    if (typeof body.name !== 'string') {
+      return c.json({ error: 'bad_request', detail: '"name" must be a string.' }, 400);
+    }
+    patch.name = body.name;
+  }
+  if ('class' in body) {
+    if (body.class !== null && typeof body.class !== 'string') {
+      return c.json({ error: 'bad_request', detail: '"class" must be a string or null.' }, 400);
+    }
+    patch.class = body.class;
+  }
+
+  try {
+    return c.json(await patchDeck(dbOf(c), c.req.param('id'), patch));
+  } catch (error) {
+    return deckError(c, error);
+  }
+});
+
+/** Adds one question at the end of a deck (Muse). */
+app.post('/api/decks/:id/questions', async (c) => {
+  if (!isMuse(c)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const body = await readBody(c);
+  if (body === null) {
+    return c.json({ error: 'bad_request', detail: 'The body must be a JSON object.' }, 400);
+  }
+
+  try {
+    const result = await addQuestion(dbOf(c), c.req.param('id'), body);
+    return c.json({ ...result.question, restored: result.restored }, result.restored ? 200 : 201);
+  } catch (error) {
+    return deckError(c, error);
+  }
+});
+
+/** Edits one question; its id and the progress of the player stay (Muse). */
+app.patch('/api/decks/:id/questions/:qid', async (c) => {
+  if (!isMuse(c)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const body = await readBody(c);
+  if (body === null) {
+    return c.json({ error: 'bad_request', detail: 'The body must be a JSON object.' }, 400);
+  }
+
+  try {
+    return c.json(await editQuestion(dbOf(c), c.req.param('id'), c.req.param('qid'), body));
+  } catch (error) {
+    return deckError(c, error);
+  }
+});
+
+/** Retires one question: hidden from play, history kept (Muse). */
+app.delete('/api/decks/:id/questions/:qid', async (c) => {
+  if (!isMuse(c)) {
+    return c.json({ error: 'unauthorized' }, 401);
+  }
+
+  const id = c.req.param('qid');
+  const retired = await retireQuestion(dbOf(c), c.req.param('id'), id);
+  return retired ? c.json({ ok: true as const, id, retired: true }) : c.json({ error: 'not_found' }, 404);
 });
 
 /**
@@ -126,7 +250,9 @@ app.delete('/api/decks/:id', async (c) => {
  */
 app.get('/api/sync', async (c) => {
   const since = readSince(c.req.query('since'));
-  const decks = await readDecksSince(dbOf(c), since);
+  // The apps from v0.1.17 on ask for the retired questions too (`retired=1`)
+  // and hide them; an older app is only sent the questions in play.
+  const decks = await readDecksSince(dbOf(c), since, c.req.query('retired') === '1');
 
   return c.json({ now: Date.now(), decks });
 });
@@ -286,6 +412,26 @@ function isMuse(c: Context<{ Bindings: Bindings }>): boolean {
 }
 
 /** The database of the request. */
+/** Reads a JSON object body (`null` when the body is not one). */
+async function readBody(c: Context<{ Bindings: Bindings }>): Promise<QuestionBody | null> {
+  try {
+    const parsed: unknown = await c.req.json();
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as QuestionBody)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Answers a {@link DeckError} (anything else is rethrown). */
+function deckError(c: Context<{ Bindings: Bindings }>, error: unknown): Response {
+  if (error instanceof DeckError) {
+    return c.json({ error: error.code, errors: [error.message] }, error.status);
+  }
+  throw error;
+}
+
 function dbOf(c: Context<{ Bindings: Bindings }>): D1Database {
   return c.env?.DB as D1Database;
 }

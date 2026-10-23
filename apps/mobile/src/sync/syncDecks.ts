@@ -140,7 +140,9 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
 
     let payload: unknown;
     try {
-      const response = await doFetch(`${SYNC_URL}?since=${since}`, {
+      // `retired=1`: the questions retired on the server come too, so the app
+      // hides them and keeps their progress instead of deleting them.
+      const response = await doFetch(`${SYNC_URL}?since=${since}&retired=1`, {
         signal: controller.signal,
         headers: { Accept: 'application/json' },
       });
