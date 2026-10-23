@@ -145,4 +145,17 @@ describe('the preview', () => {
     expect(parseMathAnswer('')).toBeNull();
     expect(parseMathAnswer('x**2')?.toString()).toBe('x ^ 2');
   });
+
+  it('asks the steps alone when the last step is the final answer', () => {
+    const parts = mathParts({
+      kind: 'expression',
+      answers: [],
+      steps: [
+        { prompt: 'u', answers: ['x^2'], kind: 'expression' },
+        { prompt: 'Integrate', answers: ['sin(x^2) + C'], kind: 'expression' },
+      ],
+    });
+    expect(parts).toHaveLength(2);
+    expect(parts[1]).toMatchObject({ prompt: 'Integrate', constant: true });
+  });
 });

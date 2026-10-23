@@ -16,7 +16,7 @@
  */
 
 import { MAX_WRONG_ANSWERS } from './choices';
-import { readMathSpec, type MathSpec } from './mathQuestion';
+import { mathFinalAnswers, readMathSpec, type MathSpec } from './mathQuestion';
 
 /** The formats an imported deck can have. */
 export type DeckFormat = 'json' | 'tsv' | 'double-colon' | 'pipe';
@@ -293,7 +293,7 @@ function parseMathEntry(
   if (typeof math === 'string') {
     return { error: `Question ${number}: ${math}` };
   }
-  return { card: { front: question, back: math.answers[0] as string, wrong: [], math } };
+  return { card: { front: question, back: mathFinalAnswers(math)[0] as string, wrong: [], math } };
 }
 
 /**

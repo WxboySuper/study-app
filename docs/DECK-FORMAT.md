@@ -262,9 +262,9 @@ not by picking a choice. It only exists in the JSON format: add
 | ----- | ---------- |
 | `type` | `"math"` (required). |
 | `question` | The prompt, with KaTeX between `$...$` as everywhere else. |
-| `answer` or `answers` | The accepted answer, or a list of them (max 8). The first one is the one shown after a miss. Numbers are fine (`"answer": 4`). |
+| `answer` or `answers` | The accepted answer, or a list of them (max 8). The first one is the one shown after a miss. Numbers are fine (`"answer": 4`). Optional when the question has `steps`: without it, the last step is the final answer. |
 | `setup` | `true` for a **setup-only** question: the answer is the setup itself (`int(x^2, x, 0, 2)`), not its value. |
-| `steps` | Optional, max 8. Each step is `{ "prompt", "answer"/"answers", "setup"? }`. The steps are asked in order, then the final answer. |
+| `steps` | Optional, max 8. Each step is `{ "prompt", "answer"/"answers", "setup"? }`. The steps are asked in order, then the final answer. Leave the top-level `answer` out and the last step is the final answer (no extra prompt); either way the question is right only when every step is right. |
 | `constant` | Optional: `true` makes the answer `+ C` tolerant. It is on by itself when an answer ends in `+ C`. |
 
 **How answers are graded.** Any **equivalent** answer is right: `3x^2`,
