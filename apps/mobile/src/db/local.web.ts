@@ -819,10 +819,11 @@ async function importDeckOfDemo(
         id: cardId,
         setId,
         topicId: null,
-        type: 'mc',
+        type: card.math === undefined ? 'mc' : 'math',
         front: card.front,
         back: card.back,
         wrong: [...card.wrong],
+        ...(card.math === undefined ? {} : { math: card.math }),
       },
     ];
     current.cardStates.set(cardId, createInitialState(cardId, new Date(now)));
@@ -907,10 +908,11 @@ async function applySyncPlanOfDemo(plan: SyncPlan): Promise<void> {
             id: question.localId,
             setId: deck.localId,
             topicId: null,
-            type: 'mc',
+            type: question.math === undefined ? 'mc' : 'math',
             front: question.question,
             back: question.correct,
             wrong: [...question.wrong],
+            ...(question.math === undefined ? {} : { math: question.math }),
           },
         ];
         current.cardStates.set(
@@ -921,11 +923,13 @@ async function applySyncPlanOfDemo(plan: SyncPlan): Promise<void> {
         current.cards = current.cards.map((card) =>
           card.id === question.localId
             ? {
-                ...card,
+                ...withoutMath(card),
                 setId: deck.localId,
+                type: question.math === undefined ? 'mc' : 'math',
                 front: question.question,
                 back: question.correct,
                 wrong: [...question.wrong],
+                ...(question.math === undefined ? {} : { math: question.math }),
               }
             : card,
         );
@@ -1078,4 +1082,11 @@ async function spinOfDemo(
   current.wallet = applySpinReward(current.wallet, reward);
 
   return { ok: true, reward, wallet: current.wallet };
+}
+
+/** A card without its math part (a synced edit sets it again when it has one). */
+function withoutMath(card: StudyCard): StudyCard {
+  const { math: _math, ...rest } = card;
+  void _math;
+  return rest;
 }

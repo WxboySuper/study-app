@@ -73,7 +73,7 @@ export function PreviewSheet({
   onConfirm,
   busy,
 }: PreviewSheetProps) {
-  const { total, multipleChoice, selfGrade } = deck.counts;
+  const { total, multipleChoice, selfGrade, math } = deck.counts;
   const shown = deck.cards.slice(0, PREVIEW_CARDS);
   const title = name.trim() === '' ? deck.name : name.trim();
   const [newClassOpen, setNewClassOpen] = useState(false);
@@ -95,7 +95,7 @@ export function PreviewSheet({
 
           <Text style={styles.counts}>
             {total} question{total === 1 ? '' : 's'} · {multipleChoice} multiple choice ·{' '}
-            {selfGrade} self-graded
+            {selfGrade} self-graded{math > 0 ? ` · ${math} math` : ''}
           </Text>
 
           {selfGrade > 0 ? (

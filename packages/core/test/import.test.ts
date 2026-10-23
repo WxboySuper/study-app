@@ -80,7 +80,7 @@ describe('parseDeck', () => {
   it('counts the multiple choice cards and the self-graded ones', () => {
     const deck = parseDeck('a :: b :: c\nd :: e', 'Fallback');
 
-    expect(deck.counts).toEqual({ total: 2, multipleChoice: 1, selfGrade: 1 });
+    expect(deck.counts).toEqual({ total: 2, multipleChoice: 1, selfGrade: 1, math: 0 });
   });
 
   it('reads a JSON deck with the questions of the native shape', () => {
@@ -101,7 +101,7 @@ describe('parseDeck', () => {
       { front: 'Capital of France', back: 'Paris', wrong: ['Marseille', 'Lyon'] },
       { front: 'Capital of Japan', back: 'Tokyo', wrong: [] },
     ]);
-    expect(deck.counts).toEqual({ total: 2, multipleChoice: 1, selfGrade: 1 });
+    expect(deck.counts).toEqual({ total: 2, multipleChoice: 1, selfGrade: 1, math: 0 });
     expect(deck.errors).toEqual([]);
   });
 

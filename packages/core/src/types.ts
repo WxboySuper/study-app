@@ -1,5 +1,7 @@
 import type { Card, Grade, ReviewLog, State } from 'ts-fsrs';
 
+import type { MathSpec } from './mathQuestion';
+
 /**
  * A card as stored by the app (server side in D1, client side in SQLite).
  *
@@ -28,6 +30,8 @@ export interface StudyCard {
   choices?: string[];
   /** Index of the correct choice in `choices`. Built at display time. */
   answerIndex?: number;
+  /** The math part of a math question (`type` is `'math'`). */
+  math?: MathSpec;
 }
 
 /**

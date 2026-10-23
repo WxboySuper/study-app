@@ -231,6 +231,69 @@ An example (meteorology):
 How does the temperature of a fluid change over time? :: $\frac{dT}{dt} = \frac{\partial T}{\partial t} + \vec{V}\cdot\nabla T$ :: $\frac{dT}{dt} = \frac{\partial T}{\partial t}$ :: $\frac{dT}{dt} = \vec{V}\cdot\nabla T$ :: $\frac{dT}{dt} = \frac{\partial T}{\partial t} + \vec{V}\cdot\nabla^2 T$
 ```
 
+## Math questions (typed answers)
+
+A **math question** is answered by typing on the math keyboard of the game,
+not by picking a choice. It only exists in the JSON format: add
+`"type": "math"` to a question.
+
+```json
+{ "name": "Calculus", "questions": [
+  { "id": "d-power", "type": "math", "question": "$\\frac{d}{dx}\\left(x^3\\right)$", "answer": "3x^2" },
+  { "id": "i-2x", "type": "math", "question": "$\\int 2x\\,dx$", "answer": "x^2 + C" },
+  { "id": "s-area", "type": "math", "setup": true,
+    "question": "Set up the area under $y = x^2$ from $x=0$ to $x=2$.",
+    "answer": "int(x^2, x, 0, 2)" },
+  { "id": "m-between", "type": "math",
+    "question": "Area between $y = 2x$ and $y = x^2$.",
+    "answer": "4/3",
+    "steps": [
+      { "prompt": "Where do the curves meet? (the right one)", "answer": "2" },
+      { "prompt": "Set up the area", "setup": true, "answer": "int(2x - x^2, x, 0, 2)" },
+      { "prompt": "An antiderivative of $2x - x^2$", "answer": "x^2 - x^3/3 + C" }
+    ] }
+] }
+```
+
+| Field | What it is |
+| ----- | ---------- |
+| `type` | `"math"` (required). |
+| `question` | The prompt, with KaTeX between `$...$` as everywhere else. |
+| `answer` or `answers` | The accepted answer, or a list of them (max 8). The first one is the one shown after a miss. Numbers are fine (`"answer": 4`). |
+| `setup` | `true` for a **setup-only** question: the answer is the setup itself (`int(x^2, x, 0, 2)`), not its value. |
+| `steps` | Optional, max 8. Each step is `{ "prompt", "answer"/"answers", "setup"? }`. The steps are asked in order, then the final answer. |
+| `constant` | Optional: `true` makes the answer `+ C` tolerant. It is on by itself when an answer ends in `+ C`. |
+
+**How answers are graded.** Any **equivalent** answer is right: `3x^2`,
+`3*x^2` and `x^2*3` are the same answer. The grader simplifies both sides
+and, when that is not enough, compares them at random points. An
+antiderivative (`+ C`) is right with or without `+ C`, and with any other
+constant. A **setup** answer is compared by its structure: the integral (or
+the derivative), the variable, the bounds and an equivalent integrand
+(`int(x*x, x, 0, 2)` is right for `int(x^2, x, 0, 2)`; `int(x^2, x, 0, 3)` is
+not). A question with steps is right only when every step and the final
+answer are right; the speed is the time of the whole question.
+
+**The answer syntax** (what the keyboard types, and what `answer` holds):
+
+| Write | For |
+| ----- | --- |
+| `3x^2`, `3*x^2`, `x^(1/2)` | products (the `*` is optional) and powers |
+| `(x+1)/(x-1)` | fractions |
+| `sqrt(x)`, `abs(x)` | roots, absolute values |
+| `pi`, `e` | the constants |
+| `sin(x)` `cos` `tan` `sec` `csc` `cot` `asin` `acos` `atan` | trig |
+| `ln(x)`, `log(x)` (base 10), `log(x, 2)`, `exp(x)` | logs |
+| `int(f, x)` | the indefinite integral of `f` in `x` |
+| `int(f, x, a, b)` | the definite integral of `f` from `a` to `b` |
+| `diff(f, x)` | the derivative of `f` in `x` |
+| `pdiff(f, x)` | the partial derivative of `f` in `x` |
+| `+ C` | the constant of an antiderivative (optional) |
+
+The variables are `x`, `y` and `t` (any other single letter works too).
+A math question keeps its id and its progress like any other question.
+Older versions of the app show a math question as a self-graded one.
+
 ## The import preview
 
 Importing a deck is one tap:
@@ -244,7 +307,7 @@ Importing a deck is one tap:
 The preview sheet shows:
 
 ```
-N questions · M multiple choice · K self-graded
+N questions · M multiple choice · K self-graded · J math
 ```
 
 - The **name of the deck**: the name of the JSON deck, else the name of the
@@ -304,6 +367,7 @@ A question in the JSON format may carry an optional `id` (letters, digits, `_ . 
 - Without an `id`, a question is matched by its text (case and spacing ignored). A question with the same text keeps its id and progress even when its answers change.
 - A question that is no longer in the deck is **retired**: it leaves play, but its progress and quiz history stay, and sending it again brings it back.
 - See docs/API.md, "Decks (Muse)", for editing one question at a time.
+- Math questions (`"type": "math"`) follow the same rules: see "Math questions (typed answers)" above.
 
 ## What the app does with the deck
 

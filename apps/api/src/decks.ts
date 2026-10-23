@@ -1,4 +1,10 @@
-import { parseDeck, type ImportCard } from '@study-app/core';
+import {
+  mathSpecToEntry,
+  parseDeck,
+  parseStoredMathSpec,
+  type ImportCard,
+  type MathSpec,
+} from '@study-app/core';
 
 /**
  * The decks of the game.
@@ -29,6 +35,10 @@ export interface DeckQuestion {
   selfGraded: boolean;
   /** `true` when the question is retired (only sent when asked for). */
   retired?: boolean;
+  /** `math` for a math question (only sent for them; the others are `mc`). */
+  type?: 'math';
+  /** The math part of a math question (only sent for them). */
+  math?: MathSpec;
 }
 
 /** The deck as the API answers it (the answer of a `POST /api/decks`). */
@@ -88,6 +98,8 @@ interface QuestionRow {
   correct: string;
   wrong_json: string;
   retired: number;
+  type: string | null;
+  math_json: string | null;
 }
 
 /**
@@ -239,14 +251,9 @@ export async function upsertDeck(
     assigned[index] = { id: card.id ?? makeId('q'), isNew: true };
   }
 
-  const questions: DeckQuestion[] = input.cards.map((card, index) => ({
-    id: (assigned[index] as { id: string }).id,
-    question: card.front,
-    correct: card.back,
-    wrong: [...card.wrong],
-    position: index,
-    selfGraded: card.wrong.length === 0,
-  }));
+  const questions: DeckQuestion[] = input.cards.map((card, index) =>
+    toDeckQuestion(card, (assigned[index] as { id: string }).id, index),
+  );
 
   const statements: D1PreparedStatement[] = [
     db
@@ -445,14 +452,7 @@ export async function addQuestion(
     .bind(deckId)
     .first<{ position: number | null }>();
 
-  const question: DeckQuestion = {
-    id: target?.id ?? card.id ?? makeId('q'),
-    question: card.front,
-    correct: card.back,
-    wrong: [...card.wrong],
-    position: (max?.position ?? -1) + 1,
-    selfGraded: card.wrong.length === 0,
-  };
+  const question = toDeckQuestion(card, target?.id ?? card.id ?? makeId('q'), (max?.position ?? -1) + 1);
 
   await db.batch([
     target === undefined ? insertQuestion(db, deckId, question, now) : updateQuestion(db, question, now),
@@ -481,11 +481,26 @@ export async function editQuestion(
     throw new DeckError(404, 'not_found', 'The question is not in this deck.');
   }
 
-  const merged: QuestionBody = {
-    question: current.question,
-    ...(Array.isArray(body.answers) ? {} : { correct: current.correct, wrong: current.wrong }),
-    ...body,
-  };
+  // A math question stays a math question (with its answers) unless the
+  // body says otherwise; a body with `"type": "mc"` turns it back.
+  const keepsMath = current.math !== undefined && body.type !== 'mc';
+  const merged: QuestionBody = keepsMath
+    ? {
+        question: current.question,
+        ...mathSpecToEntry(current.math as MathSpec),
+        ...(body.answer !== undefined ? { answers: undefined } : {}),
+        ...body,
+      }
+    : {
+        question: current.question,
+        ...(Array.isArray(body.answers) || body.type === 'math'
+          ? {}
+          : { correct: current.correct, wrong: current.wrong }),
+        ...body,
+      };
+  if (merged.type === 'mc') {
+    delete merged.type;
+  }
   delete merged.id;
   const card = readOneQuestion(merged);
 
@@ -498,14 +513,7 @@ export async function editQuestion(
       )?.position ?? -1) + 1
     : current.position;
 
-  const question: DeckQuestion = {
-    id: questionId,
-    question: card.front,
-    correct: card.back,
-    wrong: [...card.wrong],
-    position,
-    selfGraded: card.wrong.length === 0,
-  };
+  const question = toDeckQuestion(card, questionId, position);
 
   await db.batch([updateQuestion(db, question, now), touchDeck(db, deckId, now)]);
 
@@ -551,6 +559,19 @@ function readOneQuestion(body: QuestionBody): ImportCard {
   return card;
 }
 
+/** The question of a deck that a parsed card makes. */
+function toDeckQuestion(card: ImportCard, id: string, position: number): DeckQuestion {
+  return {
+    id,
+    question: card.front,
+    correct: card.back,
+    wrong: [...card.wrong],
+    position,
+    selfGraded: card.math === undefined && card.wrong.length === 0,
+    ...(card.math === undefined ? {} : { type: 'math' as const, math: card.math }),
+  };
+}
+
 /** The statement that writes a new question. */
 function insertQuestion(
   db: D1Database,
@@ -560,8 +581,8 @@ function insertQuestion(
 ): D1PreparedStatement {
   return db
     .prepare(
-      `INSERT INTO questions (id, deck_id, position, question, correct, wrong_json, updated_at, retired)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+      `INSERT INTO questions (id, deck_id, position, question, correct, wrong_json, updated_at, retired, type, math_json)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     )
     .bind(
       question.id,
@@ -571,6 +592,8 @@ function insertQuestion(
       question.correct,
       JSON.stringify(question.wrong),
       now,
+      question.type ?? 'mc',
+      question.math === undefined ? null : JSON.stringify(question.math),
     );
 }
 
@@ -579,7 +602,8 @@ function updateQuestion(db: D1Database, question: DeckQuestion, now: number): D1
   return db
     .prepare(
       `UPDATE questions
-       SET position = ?, question = ?, correct = ?, wrong_json = ?, updated_at = ?, retired = 0
+       SET position = ?, question = ?, correct = ?, wrong_json = ?, updated_at = ?, retired = 0,
+           type = ?, math_json = ?
        WHERE id = ?`,
     )
     .bind(
@@ -588,6 +612,8 @@ function updateQuestion(db: D1Database, question: DeckQuestion, now: number): D1
       question.correct,
       JSON.stringify(question.wrong),
       now,
+      question.type ?? 'mc',
+      question.math === undefined ? null : JSON.stringify(question.math),
       question.id,
     );
 }
@@ -619,7 +645,7 @@ async function readQuestions(
 ): Promise<DeckQuestion[]> {
   const rows = await db
     .prepare(
-      `SELECT id, position, question, correct, wrong_json, retired
+      `SELECT id, position, question, correct, wrong_json, retired, type, math_json
        FROM questions
        WHERE deck_id = ?${includeRetired ? '' : ' AND retired = 0'}
        ORDER BY retired ASC, position ASC, id ASC`,
@@ -708,6 +734,7 @@ async function findDeckIdByName(db: D1Database, name: string): Promise<string | 
 function toQuestions(rows: readonly QuestionRow[]): DeckQuestion[] {
   return rows.map((row) => {
     const wrong = readWrongAnswers(row.wrong_json);
+    const math = row.type === 'math' ? parseStoredMathSpec(row.math_json) : undefined;
 
     return {
       id: row.id,
@@ -715,8 +742,9 @@ function toQuestions(rows: readonly QuestionRow[]): DeckQuestion[] {
       correct: row.correct,
       wrong,
       position: row.position,
-      selfGraded: wrong.length === 0,
+      selfGraded: math === undefined && wrong.length === 0,
       ...(row.retired === 1 ? { retired: true } : {}),
+      ...(math === undefined ? {} : { type: 'math' as const, math }),
     };
   });
 }

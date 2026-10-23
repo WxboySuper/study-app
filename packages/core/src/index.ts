@@ -464,3 +464,4 @@ export {
   needsMasteryReset,
 } from './progressSync';
 export * from './reviewHistory';
+export * from './mathQuestion';

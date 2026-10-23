@@ -5,6 +5,7 @@ import {
   applyWalletChanges,
   createInitialState,
   localDayKey,
+  parseStoredMathSpec,
   type CardState,
   type ImportCard,
   type LocalSyncState,
@@ -389,18 +390,35 @@ export async function listLocalCards(db: SQLite.SQLiteDatabase): Promise<StudyCa
     'SELECT id, set_id, topic_id, type, front, back, choices_json, answer_index FROM local_cards WHERE retired = 0 ORDER BY id ASC',
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    setId: row.set_id,
-    topicId: row.topic_id,
-    type: row.type,
-    front: row.front,
-    back: row.back,
-    // `choices_json` holds the wrong answers of the card (the options
-    // themselves are built when the card is shown).
-    wrong: readWrongAnswers(row.choices_json),
-    answerIndex: row.answer_index ?? undefined,
-  }));
+  return rows.map((row) => {
+    // A math question keeps its spec (`{ math }`) in `choices_json`: an
+    // older app reads it as a self-graded card.
+    const math = row.type === 'math' ? parseStoredMathSpec(row.choices_json) : undefined;
+    return {
+      id: row.id,
+      setId: row.set_id,
+      topicId: row.topic_id,
+      type: row.type,
+      front: row.front,
+      back: row.back,
+      // `choices_json` holds the wrong answers of the card (the options
+      // themselves are built when the card is shown).
+      wrong: math === undefined ? readWrongAnswers(row.choices_json) : [],
+      answerIndex: row.answer_index ?? undefined,
+      ...(math === undefined ? {} : { math }),
+    };
+  });
+}
+
+/**
+ * What `choices_json` holds: the wrong answers of a card, or `{ math }` for
+ * a math question (`null` for a self-graded card).
+ */
+function storedChoices(wrong: readonly string[], math: StudyCard['math']): string | null {
+  if (math !== undefined) {
+    return JSON.stringify({ math });
+  }
+  return wrong.length > 0 ? JSON.stringify(wrong) : null;
 }
 
 /**
@@ -639,10 +657,10 @@ export async function importLocalDeck(
         cardId,
         setId,
         null,
-        'mc',
+        card.math === undefined ? 'mc' : 'math',
         card.front,
         card.back,
-        card.wrong.length > 0 ? JSON.stringify(card.wrong) : null,
+        storedChoices(card.wrong, card.math),
         null,
         now,
         now,
@@ -809,15 +827,17 @@ export async function applyLocalSyncPlan(
       }
 
       for (const question of deck.questions) {
-        const choices = question.wrong.length > 0 ? JSON.stringify(question.wrong) : null;
+        const choices = storedChoices(question.wrong, question.math);
+        const type = question.math === undefined ? 'mc' : 'math';
 
         if (question.created) {
           await db.runAsync(
             `INSERT INTO local_cards
                (id, set_id, topic_id, type, front, back, choices_json, answer_index, remote_id, created_at, updated_at, retired)
-             VALUES (?, ?, NULL, 'mc', ?, ?, ?, NULL, ?, ?, ?, ?)`,
+             VALUES (?, ?, NULL, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
             question.localId,
             deck.localId,
+            type,
             question.question,
             question.correct,
             choices,
@@ -847,9 +867,10 @@ export async function applyLocalSyncPlan(
         } else {
           await db.runAsync(
             `UPDATE local_cards
-             SET set_id = ?, front = ?, back = ?, choices_json = ?, remote_id = ?, updated_at = ?, retired = ?
+             SET set_id = ?, type = ?, front = ?, back = ?, choices_json = ?, remote_id = ?, updated_at = ?, retired = ?
              WHERE id = ?`,
             deck.localId,
+            type,
             question.question,
             question.correct,
             choices,
@@ -956,7 +977,7 @@ export async function upsertLocalCard(
     card.back,
     // The wrong answers of the card: the options are built when the card is
     // shown, they are never stored.
-    card.wrong && card.wrong.length > 0 ? JSON.stringify(card.wrong) : null,
+    storedChoices(card.wrong ?? [], card.math),
     card.answerIndex ?? null,
     now,
     now,
