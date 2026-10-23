@@ -1,3 +1,4 @@
+import { parseTrack } from '@study-app/core';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -45,6 +46,7 @@ export default function FishingRoute() {
     title?: string;
     demo?: string;
     mastery?: string;
+    track?: string;
   }>();
   const [session, setSession] = useState(0);
 
@@ -54,6 +56,8 @@ export default function FishingRoute() {
 
   // The mastery mode of the session (the home screen remembers it).
   const mastery = params.mastery === '1' || params.mastery === 'true';
+  // Multiple choice or math: a session never mixes the two.
+  const track = parseTrack(params.track);
 
   const scope: ScopeChoice = (() => {
     if (params.kind === 'set' && typeof params.id === 'string') {
@@ -72,9 +76,10 @@ export default function FishingRoute() {
   return (
     <View style={styles.container}>
       <FishingScreen
-        key={`${session}-${mastery ? 'm' : 'n'}`}
+        key={`${session}-${mastery ? 'm' : 'n'}-${track}`}
         scope={scope}
         mastery={mastery}
+        track={track}
         demo={demo}
         onHome={() => {
           router.replace('/');

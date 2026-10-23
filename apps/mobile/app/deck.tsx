@@ -60,7 +60,9 @@ const NEW_CAP = 20;
 export default function DeckDetailRoute() {
   const router = useRouter();
   const { mastery } = useSettings();
-  const params = useLocalSearchParams<{ id?: string; filter?: string }>();
+  const params = useLocalSearchParams<{ id?: string; filter?: string; track?: string }>();
+  // The section the deck was opened from (multiple choice or math).
+  const track = params.track === 'math' ? 'math' : 'mc';
   const setId = typeof params.id === 'string' ? params.id : '';
   const [filter, setFilter] = useState<QuestionFilter>(parseQuestionFilter(params.filter));
   const [query, setQuery] = useState('');
@@ -114,7 +116,7 @@ export default function DeckDetailRoute() {
     play('tap');
     router.push({
       pathname: '/fishing',
-      params: { kind: 'set', id: setId, title, mastery: mastery ? '1' : '0' },
+      params: { kind: 'set', id: setId, title, mastery: mastery ? '1' : '0', track },
     });
   };
 

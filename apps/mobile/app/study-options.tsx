@@ -1,6 +1,8 @@
 import {
-  BUILT_IN_PRESETS,
   formatSteps,
+  presetsOfTrack,
+  trackOf,
+  type QuestionTrack,
   isHidden,
   localDayKey,
   presetForDeck,
@@ -39,18 +41,20 @@ const MAX_ROWS = 60;
 function nextPresetId(
   current: string | undefined,
   allowInherit: boolean,
+  track: QuestionTrack = "mc",
 ): string | null {
+  const presets = presetsOfTrack(track);
   const ids: (string | null)[] = [
     ...(allowInherit ? [null] : []),
-    ...BUILT_IN_PRESETS.map((p) => p.id),
+    ...presets.map((p) => p.id),
   ];
-  const index = ids.indexOf(current ?? (allowInherit ? null : "default"));
+  const index = ids.indexOf(current ?? (allowInherit ? null : presets[0]!.id));
   return ids[(index + 1) % ids.length] ?? null;
 }
 
-function presetSummary(id: string | undefined): string {
-  const preset =
-    BUILT_IN_PRESETS.find((p) => p.id === id) ?? BUILT_IN_PRESETS[0]!;
+function presetSummary(id: string | undefined, track: QuestionTrack = "mc"): string {
+  const presets = presetsOfTrack(track);
+  const preset = presets.find((p) => p.id === id) ?? presets[0]!;
   return `${preset.name} · ${preset.newPerDay} new / ${preset.reviewsPerDay} reviews a day · steps ${formatSteps(preset.learnStepsMinutes)}`;
 }
 
@@ -122,6 +126,14 @@ export default function StudyOptionsRoute() {
       .slice(0, MAX_ROWS);
   }, [cards, hiddenOnly, options, query, today]);
 
+  // The decks that hold math questions (the Math section has its own presets).
+  const mathSets = useMemo(() => {
+    const ids = new Set(
+      cards.filter((card) => trackOf(card) === "math").map((card) => card.setId),
+    );
+    return sets.filter((set) => ids.has(set.id));
+  }, [cards, sets]);
+
   const tomorrow = localDayKey(new Date(Date.now() + 86_400_000));
 
   return (
@@ -187,6 +199,44 @@ export default function StudyOptionsRoute() {
                   </GlassCard>
                 );
               })}
+
+              {mathSets.length === 0 ? null : (
+                <>
+                  <Text style={styles.section}>MATH PRESETS</Text>
+                  <Text style={styles.muted}>
+                    Math questions have their own daily limits, apart from
+                    multiple choice. Answer time counts gently.
+                  </Text>
+                  {mathSets.map((set) => {
+                    const own = options.mathDeckPresets[set.id];
+                    const effective = presetForDeck(options, set.id, set.classId, "math");
+                    return (
+                      <GlassCard key={set.id} style={styles.card} elevated={false}>
+                        <Text style={styles.title}>{set.title}</Text>
+                        <Chip
+                          testID={`preset-math-deck-${set.id}`}
+                          label={
+                            own === undefined
+                              ? `Uses default: ${presetSummary(effective.id, "math")}`
+                              : presetSummary(own, "math")
+                          }
+                          active={own !== undefined}
+                          onPress={() =>
+                            update(
+                              setPreset(
+                                options,
+                                { deckId: set.id },
+                                nextPresetId(own, true, "math"),
+                                "math",
+                              ),
+                            )
+                          }
+                        />
+                      </GlassCard>
+                    );
+                  })}
+                </>
+              )}
 
               <Text style={styles.section}>SUSPEND / BURY</Text>
               <TextInput
