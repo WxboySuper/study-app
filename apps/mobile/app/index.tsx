@@ -4,12 +4,14 @@ import {
   canSpin,
   countScope,
   filterByScope,
+  filterByTrack,
   findCritter,
   isPackAvailable,
   localDayKey,
   masteryForecast,
   parseDailyDone,
   type DailyDone,
+  type QuestionTrack,
   type StudyOptions,
   PACKS,
   type CardState,
@@ -60,7 +62,7 @@ import {
   type DeckCard,
 } from '@/study/decks';
 import { DeckPicker } from '@/study/DeckPicker';
-import { DAILY_DONE_KEY, readStudyOptions } from '@/study/studyOptions';
+import { DAILY_DONE_KEY, DAILY_DONE_MATH_KEY, readStudyOptions } from '@/study/studyOptions';
 import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
 import { syncDecks } from '@/sync/syncDecks';
 import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
@@ -123,7 +125,14 @@ export default function HomeScreen() {
   const [cardStates, setCardStates] = useState<Map<string, CardState>>(new Map());
   const [loading, setLoading] = useState(true);
   /** The study options and today's done counts (Mastery's daily queue). */
-  const [studyDay, setStudyDay] = useState<{ options: StudyOptions; done: DailyDone } | null>(null);
+  const [studyDay, setStudyDay] = useState<{
+    options: StudyOptions;
+    done: DailyDone;
+    mathDone: DailyDone;
+  } | null>(null);
+  // The section of the home screen: multiple choice (the core of the game)
+  // or Math. Each section has its own decks, queue and daily limits.
+  const [track, setTrack] = useState<QuestionTrack>('mc');
   const [balance, setBalance] = useState<number | null>(null);
   const [packTickets, setPackTickets] = useState(0);
   const [critterCount, setCritterCount] = useState(0);
@@ -188,9 +197,11 @@ export default function HomeScreen() {
       const localSets = await store.listSets();
       const localClasses = await store.listClasses();
       const options = await readStudyOptions(store);
-      const done = parseDailyDone(await store.readKv(DAILY_DONE_KEY), localDayKey(new Date()));
+      const day = localDayKey(new Date());
+      const done = parseDailyDone(await store.readKv(DAILY_DONE_KEY), day);
+      const mathDone = parseDailyDone(await store.readKv(DAILY_DONE_MATH_KEY), day);
 
-      setStudyDay({ options, done });
+      setStudyDay({ options, done, mathDone });
       setCards(localCards);
       setCardStates(localStates);
       setSets(localSets);
@@ -313,18 +324,34 @@ export default function HomeScreen() {
     void dismissUpdate(version);
   }, []);
 
+  // The questions of the section (multiple choice or math), and the decks
+  // that hold some. A mixed deck shows up in both sections, each with its
+  // own questions; an empty deck stays in the multiple-choice section.
+  const allCards = cards;
+  const trackCards = useMemo(() => filterByTrack(allCards, track), [allCards, track]);
+  const trackSets = useMemo(() => {
+    const withTrack = new Set(trackCards.map((card) => card.setId));
+    const withAny = new Set(allCards.map((card) => card.setId));
+    return sets.filter(
+      (set) => withTrack.has(set.id) || (track === 'mc' && !withAny.has(set.id)),
+    );
+  }, [allCards, sets, track, trackCards]);
+  const mathCount = useMemo(() => filterByTrack(allCards, 'math').length, [allCards]);
+  // Today's counts of the section (math has its own daily queue).
+  const trackDone = studyDay === null ? null : track === 'math' ? studyDay.mathDone : studyDay.done;
+
   // The chips of the class row, with the number of questions and the number
   // of due questions of every class.
   const chips = useMemo(
-    () => buildClassChips(classes, sets, cards, cardStates, Date.now()),
-    [cardStates, cards, classes, sets],
+    () => buildClassChips(classes, trackSets, trackCards, cardStates, Date.now()),
+    [cardStates, trackCards, classes, trackSets],
   );
 
   // The decks of the picker, with the number of questions and the number of
   // due questions of every one of them.
   const decks = useMemo(() => {
-    const list = buildDecks(sets, classes, cards, cardStates, Date.now(), filter);
-    if (!mastery || studyDay === null) {
+    const list = buildDecks(trackSets, classes, trackCards, cardStates, Date.now(), filter);
+    if (!mastery || studyDay === null || trackDone === null) {
       return list;
     }
     // Mastery: every deck shows today's queue (New / Learn / Due), exactly
@@ -334,17 +361,22 @@ export default function HomeScreen() {
     return list.map((deck) => ({
       ...deck,
       today: masteryForecast(
-        cards
+        trackCards
           .filter((card) => card.setId === deck.id)
           .map((card) => ({ id: card.id, deckId: card.setId, state: cardStates.get(card.id) })),
-        { options: studyDay.options, done: studyDay.done, now, classOf: (id) => classOf.get(id) },
+        { options: studyDay.options, done: trackDone, now, classOf: (id) => classOf.get(id), track },
       ).today,
     }));
-  }, [cardStates, cards, classes, filter, sets, mastery, studyDay]);
+  }, [cardStates, trackCards, classes, filter, sets, trackSets, mastery, studyDay, trackDone, track]);
 
   // The line under the play card: what the player is about to study.
   const status = useMemo(() => {
     const deckClasses = buildDeckClassMap(sets);
+    const cards = trackCards;
+    const kind = track === 'math' ? 'math question' : 'question';
+    if (track === 'math' && cards.length === 0) {
+      return 'No math questions yet. Import a deck with math questions to start.';
+    }
     const queue = buildQueue(cards, cardStates, Date.now(), {
       newCap: 20,
       scope: queueScopeOf(scope),
@@ -352,7 +384,7 @@ export default function HomeScreen() {
     });
     const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope), deckClasses).due;
 
-    if (mastery && studyDay !== null) {
+    if (mastery && studyDay !== null && trackDone !== null) {
       // Mastery: today's queue of the scope, the way Anki's deck list counts it.
       const classOf = new Map(sets.map((set) => [set.id, set.classId]));
       const today = masteryForecast(
@@ -361,23 +393,24 @@ export default function HomeScreen() {
           deckId: card.setId,
           state: cardStates.get(card.id),
         })),
-        { options: studyDay.options, done: studyDay.done, now: Date.now(), classOf: (id) => classOf.get(id) },
+        { options: studyDay.options, done: trackDone, now: Date.now(), classOf: (id) => classOf.get(id), track },
       ).today;
       const left = today.new + today.learning + today.due;
+      const label = track === 'math' ? 'Math today' : 'Today';
       return left === 0
-        ? 'Done for today in Mastery. Normal mode stays open.'
-        : `Today: ${today.new} new · ${today.learning} learning · ${today.due} due.`;
+        ? `Done for today in ${track === 'math' ? 'Math ' : ''}Mastery. Normal mode stays open.`
+        : `${label}: ${today.new} new · ${today.learning} learning · ${today.due} due.`;
     }
 
     if (queue.length === 0) {
       return due === 0
         ? 'No questions yet. Import a deck to start studying.'
-        : `${due} question${due === 1 ? '' : 's'} due right now.`;
+        : `${due} ${kind}${due === 1 ? '' : 's'} due right now.`;
     }
-    return `${queue.length} question${queue.length === 1 ? '' : 's'} queued${
+    return `${queue.length} ${kind}${queue.length === 1 ? '' : 's'} queued${
       due > 0 ? ` · ${due} due` : ''
     }.`;
-  }, [cardStates, cards, scope, sets, mastery, studyDay]);
+  }, [cardStates, trackCards, scope, sets, mastery, studyDay, trackDone, track]);
 
   // The chip of the class row that is selected.
   const selectedChip = useMemo(() => {
@@ -514,15 +547,16 @@ export default function HomeScreen() {
       pathname: '/fishing',
       params:
         scope.kind === 'all'
-          ? { kind: 'all', mastery: mastery ? '1' : '0' }
+          ? { kind: 'all', mastery: mastery ? '1' : '0', track }
           : {
               kind: scope.kind,
               id: scope.id ?? '',
               title: scope.title,
               mastery: mastery ? '1' : '0',
+              track,
             },
     });
-  }, [router, scope, setScope, mastery]);
+  }, [router, scope, setScope, mastery, track]);
 
   const goImport = useCallback(() => {
     play('tap');
@@ -586,9 +620,12 @@ export default function HomeScreen() {
             </GlassCard>
           </Animated.View>
 
+          <SectionTabs track={track} mathCount={mathCount} onChange={setTrack} />
+
           <Animated.View
           >
             <PlayCard
+              kicker={track === 'math' ? 'PLAY MATH' : 'PLAY'}
               onPress={go}
               scopeTitle={scopeTitle(scope)}
               status={status}
@@ -599,7 +636,9 @@ export default function HomeScreen() {
           <Animated.View style={styles.masteryRow}>
             <Toggle label="MASTERY MODE" value={mastery} onChange={setMastery} />
             <Text style={styles.masteryHint}>
-              {mastery
+              {mastery && track === 'math'
+                ? 'Math Mastery: its own daily queue (5 new a day by default), and slow answers are fine.'
+                : mastery
                 ? "Today's due questions, Anki style: graded by speed, stops when you're done for today."
                 : 'Endless play: the questions that are due come first.'}
             </Text>
@@ -690,7 +729,7 @@ export default function HomeScreen() {
                 setPendingDelete(deck);
               }}
               onOpenDeck={(deck, deckFilter) => {
-                router.push({ pathname: '/deck', params: { id: deck.id, filter: deckFilter } });
+                router.push({ pathname: '/deck', params: { id: deck.id, filter: deckFilter, track } });
               }}
             />
           </Animated.View>
@@ -871,12 +910,62 @@ export default function HomeScreen() {
 }
 
 /** The big play card of the fishing mode. */
+/**
+ * The sections of the home screen: multiple choice and Math.
+ *
+ * Math questions are slow to solve, so they never mix with the multiple
+ * choice ones: each section has its own decks and its own daily queue.
+ */
+function SectionTabs({
+  track,
+  mathCount,
+  onChange,
+}: {
+  track: QuestionTrack;
+  mathCount: number;
+  onChange: (track: QuestionTrack) => void;
+}) {
+  const tabs: { id: QuestionTrack; label: string }[] = [
+    { id: 'mc', label: 'QUESTIONS' },
+    { id: 'math', label: mathCount > 0 ? `MATH · ${mathCount}` : 'MATH' },
+  ];
+  return (
+    <View style={styles.sectionTabs} accessibilityRole="tablist">
+      {tabs.map((tab) => {
+        const active = tab.id === track;
+        return (
+          <Pressable
+            key={tab.id}
+            testID={`section-tab-${tab.id}`}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: active }}
+            accessibilityLabel={tab.id === 'math' ? 'Math section' : 'Multiple choice section'}
+            onPress={() => {
+              if (!active) {
+                play('tap');
+                onChange(tab.id);
+              }
+            }}
+            style={[styles.sectionTab, active && styles.sectionTabActive]}
+          >
+            <Text style={[styles.sectionTabText, active && styles.sectionTabTextActive]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function PlayCard({
+  kicker = 'PLAY',
   onPress,
   scopeTitle: currentScope,
   status,
   loading,
 }: {
+  kicker?: string;
   onPress: () => void;
   scopeTitle: string;
   status: string;
@@ -915,7 +1004,7 @@ function PlayCard({
         <GlassCard contentStyle={styles.playCard} tint="#7b61ff">
           <View style={styles.playTop}>
             <View style={styles.playText}>
-              <Text style={styles.playKicker}>PLAY</Text>
+              <Text style={styles.playKicker}>{kicker}</Text>
               <Text style={styles.playTitle}>Fish Frenzy</Text>
               <Text style={styles.playScope}>{currentScope}</Text>
             </View>
@@ -1263,6 +1352,33 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     minHeight: 42,
+  },
+  sectionTabs: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sectionTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  sectionTabActive: {
+    backgroundColor: colors.primary,
+  },
+  sectionTabText: {
+    color: colors.textDim,
+    fontFamily: fonts.title,
+    fontSize: 14,
+    letterSpacing: 1,
+  },
+  sectionTabTextActive: {
+    color: colors.text,
   },
   masteryRow: {
     gap: 2,

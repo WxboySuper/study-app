@@ -1,5 +1,6 @@
 import {
   computeStudyStats,
+  filterByTrack,
   historySeries,
   lastDays,
   retentionTrend,
@@ -62,6 +63,8 @@ const WEEKDAY = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export default function StatsRoute() {
   const router = useRouter();
   const [all, setAll] = useState<StudyStats | null>(null);
+  // Math is its own section: its own stats line.
+  const [math, setMath] = useState<StudyStats | null>(null);
   const [decks, setDecks] = useState<DeckStats[]>([]);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
 
@@ -78,6 +81,8 @@ export default function StatsRoute() {
       const now = Date.now();
       const start = startOfToday();
       setAll(computeStudyStats(cards, states, now, start));
+      const mathCards = filterByTrack(cards, "math");
+      setMath(mathCards.length === 0 ? null : computeStudyStats(mathCards, states, now, start));
       setDecks(
         sets.map((set) => ({
           id: set.id,
@@ -144,6 +149,17 @@ export default function StatsRoute() {
                   <Tile label="🐛 Leeches" value={all.leeches} tint="#fb7185" />
                 </View>
               </GlassCard>
+              {math === null ? null : (
+                <GlassCard style={styles.card} elevated={false}>
+                  <Text style={styles.section}>MATH ({math.total})</Text>
+                  <View style={styles.row}>
+                    <Tile label="Due" value={math.dueToday} tint={colors.gold} />
+                    <Tile label="Reviewed" value={math.reviewedToday} />
+                    <Tile label="New" value={math.new} tint="#60a5fa" />
+                    <Tile label="★ Mastered" value={math.mature} tint={colors.gold} />
+                  </View>
+                </GlassCard>
+              )}
               <GlassCard style={styles.card} elevated={false}>
                 <Text style={styles.section}>NEXT 7 DAYS</Text>
                 <View style={styles.chart} testID="stats-forecast">

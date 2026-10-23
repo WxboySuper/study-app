@@ -7,6 +7,7 @@ import {
   countStudyProgress,
   createSessionQueue,
   filterByScope,
+  filterByTrack,
   isCatchOutcome,
   localDayKey,
   gradeLabel,
@@ -42,6 +43,7 @@ import {
   type Rng,
   type SessionQuestion,
   type SessionQueueState,
+  type QuestionTrack,
   type SessionStage,
   type SessionStageCounts,
   type StudyCard,
@@ -60,7 +62,7 @@ import { play } from '@/sound/sfx';
 import { colors, fonts, radius, shadow } from '@/theme';
 import { GameButton, GlassCard, CritterLoader } from '@/ui';
 import { MASTERY_COUNTS_KEY, readMasteryCounts } from '@/study/masteryCounts';
-import { DAILY_DONE_KEY, readStudyOptions } from '@/study/studyOptions';
+import { dailyDoneKey, readStudyOptions } from '@/study/studyOptions';
 
 import { HookedBanner } from './HookedBanner';
 import { Hud } from './Hud';
@@ -180,6 +182,11 @@ export interface FishingScreenProps {
    * Done-for-today screen.
    */
   mastery?: boolean;
+  /**
+   * The questions the session plays: multiple choice (the default) or math.
+   * A session never mixes the two; math has its own daily queue.
+   */
+  track?: QuestionTrack;
   /** Done for today: keep playing the same scope in Normal mode. */
   onKeepPlaying?: () => void;
   /** Called when the player goes home. */
@@ -234,7 +241,7 @@ function saveMasteryCounts(state: Parameters<typeof masteryCounts>[0]): void {
   })();
 }
 
-export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onKeepPlaying, demo = null }: FishingScreenProps) {
+export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, onPlayAgain, onKeepPlaying, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { bait } = useSettings();
   const insets = useSafeAreaInsets();
@@ -403,7 +410,10 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
         if (cancelled) {
           return;
         }
-        cardsRef.current = buildQuestionCards(cards);
+        // Only the questions of the session's track (multiple choice or
+        // math); the demos of the web build play every question.
+        const questionCards = buildQuestionCards(cards);
+        cardsRef.current = demo === null ? filterByTrack(questionCards, track) : questionCards;
         statesRef.current = states;
         deckClassesRef.current = buildDeckClassMap(sets);
 
@@ -413,7 +423,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
         let pool = scoped;
         if (mastery) {
           const options = await readStudyOptions(store);
-          const done = parseDailyDone(await store.readKv(DAILY_DONE_KEY), localDayKey(new Date()));
+          const done = parseDailyDone(await store.readKv(dailyDoneKey(track)), localDayKey(new Date()));
           if (cancelled) {
             return;
           }
@@ -422,7 +432,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           forecastInputRef.current = { options, scoped, classOf: (deckId) => classOfDeck.get(deckId) };
           const limited = limitSessionPool(
             scoped.map((card) => ({ id: card.id, deckId: card.setId, state: states.get(card.id) })),
-            { options, done, now: Date.now(), classOf: (deckId) => classOfDeck.get(deckId) },
+            { options, done, now: Date.now(), classOf: (deckId) => classOfDeck.get(deckId), track },
           );
           const keep = new Set(limited.questions.map((question) => question.id));
           pool = scoped.filter((card) => keep.has(card.id));
@@ -434,6 +444,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
           stepOptions,
           pool.map((card) => card.setId),
           (deckId) => classOfSet.get(deckId),
+          track,
         );
         if (cancelled) {
           return;
@@ -485,7 +496,7 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
     return () => {
       cancelled = true;
     };
-  }, [buildQueueNow, mastery, queueRng, queueScope]);
+  }, [buildQueueNow, demo, mastery, queueRng, queueScope, track]);
 
   // The sounds.
   useEffect(() => {
@@ -700,9 +711,9 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
     }
     doneRef.current = next;
     void openLocalStore()
-      .then((store) => store.writeKv(DAILY_DONE_KEY, JSON.stringify(next)))
+      .then((store) => store.writeKv(dailyDoneKey(track), JSON.stringify(next)))
       .catch(() => undefined);
-  }, []);
+  }, [track]);
 
   const onAnswer = useCallback(
     (choiceIndex: number, typed?: boolean) => {
@@ -1194,9 +1205,9 @@ export function FishingScreen({ scope, mastery = false, onHome, onPlayAgain, onK
         deckId: card.setId,
         state: states.get(card.id) ?? statesRef.current.get(card.id),
       })),
-      { options: input.options, done, now: Date.now(), classOf: input.classOf },
+      { options: input.options, done, now: Date.now(), classOf: input.classOf, track },
     );
-  }, [doneToday, machine.session.cardStates]);
+  }, [doneToday, machine.session.cardStates, track]);
 
   const biggestTier = machine.session.biggest?.tier ?? null;
   const frenzy = machine.session.roll.frenzyCatchesLeft > 0;
