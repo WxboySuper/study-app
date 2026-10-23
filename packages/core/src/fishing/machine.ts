@@ -27,7 +27,8 @@
 import { Rating, State, type Grade } from 'ts-fsrs';
 
 import type { QueueItem, QueueItemKind } from '../queue';
-import { gradeByAnswerTime, medianAnswerMs } from '../mastery';
+import { DEFAULT_MEDIAN_ANSWER_MS, gradeByAnswerTime, medianAnswerMs } from '../mastery';
+import type { MathSpec } from '../mathQuestion';
 import { grade } from '../scheduler';
 import type { CardState, ReviewLogRecord } from '../types';
 import type { CritterRarity } from '../critters';
@@ -97,6 +98,8 @@ export interface FishingQuestion {
   bonus: boolean;
   /** Why the card is in the queue. */
   kind: QueueItemKind;
+  /** The typed-answer spec of a math question (no choices, no self-grade). */
+  math?: MathSpec;
 }
 
 /** A catch that landed on the dock. */
@@ -260,6 +263,11 @@ export type FishingEvent =
        * the rating is `Good` or `Again`, never the automatic one.
        */
       selfGrade?: boolean;
+      /**
+       * The grade of a typed (math) answer. It overrides `choiceIndex`: the
+       * question has no choices, the player typed the answer.
+       */
+      correct?: boolean;
     }
   /**
    * The player tapped on after an answer.
@@ -488,7 +496,7 @@ function handleAnswer(
   }
 
   const answerIndex = item.card.answerIndex ?? -1;
-  const correct = event.choiceIndex === answerIndex;
+  const correct = event.correct ?? event.choiceIndex === answerIndex;
   // A card without wrong answers is graded by the player itself: "Got it" is
   // `Good`, "Missed it" is `Again`. Every other card is graded by the
   // automatic grader.
@@ -504,6 +512,9 @@ function handleAnswer(
             state.session.reviews
               .filter((review) => review.cardId === item.cardId)
               .map((review) => review.durationMs),
+            item.card.math === undefined
+              ? DEFAULT_MEDIAN_ANSWER_MS
+              : mathMedianMs(item.card.math),
           ),
         });
   const fsrsGrade: Grade = rating;
@@ -777,12 +788,22 @@ function toQuestion(item: QueueItem): FishingQuestion {
     prompt: item.card.front,
     choices,
     answerIndex: item.card.answerIndex ?? -1,
-    // A card without wrong answers of its own is a self-graded card.
-    selfGrade: wrong.length === 0,
+    // A card without wrong answers of its own is a self-graded card. A math
+    // question is typed and graded by the math grader instead.
+    selfGrade: item.card.math === undefined && wrong.length === 0,
     answer: item.card.back.trim(),
     bonus: item.bonus,
     kind: item.kind,
+    ...(item.card.math === undefined ? {} : { math: item.card.math }),
   };
+}
+
+/** Typing takes longer than tapping: 20 s per answer to type. */
+export const MATH_MEDIAN_MS_PER_PART = 20_000;
+
+/** The median answer time of a math question without history. */
+export function mathMedianMs(spec: MathSpec): number {
+  return MATH_MEDIAN_MS_PER_PART * ((spec.steps?.length ?? 0) + 1);
 }
 
 /** Turns a rolled catch into the shape the UI and the session log use. */
