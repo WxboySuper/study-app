@@ -276,14 +276,33 @@ export function parseDailyDone(raw: string | null, day: string): DailyDone {
   }
 }
 
-/** The kind of a card for the daily limits. */
+/**
+ * Anki's learn-ahead limit: a learning question whose next step is due within
+ * this window already counts as today's learning.
+ */
+export const LEARN_AHEAD_MS = 20 * 60_000;
+
+/** `true` for a question in (re)learning. */
+export function isLearningState(state: CardState | undefined): boolean {
+  return (
+    state !== undefined &&
+    (state.state === State.Learning || state.state === State.Relearning)
+  );
+}
+
+/**
+ * The kind of a question for the daily limits (and today's counts).
+ *
+ * A learning question is `learning` only once its step is due (with the
+ * learn-ahead window); before that it waits (`later`), like in Anki.
+ */
 export function limitKind(
   state: CardState | undefined,
   now: number,
 ): "new" | "learning" | "due" | "later" {
   if (state === undefined || state.state === State.New) return "new";
-  if (state.state === State.Learning || state.state === State.Relearning)
-    return "learning";
+  if (isLearningState(state))
+    return state.due <= now + LEARN_AHEAD_MS ? "learning" : "later";
   return state.due <= now ? "due" : "later";
 }
 
@@ -311,7 +330,7 @@ export function noteAnswered(
       },
     };
   }
-  if (kind === "due" || kind === "later") {
+  if (!isLearningState(prior) && (kind === "due" || kind === "later")) {
     return {
       ...done,
       seen,
@@ -505,7 +524,7 @@ export function masteryForecast<
     const due = q.state!.due;
     if (due > input.now) {
       if (nextDueAt === null || due < nextDueAt) nextDueAt = due;
-      if (due < horizon && kind === "later") tomorrowReviews += 1;
+      if (due < horizon && kind === "later" && !isLearningState(q.state)) tomorrowReviews += 1;
     }
   }
   let tomorrowNew = 0;

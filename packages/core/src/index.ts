@@ -474,3 +474,4 @@ export * from './reviewHistory';
 export * from './mathQuestion';
 export * from './mathGrade';
 export * from './mathKeyboard';
+export * from './reviewPersist';

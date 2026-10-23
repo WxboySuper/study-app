@@ -25,6 +25,7 @@ import {
   masteryForecast,
   masteryProgress,
   masteryStatusOf,
+  reviewWrites,
   nextSessionQuestion,
   sessionStageCounts,
   sessionStageOf,
@@ -634,6 +635,11 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
   }, [machine.phase]);
 
   // Keep the reviews in the local store (and in the outbox).
+  //
+  // Only the Mastery modes (questions and math) schedule: a plain Normal or
+  // Math session keeps its answers for the stats and the history, but never
+  // writes a scheduling state (no due date, no learning step, no card_state
+  // sync event), so it cannot make questions due in Mastery.
   useEffect(() => {
     const reviews = machine.session.reviews;
     if (reviews.length <= persistedRef.current) {
@@ -647,8 +653,11 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
       try {
         const store = await openLocalStore();
         for (const review of fresh) {
-          statesRef.current.set(review.cardId, review.state);
-          await store.upsertCardState(review.state);
+          const { cardState } = reviewWrites(review, mastery);
+          if (cardState !== null) {
+            statesRef.current.set(review.cardId, cardState);
+            await store.upsertCardState(cardState);
+          }
           await store.enqueueReview({
             ...review.log,
             clientId: `${review.cardId}-${review.reviewedAt}-${persistedRef.current}`,
@@ -662,7 +671,7 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
         // The reviews stay in the session; the sync happens later.
       }
     })();
-  }, [machine.session.reviews]);
+  }, [machine.session.reviews, mastery]);
 
   // The scheduling state of a card changes with every review: the endless
   // mode needs the fresh state to know what is due and what is weak.

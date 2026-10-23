@@ -1,7 +1,10 @@
 import {
   buildQuestionRows,
-  buildQueue,
   countQuestionFilters,
+  filterByTrack,
+  limitSessionPool,
+  localDayKey,
+  parseDailyDone,
   formatDueIn,
   matchesQuestionFilter,
   matchesQuestionSearch,
@@ -23,6 +26,7 @@ import { MathText } from '@/math/MathText';
 import { useSettings } from '@/settings';
 import { play } from '@/sound/sfx';
 import { readMasteryCounts } from '@/study/masteryCounts';
+import { dailyDoneKey, readStudyOptions } from '@/study/studyOptions';
 import { colors, fonts, radius, spacing } from '@/theme';
 import { CritterLoader, GameBackground, GameButton, GlassCard, ScreenHeader } from '@/ui';
 
@@ -54,9 +58,6 @@ const FILTER_LOOK: { filter: QuestionFilter; label: string; color: string }[] = 
   { filter: 'leech', label: 'LEECHES', color: '#f97316' },
 ];
 
-/** How many new questions a session takes (the home screen uses the same). */
-const NEW_CAP = 20;
-
 export default function DeckDetailRoute() {
   const router = useRouter();
   const { mastery } = useSettings();
@@ -74,27 +75,43 @@ export default function DeckDetailRoute() {
   const load = useCallback(async () => {
     try {
       const store = await openLocalStore();
-      const [cards, states, sets, counts] = await Promise.all([
+      const [cards, states, sets, counts, options, rawDone] = await Promise.all([
         store.listCards(),
         store.listCardStates(),
         store.listSets(),
         readMasteryCounts(store),
+        readStudyOptions(store),
+        store.readKv(dailyDoneKey(track)),
       ]);
       const at = Date.now();
-      const deckCards = cards.filter((card) => card.setId === setId);
-      const queue = buildQueue(cards, states, at, {
-        newCap: NEW_CAP,
-        scope: { kind: 'set', setId },
-      });
+      // Only the questions of the section the deck was opened from.
+      const deckCards = filterByTrack(
+        cards.filter((card) => card.setId === setId),
+        track,
+      );
+      // Queued: what a Mastery session of the deck serves today, within the
+      // daily limits of its preset (deck, then class, then default; math has
+      // its own presets and counters).
+      const classOf = new Map(sets.map((set) => [set.id, set.classId]));
+      const queue = limitSessionPool(
+        deckCards.map((card) => ({ id: card.id, deckId: card.setId, state: states.get(card.id) })),
+        {
+          options,
+          done: parseDailyDone(rawDone, localDayKey(new Date(at))),
+          now: at,
+          classOf: (deckId) => classOf.get(deckId),
+          track,
+        },
+      ).questions;
       setTitle(sets.find((set) => set.id === setId)?.title ?? 'Deck');
       setNow(at);
       setRows(
-        buildQuestionRows(deckCards, states, counts, new Set(queue.filter((item) => !item.bonus).map((item) => item.cardId)), at),
+        buildQuestionRows(deckCards, states, counts, new Set(queue.map((item) => item.id)), at),
       );
     } catch {
       setRows([]);
     }
-  }, [setId]);
+  }, [setId, track]);
 
   useFocusEffect(
     useCallback(() => {

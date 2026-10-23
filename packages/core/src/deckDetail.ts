@@ -1,8 +1,7 @@
-import { State } from 'ts-fsrs';
-
 import { plainText } from './math';
 import { isLeech, isMatureMastered } from './mastery';
 import { MASTERY_REQUIRED_CORRECT } from './sessionQueue';
+import { limitKind } from './studyOptions';
 import type { CardState, StudyCard } from './types';
 
 /**
@@ -52,22 +51,17 @@ export const QUESTION_FILTERS: readonly QuestionFilter[] = [
  * The review status of a question.
  *
  * - A question with no state, or one still in the New state, is `new`.
- * - A question whose due time has passed is `due`. This matches
- *   `countScope`, so the badge on the deck tile and the Due filter agree.
- * - A question in (re)learning that is not due yet is `learning`.
- * - A question in review that is not due yet is `scheduled` ("Due in X").
+ * - A question in (re)learning whose step is due (within Anki's 20 minute
+ *   learn-ahead) is `learning`.
+ * - A review whose due time has passed is `due`.
+ * - Anything else waits: `scheduled` ("Due in X").
+ *
+ * The same rule as `limitKind`, so the deck screen and Mastery's
+ * "Today: new · learning · due" line agree.
  */
 export function questionStatus(state: CardState | undefined, now: number): QuestionStatusKind {
-  if (state === undefined || state.state === State.New) {
-    return 'new';
-  }
-  if (state.due <= now) {
-    return 'due';
-  }
-  if (state.state === State.Learning || state.state === State.Relearning) {
-    return 'learning';
-  }
-  return 'scheduled';
+  const kind = limitKind(state, now);
+  return kind === 'later' ? 'scheduled' : kind;
 }
 
 /** Builds the rows of the deck detail screen, in deck order. */
