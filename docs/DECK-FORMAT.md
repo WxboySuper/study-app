@@ -297,6 +297,25 @@ The variables are `x`, `y` and `t` (any other single letter works too).
 A math question keeps its id and its progress like any other question.
 Older versions of the app show a math question as a self-graded one.
 
+### The Math section
+
+Math questions are slow to solve, so the app plays them **apart from the
+multiple-choice questions**. Home has two tabs, **QUESTIONS** and **MATH**,
+and a session only ever plays one of them.
+
+- A question is a math question when it has `"type": "math"`. There is no
+  deck-level flag: the type of each question decides.
+- **Mixed decks are split by question type.** A deck with both kinds shows
+  up in both tabs: its multiple-choice questions in QUESTIONS, its math
+  questions in MATH. For a clean list, keep math in its own deck
+  (e.g. `Calc 1 · Math`).
+- Math has **its own Mastery**: its own daily queue (New / Learning / Due),
+  its own presets (Math: 5 new and 50 reviews a day, steps 10m 1d; Math
+  light: 3/25; Math push: 10/100) and its own Done for today. The QUESTIONS
+  tab's counts never include math.
+- Answer time counts gently: a correct math answer is only `Hard` past
+  three times the expected time (30 s per part of the answer).
+
 ## The import preview
 
 Importing a deck is one tap:
