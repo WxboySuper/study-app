@@ -290,6 +290,21 @@ Newton's second law :: $F = ma$ :: $F = mv$ :: $E = mc^2$ :: $p = mv$
 Heat equation :: $\frac{\partial T}{\partial t} = \alpha \nabla^2 T$ :: $\frac{\partial T}{\partial t} = \alpha \nabla T$ :: $\frac{\partial T}{\partial t} = \alpha T$ :: $\frac{\partial T}{\partial t} = \alpha \nabla^2 P$
 ```
 
+## For Muse: updating a deck
+
+A question in the JSON format may carry an optional `id` (letters, digits, `_ . : -`, up to 128 characters, unique in the deck):
+
+```json
+{ "id": "deck_123", "name": "European capitals", "questions": [
+  { "id": "q_paris", "question": "Capital of France", "correct": "Paris", "wrong": ["Lyon"] }
+] }
+```
+
+- Get the ids with `GET /api/decks/:id`. Send them back when you update a deck, so a reworded question keeps its progress.
+- Without an `id`, a question is matched by its text (case and spacing ignored). A question with the same text keeps its id and progress even when its answers change.
+- A question that is no longer in the deck is **retired**: it leaves play, but its progress and quiz history stay, and sending it again brings it back.
+- See docs/API.md, "Decks (Muse)", for editing one question at a time.
+
 ## What the app does with the deck
 
 - The deck appears in the deck picker of the home screen, and it is the deck

@@ -16,6 +16,7 @@ function question(id: string, position: number) {
     wrong: [`Wrong ${id}`],
     position,
     selfGraded: false,
+    retired: false,
   };
 }
 
@@ -77,6 +78,7 @@ describe('parseSyncSnapshot', () => {
               wrong: ['Lyon', 'Marseille'],
               position: 0,
               selfGraded: false,
+              retired: false,
             },
           ],
         },

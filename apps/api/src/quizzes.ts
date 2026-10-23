@@ -157,9 +157,9 @@ export async function createQuiz(c: Ctx): Promise<Response> {
   const pool = await c.env.DB.prepare(
     deckId !== null
       ? `SELECT q.id FROM questions q JOIN decks d ON d.id = q.deck_id
-         WHERE d.id = ? AND d.deleted = 0 ORDER BY q.position, q.id`
+         WHERE d.id = ? AND d.deleted = 0 AND q.retired = 0 ORDER BY q.position, q.id`
       : `SELECT q.id FROM questions q JOIN decks d ON d.id = q.deck_id
-         WHERE d.class_name = ? AND d.deleted = 0 ORDER BY d.id, q.position, q.id`,
+         WHERE d.class_name = ? AND d.deleted = 0 AND q.retired = 0 ORDER BY d.id, q.position, q.id`,
   )
     .bind(deckId ?? classId)
     .all<{ id: string }>();

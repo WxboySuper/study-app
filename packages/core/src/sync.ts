@@ -24,6 +24,8 @@ export interface RemoteSyncQuestion {
   position: number;
   /** `true` when the question has no wrong answer of its own. */
   selfGraded: boolean;
+  /** `true` when the question left the deck (hidden from play, progress kept). */
+  retired: boolean;
 }
 
 /** A deck as `GET /api/sync` answers it. */
@@ -97,6 +99,8 @@ export interface PlannedQuestion {
   wrong: string[];
   /** `true` when the local store has to create the card (and its state). */
   created: boolean;
+  /** The question left the deck on the server: hidden from play, progress kept. */
+  retired: boolean;
 }
 
 /** A deck that the merge writes. */
@@ -225,6 +229,7 @@ function parseSyncQuestion(payload: unknown): RemoteSyncQuestion | null {
     wrong?: unknown;
     position?: unknown;
     selfGraded?: unknown;
+    retired?: unknown;
   };
 
   if (
@@ -249,6 +254,7 @@ function parseSyncQuestion(payload: unknown): RemoteSyncQuestion | null {
     wrong,
     position: question.position,
     selfGraded: typeof question.selfGraded === 'boolean' ? question.selfGraded : wrong.length === 0,
+    retired: question.retired === true,
   };
 }
 
@@ -355,6 +361,7 @@ export function planDeckSync(
         correct: remoteQuestion.correct,
         wrong: [...remoteQuestion.wrong],
         created: knownQuestion === undefined,
+        retired: remoteQuestion.retired,
       });
     }
 
