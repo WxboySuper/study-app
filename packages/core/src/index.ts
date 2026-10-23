@@ -462,6 +462,7 @@ export {
 export type { QuizAnswerPayload } from './progressSync';
 
 export * from './studyOptions';
+export * from './track';
 export {
   MASTERY_EPOCH,
   dropStaleOutbox,

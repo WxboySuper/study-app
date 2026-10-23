@@ -516,6 +516,8 @@ function handleAnswer(
               ? DEFAULT_MEDIAN_ANSWER_MS
               : mathMedianMs(item.card.math),
           ),
+          // Math is slow to solve: its timing is lenient.
+          lenient: item.card.math !== undefined,
         });
   const fsrsGrade: Grade = rating;
 
@@ -799,7 +801,7 @@ function toQuestion(item: QueueItem): FishingQuestion {
 }
 
 /** Typing takes longer than tapping: 20 s per answer to type. */
-export const MATH_MEDIAN_MS_PER_PART = 20_000;
+export const MATH_MEDIAN_MS_PER_PART = 30_000;
 
 /** The median answer time of a math question without history. */
 export function mathMedianMs(spec: MathSpec): number {
