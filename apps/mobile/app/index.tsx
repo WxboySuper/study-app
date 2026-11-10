@@ -18,8 +18,7 @@ import {
   type StudyCard,
 } from '@study-app/core';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   Modal,
@@ -65,7 +64,7 @@ import { DeckPicker } from '@/study/DeckPicker';
 import { DAILY_DONE_KEY, DAILY_DONE_MATH_KEY, readStudyOptions } from '@/study/studyOptions';
 import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
 import { syncDecks } from '@/sync/syncDecks';
-import { colors, fonts, gradientDirection, gradients, radius, shadow, spacing, type Gradient } from '@/theme';
+import { colors, fonts, radius, spacing } from '@/theme';
 import {
   appVersion,
   dismissUpdate,
@@ -82,19 +81,18 @@ import {
   GameButton,
   GlassCard,
   Glow,
-  ProgressRing,
   TokenCounter,
-  WheelGlyph,
   Wordmark,
 } from '@/ui';
 
 /**
  * The home screen (SPEC "Session flow").
  *
- * The game shows its face here: the logo, the wallet, the big play card of
- * the fishing mode and the three places of the game (the packs, the book
- * and the wheel). The last scope is remembered, so "Play again" is a single
- * tap.
+ * Built around one question: what do I study today? A compact header, one
+ * big card with today's review (new / learning / due left) and a single
+ * START button, the decks below it, and the game extras (packs, book, wheel)
+ * tucked into a small row. The last scope is remembered, so studying is a
+ * single tap.
  */
 
 /** The critter that floats above the play card. */
@@ -154,6 +152,8 @@ export default function HomeScreen() {
   const [syncToast, setSyncToast] = useState<string | null>(null);
   /** `true` while the hidden admin panel is open. */
   const [adminOpen, setAdminOpen] = useState(false);
+  /** `true` while the 'Settings and more' section is open. */
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const totalCritters = PACKS.reduce((sum, pack) => sum + pack.critters.length, 0);
   const cheapestPack = useMemo(() => {
@@ -369,20 +369,22 @@ export default function HomeScreen() {
     }));
   }, [cardStates, trackCards, classes, filter, sets, trackSets, mastery, studyDay, trackDone, track]);
 
-  // The line under the play card: what the player is about to study.
-  const status = useMemo(() => {
+  // What the player is about to study: today's queue (Mastery) or the free
+  // practice queue, with the numbers the play card shows.
+  const plan = useMemo(() => {
     const deckClasses = buildDeckClassMap(sets);
     const cards = trackCards;
     const kind = track === 'math' ? 'math question' : 'question';
-    if (track === 'math' && cards.length === 0) {
-      return 'No math questions yet. Import a deck with math questions to start.';
+    if (cards.length === 0) {
+      return {
+        line:
+          track === 'math'
+            ? 'No math questions yet. Import a deck with math questions to start.'
+            : 'No questions yet. Import a deck to start studying.',
+        today: null,
+        empty: true,
+      };
     }
-    const queue = buildQueue(cards, cardStates, Date.now(), {
-      newCap: 20,
-      scope: queueScopeOf(scope),
-      deckClasses,
-    });
-    const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope), deckClasses).due;
 
     if (mastery && studyDay !== null && trackDone !== null) {
       // Mastery: today's queue of the scope, the way Anki's deck list counts it.
@@ -395,21 +397,29 @@ export default function HomeScreen() {
         })),
         { options: studyDay.options, done: trackDone, now: Date.now(), classOf: (id) => classOf.get(id), track },
       ).today;
-      const left = today.new + today.learning + today.due;
-      const label = track === 'math' ? 'Math today' : 'Today';
-      return left === 0
-        ? `Done for today in ${track === 'math' ? 'Math ' : ''}Mastery. Normal mode stays open.`
-        : `${label}: ${today.new} new · ${today.learning} learning · ${today.due} due.`;
+      return {
+        line: '',
+        today: { new: today.new, learning: today.learning, due: today.due },
+        empty: false,
+      };
     }
 
-    if (queue.length === 0) {
-      return due === 0
-        ? 'No questions yet. Import a deck to start studying.'
-        : `${due} ${kind}${due === 1 ? '' : 's'} due right now.`;
-    }
-    return `${queue.length} ${kind}${queue.length === 1 ? '' : 's'} queued${
-      due > 0 ? ` · ${due} due` : ''
-    }.`;
+    const queue = buildQueue(cards, cardStates, Date.now(), {
+      newCap: 20,
+      scope: queueScopeOf(scope),
+      deckClasses,
+    });
+    const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope), deckClasses).due;
+    return {
+      line:
+        queue.length === 0
+          ? due === 0
+            ? 'Nothing queued here yet.'
+            : `${due} ${kind}${due === 1 ? '' : 's'} due right now.`
+          : `${queue.length} ${kind}${queue.length === 1 ? '' : 's'} ready${due > 0 ? ` · ${due} due` : ''}. Practice never changes your review schedule for cards that are not due.`,
+      today: null,
+      empty: false,
+    };
   }, [cardStates, trackCards, scope, sets, mastery, studyDay, trackDone, track]);
 
   // The chip of the class row that is selected.
@@ -540,19 +550,20 @@ export default function HomeScreen() {
     [loadDecks, movingDeck],
   );
 
-  const go = useCallback(() => {
+  const go = useCallback((practice = false) => {
+    const useMastery = mastery && !practice;
     setScope(scope);
     play('cast');
     router.push({
       pathname: '/fishing',
       params:
         scope.kind === 'all'
-          ? { kind: 'all', mastery: mastery ? '1' : '0', track }
+          ? { kind: 'all', mastery: useMastery ? '1' : '0', track }
           : {
               kind: scope.kind,
               id: scope.id ?? '',
               title: scope.title,
-              mastery: mastery ? '1' : '0',
+              mastery: useMastery ? '1' : '0',
               track,
             },
     });
@@ -593,117 +604,42 @@ export default function HomeScreen() {
             <UpdateBanner update={update} onDismiss={onDismissUpdate} />
           )}
 
-          <Animated.View style={styles.header}>
-            <Wordmark size={44} />
-            <Text style={styles.tagline}>
-              Endless, untimed study. The scheduler picks the questions, the game picks the vibe.
-            </Text>
-          </Animated.View>
-
-          <Animated.View
-            style={styles.walletRow}
-          >
-            <GlassCard style={styles.walletCard} contentStyle={styles.walletCardContent} tint={colors.gold}>
-              <TokenCounter value={balance ?? 0} size={26} accessibilityLabel={`${balance ?? 0} tokens`} />
-              <Text style={styles.walletLabel}>tokens</Text>
-            </GlassCard>
-
-            <GlassCard
-              style={styles.walletCard}
-              contentStyle={styles.walletCardContent}
-              tint={colors.ticket}
-              accessibilityLabel={`${packTickets} pack tickets`}
-            >
-              <Text style={styles.ticketEmoji}>🎟️</Text>
-              <Text style={styles.ticketCount}>{packTickets}</Text>
-              <Text style={styles.walletLabel}>tickets</Text>
-            </GlassCard>
-          </Animated.View>
+          <View style={styles.header}>
+            <Wordmark size={32} />
+            <View style={styles.walletPills}>
+              <View style={styles.pill} accessibilityLabel={`${balance ?? 0} tokens`}>
+                <TokenCounter value={balance ?? 0} size={18} accessibilityLabel={`${balance ?? 0} tokens`} />
+              </View>
+              {packTickets > 0 ? (
+                <View style={styles.pill} accessibilityLabel={`${packTickets} pack tickets`}>
+                  <Text style={styles.ticketCount}>🎟️ {packTickets}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
 
           <SectionTabs track={track} mathCount={mathCount} onChange={setTrack} />
 
-          <Animated.View
-          >
-            <PlayCard
-              kicker={track === 'math' ? 'PLAY MATH' : 'PLAY'}
-              onPress={go}
-              scopeTitle={scopeTitle(scope)}
-              status={status}
-              loading={loading}
-            />
-          </Animated.View>
+          <PlayCard
+            track={track}
+            mastery={mastery}
+            scopeTitle={scopeTitle(scope)}
+            line={plan.line}
+            today={plan.today}
+            empty={plan.empty}
+            loading={loading}
+            onStart={() => {
+              go(false);
+            }}
+            onPractice={() => {
+              go(true);
+            }}
+            onImport={goImport}
+          />
 
-          <Animated.View style={styles.masteryRow}>
-            <Toggle label="MASTERY MODE" value={mastery} onChange={setMastery} />
-            <Text style={styles.masteryHint}>
-              {mastery && track === 'math'
-                ? 'Math Mastery: its own daily queue (5 new a day by default), and slow answers are fine.'
-                : mastery
-                ? "Today's due questions, Anki style: graded by speed, stops when you're done for today."
-                : 'Endless play: the questions that are due come first.'}
-            </Text>
-          </Animated.View>
+          <ModeSwitch mastery={mastery} onChange={setMastery} />
 
-          <Animated.View style={styles.syncCard}>
-            <View style={styles.syncText}>
-              <Text style={styles.syncTitle}>SYNC DECKS</Text>
-              <Text style={styles.syncHint}>Pull the latest questions from your class.</Text>
-            </View>
-            <GameButton
-              label={syncing ? 'SYNCING…' : 'SYNC'}
-              variant="collection"
-              size="md"
-              disabled={syncing}
-              onPress={onSyncDecks}
-              accessibilityLabel="Sync decks"
-              accessibilityHint="Pulls the latest decks from the server"
-            />
-          </Animated.View>
-
-          <Animated.View style={styles.tiles}>
-            <ModeTile
-              title="PACKS"
-              hint="Open a pack"
-              gradient={gradients.shop}
-              glow={colors.shop}
-              onPress={() => {
-                router.push('/packs');
-              }}
-              badge={`FROM ${cheapestPack} 🪙`}
-              art={<PacksArt />}
-            />
-
-            <ModeTile
-              title="COLLECTION"
-              hint="Sell duplicates"
-              gradient={gradients.collection}
-              glow={colors.collection}
-              onPress={() => {
-                router.push('/collection');
-              }}
-              badge={`${critterCount}/${totalCritters}`}
-              art={
-                <ProgressRing progress={totalCritters === 0 ? 0 : critterCount / totalCritters} size={58} color={colors.collection}>
-                  <Text style={styles.ringText}>{critterCount}</Text>
-                </ProgressRing>
-              }
-            />
-
-            <ModeTile
-              title="DAILY SPIN"
-              hint="Free tokens"
-              gradient={gradients.wheel}
-              glow={colors.wheel}
-              onPress={() => {
-                router.push('/spin');
-              }}
-              badge={spinReady ? 'SPIN READY!' : 'COME BACK TOMORROW'}
-              badgePulse={spinReady}
-              art={<WheelGlyph size={54} />}
-            />
-          </Animated.View>
-
-          <Animated.View style={styles.section}>
+          <View style={styles.section}>
             <DeckPicker
               chips={chips}
               decks={decks}
@@ -732,19 +668,118 @@ export default function HomeScreen() {
                 router.push({ pathname: '/deck', params: { id: deck.id, filter: deckFilter, track } });
               }}
             />
-          </Animated.View>
+          </View>
 
-          <Animated.View style={styles.section}>
-            <Text style={styles.sectionTitle}>Settings</Text>
-            <Toggle label="Sound" value={sound} onChange={setSound} />
-            <Toggle label="Haptics" value={haptics} onChange={setHaptics} />
-            <Toggle
-              label="Reduce motion"
-              value={reduceMotion ?? systemReduceMotion}
-              onChange={(value) => {
-                setReduceMotion(value);
+          <View style={styles.quickRow}>
+            <QuickLink
+              label="Stats"
+              emoji="📊"
+              onPress={() => {
+                play('tap');
+                router.push('/stats');
               }}
             />
+            <QuickLink
+              label="Limits"
+              emoji="🎚️"
+              onPress={() => {
+                play('tap');
+                router.push('/study-options');
+              }}
+            />
+            <QuickLink
+              label="Quizzes"
+              emoji="📝"
+              onPress={() => {
+                play('tap');
+                router.push('/quiz');
+              }}
+            />
+            <QuickLink
+              label={syncing ? 'Syncing…' : 'Sync'}
+              emoji="🔄"
+              disabled={syncing}
+              onPress={onSyncDecks}
+            />
+          </View>
+
+          <View style={styles.rewardsBlock}>
+            <Text style={styles.sectionTitle}>Rewards</Text>
+            <View style={styles.quickRow}>
+              <QuickLink
+                label={`Packs · ${cheapestPack}🪙`}
+                emoji="🎁"
+                onPress={() => {
+                  router.push('/packs');
+                }}
+              />
+              <QuickLink
+                label={`Book ${critterCount}/${totalCritters}`}
+                emoji="📖"
+                onPress={() => {
+                  router.push('/collection');
+                }}
+              />
+              <QuickLink
+                label={spinReady ? 'Spin ready!' : 'Spin'}
+                emoji="🎡"
+                highlight={spinReady}
+                onPress={() => {
+                  router.push('/spin');
+                }}
+              />
+            </View>
+          </View>
+
+          <View style={styles.section}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ expanded: moreOpen }}
+              onPress={() => {
+                setMoreOpen((open) => !open);
+              }}
+              style={styles.moreHeader}
+            >
+              <Text style={styles.sectionTitle}>Settings and more</Text>
+              <Text style={styles.moreChevron}>{moreOpen ? '▲' : '▼'}</Text>
+            </Pressable>
+
+            {moreOpen ? (
+              <>
+                <Toggle label="Sound" value={sound} onChange={setSound} />
+                <Toggle label="Haptics" value={haptics} onChange={setHaptics} />
+                <Toggle
+                  label="Reduce motion"
+                  value={reduceMotion ?? systemReduceMotion}
+                  onChange={(value) => {
+                    setReduceMotion(value);
+                  }}
+                />
+                <GameButton
+                  label={Platform.OS === 'web' ? 'LINK TO PHONE' : 'LINK A BROWSER'}
+                  variant="ghost"
+                  size="md"
+                  onPress={() => {
+                    play('tap');
+                    router.push('/link');
+                  }}
+                  accessibilityLabel={Platform.OS === 'web' ? 'Link to phone' : 'Link a browser'}
+                />
+                <GameButton
+                  label={checkingUpdate ? 'CHECKING…' : 'CHECK FOR UPDATES'}
+                  variant="secondary"
+                  size="md"
+                  disabled={checkingUpdate}
+                  onPress={onCheckForUpdates}
+                  accessibilityLabel="Check for updates"
+                />
+                {updateStatus === null ? null : (
+                  <Text style={styles.versionLabel} accessibilityLiveRegion="polite">
+                    {updateStatus}
+                  </Text>
+                )}
+              </>
+            ) : null}
 
             <Pressable
               accessibilityRole="button"
@@ -759,60 +794,7 @@ export default function HomeScreen() {
             >
               <Text style={styles.versionLabel}>v{appVersion()}</Text>
             </Pressable>
-            <GameButton
-              label="STUDY OPTIONS"
-              variant="secondary"
-              size="md"
-              onPress={() => {
-                play('tap');
-                router.push('/study-options');
-              }}
-              accessibilityLabel="Study options"
-            />
-            <GameButton
-              label="STATS"
-              variant="secondary"
-              size="md"
-              onPress={() => {
-                play('tap');
-                router.push('/stats');
-              }}
-              accessibilityLabel="Stats"
-            />
-            <GameButton
-              label="QUIZZES"
-              variant="secondary"
-              size="md"
-              onPress={() => {
-                play('tap');
-                router.push('/quiz');
-              }}
-              accessibilityLabel="Quizzes"
-            />
-            <GameButton
-              label={Platform.OS === 'web' ? 'LINK TO PHONE' : 'LINK A BROWSER'}
-              variant="ghost"
-              size="md"
-              onPress={() => {
-                play('tap');
-                router.push('/link');
-              }}
-              accessibilityLabel={Platform.OS === 'web' ? 'Link to phone' : 'Link a browser'}
-            />
-            <GameButton
-              label={checkingUpdate ? 'CHECKING…' : 'CHECK FOR UPDATES'}
-              variant="secondary"
-              size="md"
-              disabled={checkingUpdate}
-              onPress={onCheckForUpdates}
-              accessibilityLabel="Check for updates"
-            />
-            {updateStatus === null ? null : (
-              <Text style={styles.versionLabel} accessibilityLiveRegion="polite">
-                {updateStatus}
-              </Text>
-            )}
-          </Animated.View>
+          </View>
         </ScrollView>
 
         {syncToast === null ? null : (
@@ -909,7 +891,6 @@ export default function HomeScreen() {
   );
 }
 
-/** The big play card of the fishing mode. */
 /**
  * The sections of the home screen: multiple choice and Math.
  *
@@ -958,18 +939,79 @@ function SectionTabs({
   );
 }
 
-function PlayCard({
-  kicker = 'PLAY',
-  onPress,
-  scopeTitle: currentScope,
-  status,
-  loading,
+/** Switch between today's scheduled review and free (endless) practice. */
+function ModeSwitch({
+  mastery,
+  onChange,
 }: {
-  kicker?: string;
-  onPress: () => void;
+  mastery: boolean;
+  onChange: (value: boolean) => void;
+}) {
+  const options: { value: boolean; label: string }[] = [
+    { value: true, label: "TODAY'S REVIEW" },
+    { value: false, label: 'FREE PRACTICE' },
+  ];
+  return (
+    <View style={styles.modeBlock}>
+      <View style={styles.modeSwitch} accessibilityRole="tablist">
+        {options.map((option) => {
+          const active = option.value === mastery;
+          return (
+            <Pressable
+              key={option.label}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              onPress={() => {
+                if (!active) {
+                  play('tap');
+                  onChange(option.value);
+                }
+              }}
+              style={[styles.modeOption, active && styles.modeOptionActive]}
+            >
+              <Text style={[styles.modeOptionText, active && styles.modeOptionTextActive]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <Text style={styles.masteryHint}>
+        {mastery
+          ? 'Scheduled by spaced repetition, with daily limits. It ends when you are done for today.'
+          : 'Optional extra practice with no limits. Stop whenever you like.'}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The big card: what is left to study today and the one button that starts
+ * it. When today's queue is empty the card says so (a calm 'done' state) and
+ * offers optional practice instead of pushing more work.
+ */
+function PlayCard({
+  track,
+  mastery,
+  scopeTitle: currentScope,
+  line,
+  today,
+  empty,
+  loading,
+  onStart,
+  onPractice,
+  onImport,
+}: {
+  track: QuestionTrack;
+  mastery: boolean;
   scopeTitle: string;
-  status: string;
+  line: string;
+  today: { new: number; learning: number; due: number } | null;
+  empty: boolean;
   loading: boolean;
+  onStart: () => void;
+  onPractice: () => void;
+  onImport: () => void;
 }) {
   const bob = useSharedValue(0);
   const critter = findCritter(HERO_CRITTER_ID);
@@ -987,138 +1029,127 @@ function PlayCard({
   }, [bob]);
 
   const bobStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -10 + bob.value * 20 }, { rotate: `${(bob.value - 0.5) * 5}deg` }],
+    transform: [{ translateY: -4 + bob.value * 8 }],
   }));
 
+  const left = today === null ? null : today.new + today.learning + today.due;
+  const done = left === 0;
+  const prefix = track === 'math' ? 'MATH · ' : '';
+  const kicker = empty
+    ? `${prefix}GET STARTED`
+    : mastery
+      ? done
+        ? `${prefix}DONE FOR TODAY`
+        : `${prefix}TODAY'S REVIEW`
+      : `${prefix}FREE PRACTICE`;
+
+  const buttonLabel = empty
+    ? 'IMPORT A DECK'
+    : mastery
+      ? done
+        ? 'PRACTICE (OPTIONAL)'
+        : 'START REVIEW'
+      : 'START PRACTICE';
+  const onPress = empty ? onImport : mastery && done ? onPractice : onStart;
+
   return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={`Play Fish Frenzy. ${currentScope}`}
-      accessibilityHint="Starts a study session"
-      onPress={onPress}
-      style={({ pressed }) => [styles.playPressable, pressed && styles.playPressed]}
-    >
-      <View style={styles.playWrap}>
-        <Glow color={colors.primary} size={300} opacity={0.55} style={styles.playGlow} />
+    <View style={styles.playWrap}>
+      <Glow color={colors.primary} size={260} opacity={done ? 0.25 : 0.45} style={styles.playGlow} />
 
-        <GlassCard contentStyle={styles.playCard} tint="#7b61ff">
-          <View style={styles.playTop}>
-            <View style={styles.playText}>
-              <Text style={styles.playKicker}>{kicker}</Text>
-              <Text style={styles.playTitle}>Fish Frenzy</Text>
-              <Text style={styles.playScope}>{currentScope}</Text>
-            </View>
-
-            <Animated.View style={[styles.playArt, bobStyle]}>
-              {art === null ? (
-                <Text style={styles.playEmoji}>{critter?.emoji ?? '🐟'}</Text>
-              ) : (
-                <Image source={art} style={styles.playImage} resizeMode="contain" />
-              )}
-            </Animated.View>
+      <GlassCard contentStyle={styles.playCard} tint={done ? colors.collection : '#7b61ff'}>
+        <View style={styles.playTop}>
+          <View style={styles.playText}>
+            <Text style={styles.playKicker}>{kicker}</Text>
+            <Text style={styles.playScope} numberOfLines={1}>
+              {currentScope}
+            </Text>
+            {loading ? null : left !== null ? (
+              <Text style={styles.playBig}>{done ? 'All caught up ✓' : `${left} left`}</Text>
+            ) : (
+              <Text style={styles.playLine}>{line}</Text>
+            )}
           </View>
 
-          <GameButton label="START" variant="primary" size="lg" onPress={onPress} pulse />
+          <Animated.View style={[styles.playArt, bobStyle]}>
+            {art === null ? (
+              <Text style={styles.playEmoji}>{critter?.emoji ?? '🐟'}</Text>
+            ) : (
+              <Image source={art} style={styles.playImage} resizeMode="contain" />
+            )}
+          </Animated.View>
+        </View>
 
-          {loading ? (
-            <CritterLoader art={art} emoji={critter?.emoji ?? '🐟'} label="Waking the critters…" />
-          ) : (
-            <Text style={styles.playStatus}>{status}</Text>
-          )}
-        </GlassCard>
-      </View>
-    </Pressable>
+        {loading ? (
+          <CritterLoader art={art} emoji={critter?.emoji ?? '🐟'} label="Waking the critters…" />
+        ) : today !== null ? (
+          <View style={styles.counts}>
+            <Count label="New" value={today.new} color={colors.primaryLight} />
+            <Count label="Learning" value={today.learning} color={colors.ticket} />
+            <Count label="Due" value={today.due} color={colors.gold} />
+          </View>
+        ) : null}
+
+        <GameButton
+          label={buttonLabel}
+          variant={done ? 'secondary' : 'primary'}
+          size="lg"
+          onPress={onPress}
+          pulse={!done && !empty}
+          accessibilityLabel={buttonLabel}
+        />
+
+        {done ? (
+          <Text style={styles.playLine}>
+            Nothing else is scheduled today. Practice is optional and does not affect your reviews.
+          </Text>
+        ) : null}
+      </GlassCard>
+    </View>
   );
 }
 
-/** The art of the packs tile: the critters of the starter pack. */
-function PacksArt() {
-  const critter = findCritter('gigabrain_golem');
-  const art = critter === undefined ? null : critterArt(critter);
-
-  if (art === null) {
-    return <Text style={styles.playEmoji}>🎁</Text>;
-  }
-
-  return <Image source={art} style={styles.tileImage} resizeMode="contain" />;
+/** One of the three counts of today's queue. */
+function Count({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <View style={styles.count} accessibilityLabel={`${value} ${label}`}>
+      <Text style={[styles.countValue, { color }]}>{value}</Text>
+      <Text style={styles.countLabel}>{label}</Text>
+    </View>
+  );
 }
 
-/** One of the three tiles of the game. */
-function ModeTile({
-  title,
-  hint,
-  gradient,
-  glow,
+/** A small tappable chip of the secondary links. */
+function QuickLink({
+  label,
+  emoji,
   onPress,
-  badge,
-  badgePulse = false,
-  art,
+  disabled = false,
+  highlight = false,
 }: {
-  title: string;
-  hint: string;
-  gradient: Gradient;
-  glow: string;
+  label: string;
+  emoji: string;
   onPress: () => void;
-  badge: string;
-  badgePulse?: boolean;
-  art: ReactNode;
+  disabled?: boolean;
+  highlight?: boolean;
 }) {
-  const pulse = useSharedValue(0);
-
-  useEffect(() => {
-    if (!badgePulse) {
-      cancelAnimation(pulse);
-      pulse.value = 0;
-      return undefined;
-    }
-    pulse.value = withRepeat(
-      withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
-      -1,
-      true,
-    );
-    return () => {
-      cancelAnimation(pulse);
-    };
-  }, [badgePulse, pulse]);
-
-  const pulseStyle = useAnimatedStyle(() => ({
-    opacity: 0.55 + pulse.value * 0.45,
-    transform: [{ scale: 1 + pulse.value * 0.06 }],
-  }));
-
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${title}. ${hint}`}
+      accessibilityLabel={label}
+      disabled={disabled}
       onPress={onPress}
-      style={({ pressed }) => [styles.tilePressable, pressed && styles.tilePressed]}
+      style={({ pressed }) => [
+        styles.quickLink,
+        highlight && styles.quickLinkHighlight,
+        pressed && styles.quickLinkPressed,
+        disabled && styles.quickLinkDisabled,
+      ]}
     >
-      <View style={styles.tile}>
-        <LinearGradientFace colors={gradient} />
-        <Glow color={glow} size={150} opacity={0.45} style={styles.tileGlow} />
-
-        <View style={styles.tileArt}>{art}</View>
-
-        <Text style={styles.tileTitle}>{title}</Text>
-        <Text style={styles.tileHint}>{hint}</Text>
-
-        <Animated.View style={[styles.badge, pulseStyle]}>
-          <Text style={styles.badgeText}>{badge}</Text>
-        </Animated.View>
-      </View>
+      <Text style={styles.quickEmoji}>{emoji}</Text>
+      <Text style={styles.quickLabel} numberOfLines={1}>
+        {label}
+      </Text>
     </Pressable>
-  );
-}
-
-/** The gradient face of a tile. */
-function LinearGradientFace({ colors }: { colors: Gradient }) {
-  return (
-    <LinearGradient
-      colors={colors}
-      start={gradientDirection.start}
-      end={gradientDirection.end}
-      style={StyleSheet.absoluteFill}
-    />
   );
 }
 
@@ -1159,52 +1190,28 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
   },
   header: {
-    alignItems: 'center',
-    gap: 4,
-    paddingTop: spacing.sm,
-  },
-  tagline: {
-    color: colors.textMuted,
-    fontFamily: fonts.bodySemi,
-    fontSize: 13,
-    textAlign: 'center',
-    paddingHorizontal: spacing.lg,
-  },
-  walletRow: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  walletCard: {
-    flex: 1,
-  },
-  walletCardContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
+    paddingTop: spacing.xs,
+  },
+  walletPills: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing.sm,
-    paddingVertical: spacing.md,
   },
-  walletLabel: {
-    color: colors.textDim,
-    fontFamily: fonts.bodyBold,
-    fontSize: 10,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  ticketEmoji: {
-    fontSize: 20,
+  pill: {
+    borderRadius: radius.chip,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
   },
   ticketCount: {
     color: colors.ticket,
     fontFamily: fonts.title,
-    fontSize: 24,
-  },
-  playPressable: {
-    borderRadius: radius.card,
-  },
-  playPressed: {
-    opacity: 0.92,
-    transform: [{ scale: 0.99 }],
+    fontSize: 16,
   },
   playWrap: {
     position: 'relative',
@@ -1230,106 +1237,140 @@ const styles = StyleSheet.create({
   playKicker: {
     color: colors.primaryLight,
     fontFamily: fonts.title,
-    fontSize: 13,
-    letterSpacing: 3,
-  },
-  playTitle: {
-    color: colors.text,
-    fontFamily: fonts.title,
-    fontSize: 30,
-    letterSpacing: 0.5,
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 3 },
-    textShadowRadius: 8,
+    fontSize: 12,
+    letterSpacing: 2.5,
   },
   playScope: {
     color: colors.textMuted,
     fontFamily: fonts.bodySemi,
     fontSize: 13,
   },
+  playBig: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 32,
+    marginTop: 2,
+  },
+  playLine: {
+    color: colors.textDim,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 17,
+  },
   playArt: {
-    width: 96,
-    height: 96,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
   },
   playImage: {
-    width: 96,
-    height: 96,
-  },
-  playEmoji: {
-    fontSize: 56,
-  },
-  playStatus: {
-    color: colors.textDim,
-    fontFamily: fonts.bodySemi,
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  tiles: {
-    flexDirection: 'row',
-    gap: spacing.md,
-  },
-  tilePressable: {
-    flex: 1,
-  },
-  tilePressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.97 }],
-  },
-  tile: {
-    flex: 1,
-    minHeight: 168,
-    borderRadius: radius.tile,
-    padding: spacing.md,
-    alignItems: 'center',
-    gap: 2,
-    overflow: 'hidden',
-    ...shadow.soft,
-  },
-  tileGlow: {
-    position: 'absolute',
-    top: -40,
-    left: -30,
-  },
-  tileArt: {
-    height: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tileImage: {
     width: 64,
     height: 64,
   },
-  tileTitle: {
-    color: '#ffffff',
-    fontFamily: fonts.title,
-    fontSize: 13,
-    letterSpacing: 0.8,
-    marginTop: spacing.xs,
+  playEmoji: {
+    fontSize: 40,
   },
-  tileHint: {
-    color: 'rgba(255,255,255,0.8)',
-    fontFamily: fonts.bodySemi,
+  counts: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  count: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: spacing.sm,
+    borderRadius: radius.button,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+  },
+  countValue: {
+    fontFamily: fonts.title,
+    fontSize: 22,
+  },
+  countLabel: {
+    color: colors.textDim,
+    fontFamily: fonts.bodyBold,
+    fontSize: 10,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  modeBlock: {
+    gap: spacing.xs,
+  },
+  modeSwitch: {
+    flexDirection: 'row',
+    padding: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modeOption: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  modeOptionActive: {
+    backgroundColor: 'rgba(123,97,255,0.35)',
+  },
+  modeOptionText: {
+    color: colors.textDim,
+    fontFamily: fonts.title,
     fontSize: 11,
+    letterSpacing: 1,
   },
-  badge: {
-    marginTop: spacing.sm,
-    borderRadius: radius.chip,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    backgroundColor: 'rgba(0,0,0,0.42)',
-  },
-  badgeText: {
-    color: '#ffffff',
-    fontFamily: fonts.title,
-    fontSize: 9,
-    letterSpacing: 0.8,
-  },
-  ringText: {
+  modeOptionTextActive: {
     color: colors.text,
-    fontFamily: fonts.title,
+  },
+  quickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+  },
+  quickLink: {
+    flexGrow: 1,
+    flexBasis: '22%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.button,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  quickLinkHighlight: {
+    borderColor: colors.wheel,
+    backgroundColor: 'rgba(255,170,0,0.14)',
+  },
+  quickLinkPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
+  },
+  quickLinkDisabled: {
+    opacity: 0.5,
+  },
+  quickEmoji: {
     fontSize: 16,
+  },
+  quickLabel: {
+    color: colors.text,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+  },
+  rewardsBlock: {
+    gap: spacing.xs,
+  },
+  moreHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 36,
+  },
+  moreChevron: {
+    color: colors.textDim,
+    fontSize: 11,
   },
   section: {
     borderRadius: radius.card,
@@ -1380,39 +1421,9 @@ const styles = StyleSheet.create({
   sectionTabTextActive: {
     color: colors.text,
   },
-  masteryRow: {
-    gap: 2,
-    paddingHorizontal: spacing.xs,
-  },
   masteryHint: {
+    paddingHorizontal: spacing.xs,
     color: colors.textDim,
-    fontFamily: fonts.bodySemi,
-    fontSize: 12,
-    lineHeight: 16,
-  },
-  syncCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-    borderRadius: radius.card,
-    backgroundColor: 'rgba(255,255,255,0.04)',
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-  },
-  syncText: {
-    flex: 1,
-    gap: 2,
-  },
-  syncTitle: {
-    color: colors.textDim,
-    fontFamily: fonts.title,
-    fontSize: 11,
-    letterSpacing: 2,
-    textTransform: 'uppercase',
-  },
-  syncHint: {
-    color: colors.textMuted,
     fontFamily: fonts.bodySemi,
     fontSize: 12,
     lineHeight: 16,
