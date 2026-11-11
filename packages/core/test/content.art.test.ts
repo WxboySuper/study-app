@@ -24,6 +24,15 @@ const ART_PENDING: readonly string[] = [
   'catch_heavy_void_fish',
   'junk_pumpkin_carving',
   'junk_snowy_mittens',
+  // Thanksgiving 2026 critters: emoji until the art is drawn.
+  'critter_gravy_gremlin',
+  'critter_pie_chart_pup',
+  'critter_cranberry_can_do',
+  'critter_turkey_trot_tutor',
+  'critter_mashed_potato_mentor',
+  'critter_corn_maze_cartographer',
+  'critter_cornucopia_sage',
+  'critter_gobble_scholar_supreme',
 ];
 
 /** The root of the repository (the test lives in `packages/core/test`). */

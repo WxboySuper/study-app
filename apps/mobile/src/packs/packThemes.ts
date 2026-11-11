@@ -36,6 +36,13 @@ const THEMES: Record<string, PackTheme> = {
     ribbon: ['#f97316', '#7c3aed'],
     label: 'Midterm Monsters',
   },
+  gobble_scholars: {
+    gradient: ['#f59e0b', '#9a3412'],
+    crimp: ['#fcd34d', '#c2410c'],
+    glow: '#f59e0b',
+    ribbon: ['#ea580c', '#92400e'],
+    label: 'Gobble Scholars',
+  },
 };
 
 const FALLBACK: PackTheme = {

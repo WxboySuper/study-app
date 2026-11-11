@@ -29,6 +29,7 @@ export {
 export {
   CRITTER_PACKS,
   HALLOWEEN_PACK_ID,
+  THANKSGIVING_PACK_ID,
   STARTER_PACK_ID,
   type CritterPackDef,
   type PackKind,
