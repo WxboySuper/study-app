@@ -41,6 +41,12 @@ export const STARTER_PACK_ID = 'brain_buddies';
  */
 export const HALLOWEEN_PACK_ID = 'midterm_monsters';
 
+/**
+ * The Thanksgiving 2026 seasonal pack. It follows Halloween: on sale from
+ * Nov 2 to Dec 1, 2026 (US Central time).
+ */
+export const THANKSGIVING_PACK_ID = 'gobble_scholars';
+
 /** Every pack of the catalogue. */
 export const CRITTER_PACKS: readonly CritterPackDef[] = [
   {
@@ -63,5 +69,16 @@ export const CRITTER_PACKS: readonly CritterPackDef[] = [
     availableUntil: Date.UTC(2026, 10, 2, 6, 0, 0),
     assetId: 'pack_midterm_monsters',
     emoji: '🎃',
+  },
+  {
+    id: THANKSGIVING_PACK_ID,
+    name: 'Thanksgiving 2026 — Gobble Scholars',
+    kind: 'seasonal',
+    priceTokens: 25,
+    // Nov 2 2026 00:00 CST (UTC-6) -> Dec 1 2026 00:00 CST (UTC-6).
+    availableFrom: Date.UTC(2026, 10, 2, 6, 0, 0),
+    availableUntil: Date.UTC(2026, 11, 1, 6, 0, 0),
+    assetId: 'pack_gobble_scholars',
+    emoji: '🦃',
   },
 ];

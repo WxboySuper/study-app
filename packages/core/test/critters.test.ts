@@ -6,6 +6,7 @@ import {
   CRITTER_RARITY_ODDS,
   CRITTERS,
   HALLOWEEN_PACK_ID,
+  THANKSGIVING_PACK_ID,
   STARTER_PACK_ID,
   crittersByRarity,
   crittersOfPack,
@@ -64,7 +65,7 @@ describe('the critter catalogue', () => {
   });
 
   it('lists the critters of a rarity', () => {
-    expect(crittersByRarity('legendary')).toHaveLength(2);
+    expect(crittersByRarity('legendary')).toHaveLength(3);
     expect(crittersByRarity('legendary', STARTER_PACK_ID)).toHaveLength(1);
     expect(crittersByRarity('legendary', STARTER_PACK_ID)[0]?.id).toBe('gigabrain_golem');
   });
@@ -91,7 +92,23 @@ describe('the packs', () => {
     expect(isPackAvailable(pack!, Date.UTC(2026, 10, 2, 6, 0, 0))).toBe(false);
   });
 
-  it('has two packs', () => {
-    expect(CRITTER_PACKS).toHaveLength(2);
+  it('has three packs', () => {
+    expect(CRITTER_PACKS).toHaveLength(3);
+  });
+});
+
+describe('the Thanksgiving pack', () => {
+  it('has the eight Gobble Scholars and sells inside its window only', () => {
+    const critters = crittersOfPack(THANKSGIVING_PACK_ID);
+    expect(critters).toHaveLength(8);
+    expect(critters.map((critter) => critter.name)).toContain('Gobble Scholar Supreme');
+
+    const pack = findPack(THANKSGIVING_PACK_ID)!;
+    expect(pack.kind).toBe('seasonal');
+    expect(pack.priceTokens).toBe(25);
+    expect(isPackAvailable(pack, Date.UTC(2026, 10, 2, 5, 59, 59))).toBe(false);
+    expect(isPackAvailable(pack, Date.UTC(2026, 10, 2, 6, 0, 0))).toBe(true);
+    expect(isPackAvailable(pack, Date.UTC(2026, 10, 26))).toBe(true);
+    expect(isPackAvailable(pack, Date.UTC(2026, 11, 1, 6, 0, 0))).toBe(false);
   });
 });
