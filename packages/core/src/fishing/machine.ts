@@ -587,16 +587,24 @@ function handleAnswer(
   let nextSession = session;
 
   if (session.roll.powerup === 'double_hook' && state.onTheLine !== null) {
-    const extra = rollCatch(session.rng, { ...session.roll, correctCount: session.correct }, {
-      bonus: item.bonus,
-      season: session.season,
-      critterPackId: session.critterPackId,
-      now: session.now,
-    });
-    nextSession = { ...session, roll: extra.state };
-    if (isCatchOutcome(extra.outcome)) {
-      landing.push(extra.outcome);
+    // The second hook always lands a catch: an extra roll that comes up as a
+    // special (a lure, a frenzy, a powerup) would otherwise be dropped without
+    // ever being shown, so the roll is repeated a few times for a catch.
+    let roll = session.roll;
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const extra = rollCatch(session.rng, { ...roll, correctCount: session.correct }, {
+        bonus: item.bonus,
+        season: session.season,
+        critterPackId: session.critterPackId,
+        now: session.now,
+      });
+      roll = extra.state;
+      if (isCatchOutcome(extra.outcome)) {
+        landing.push(extra.outcome);
+        break;
+      }
     }
+    nextSession = { ...session, roll };
     nextSession = { ...nextSession, roll: { ...nextSession.roll, powerup: null } };
   }
 

@@ -280,6 +280,9 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
   });
   /** `true` while the "MASTERED!" celebration is on the screen. */
   const [celebrating, setCelebrating] = useState(false);
+  /** `true` once today's queue is done, until the last catch is claimed. */
+  const [celebratePending, setCelebratePending] = useState(false);
+  const celebrateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const queueScope = useMemo<QueueScope>(() => {
     switch (scope.kind) {
@@ -693,19 +696,34 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
    * screen (Keep playing in Normal mode, or see the haul).
    */
   const celebrate = useCallback(() => {
+    setCelebratePending(true);
+  }, []);
+
+  // The banner and the Done-for-today sheet wait for the catch of the last
+  // answer to be claimed (or lost): the sheet's backdrop would otherwise
+  // cover the reel and the claim card and block the taps that finish the catch.
+  useEffect(() => {
+    if (!celebratePending || machine.phase !== 'idle') {
+      return;
+    }
+    setCelebratePending(false);
     setCelebrating(true);
     play('legendary');
     hapticLegend();
-
-    const timer = setTimeout(() => {
+    celebrateTimer.current = setTimeout(() => {
       setCelebrating(false);
       setDoneToday(true);
     }, MASTERED_CELEBRATION_MS);
+  }, [celebratePending, machine.phase]);
 
-    return () => {
-      clearTimeout(timer);
-    };
-  }, []);
+  useEffect(
+    () => () => {
+      if (celebrateTimer.current !== null) {
+        clearTimeout(celebrateTimer.current);
+      }
+    },
+    [],
+  );
 
   // Counts the answer toward today's limits (once per card).
   const noteDone = useCallback((cardId: string) => {

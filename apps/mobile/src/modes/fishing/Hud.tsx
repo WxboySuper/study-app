@@ -107,6 +107,7 @@ export function Hud({
           accessibilityRole="button"
           accessibilityLabel="End the session"
           onPress={onEnd}
+          hitSlop={{ top: 8, bottom: 12, left: 12, right: 8 }}
           style={({ pressed }) => [styles.endButton, pressed && styles.endButtonPressed]}
         >
           <Text style={styles.endLabel}>END</Text>
@@ -302,8 +303,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.55)',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    minHeight: 40,
+    justifyContent: 'center',
   },
   endButtonPressed: {
     opacity: 0.7,
