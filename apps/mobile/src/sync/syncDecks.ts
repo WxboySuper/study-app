@@ -1,4 +1,13 @@
-import { DECK_SYNC_FORMAT, deckSyncSince, parseSyncSnapshot, planDeckSync } from '@study-app/core';
+import {
+  DECK_SYNC_FORMAT,
+  DECK_SYNC_IDLE,
+  deckSyncSince,
+  describeSyncFailure,
+  parseSyncSnapshot,
+  planDeckSync,
+  type DeckSyncFailure,
+  type DeckSyncStatus,
+} from '@study-app/core';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import { API_BASE_URL } from '@/config';
@@ -14,16 +23,18 @@ import type { LocalStore } from '@/db/types';
  * `@study-app/core` (`planDeckSync`); this file fetches the answer and hands
  * the plan to the local store.
  *
- * The sync is quiet: a phone without a network, an endpoint that does not
- * answer or an answer that cannot be read are all silent. The player keeps
- * studying the decks they already have, and the next start tries again.
+ * A sync that fails never interrupts the player (they keep studying the decks
+ * they already have and the next start tries again), but it is no longer
+ * silent: the reason is logged and kept in a small status
+ * ({@link getDeckSyncStatus}) that the home screen shows next to its Sync now
+ * button. A silent failure once hid a library that never arrived.
  */
 
 /** The endpoint of the sync. */
 export const SYNC_URL = `${API_BASE_URL}/api/sync`;
 
-/** How long the app waits for the server before it gives up. */
-export const SYNC_TIMEOUT_MS = 8000;
+/** How long the app waits for the server before it gives up (a big library is a big answer). */
+export const SYNC_TIMEOUT_MS = 30_000;
 
 /** The shortest time between two automatic syncs. */
 export const SYNC_INTERVAL_MS = 10 * 60 * 1000;
@@ -67,6 +78,56 @@ export interface DeckSyncOptions {
 /** The sync that is running right now (a second call joins it). */
 let running: Promise<DeckSyncSummary | null> | null = null;
 
+/** What the last sync did (the home screen shows it). */
+let status: DeckSyncStatus = DECK_SYNC_IDLE;
+
+/** The screens that watch the status. */
+const listeners = new Set<(next: DeckSyncStatus) => void>();
+
+/** The status of the sync of the decks. */
+export function getDeckSyncStatus(): DeckSyncStatus {
+  return status;
+}
+
+/** Calls `listener` every time the status changes. Returns the function that stops it. */
+export function subscribeDeckSyncStatus(listener: (next: DeckSyncStatus) => void): () => void {
+  listeners.add(listener);
+
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Changes the status and tells the screens. */
+function setStatus(next: DeckSyncStatus): void {
+  status = next;
+  for (const listener of [...listeners]) {
+    listener(next);
+  }
+}
+
+/**
+ * When the decks were last synced for real, or `null` when they never were.
+ *
+ * It is the cursor of the last good sync (the `now` of the answer of the
+ * server), which is the moment the sync worked.
+ */
+export async function readLastSynced(store?: LocalStore): Promise<number | null> {
+  try {
+    const cursor = await readCursor(store ?? (await openLocalStore()));
+    return cursor > 0 ? cursor : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Logs a failed sync, keeps the reason in the status and answers `null`. */
+function fail(reason: DeckSyncFailure, error?: unknown): null {
+  console.warn(`[sync] decks sync failed (${reason}): ${describeSyncFailure(reason)}`, error ?? '');
+  setStatus({ state: 'error', reason, at: Date.now() });
+  return null;
+}
+
 /** Reads the cursor of the last sync (`0` when the app never synced). */
 async function readCursor(store: LocalStore): Promise<number> {
   const value = await store.readKv(SYNC_CURSOR_KEY);
@@ -101,10 +162,11 @@ function summaryMessage(decks: number): string {
 /**
  * Pulls the decks that changed and writes them in the local store.
  *
- * Returns `null` when the sync could not run (no network, a broken answer or
- * a store that is not available): the caller then says nothing. The cursor is
- * only advanced when the plan was applied, so a failed sync is retried from
- * the same place.
+ * Returns `null` when the sync did not happen: either it was skipped (an
+ * automatic sync that ran a few minutes ago) or it failed (no network, a timeout,
+ * a broken answer or a store that is not available). A failure is logged and
+ * shows in {@link getDeckSyncStatus}. The cursor is only advanced when the plan
+ * was applied, so a failed sync is retried from the same place.
  */
 export async function syncDecks(
   options: DeckSyncOptions = {},
@@ -124,6 +186,9 @@ export async function syncDecks(
 async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null> {
   const doFetch = options.fetchImpl ?? fetch;
 
+  // Where a failure comes from, so the player (and the log) know what broke.
+  let failure: DeckSyncFailure = 'store';
+
   try {
     const store = options.store ?? (await openLocalStore());
     const now = options.now ?? Date.now();
@@ -131,9 +196,12 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
     if (!options.force) {
       const lastRun = await readLastRun(store);
       if (lastRun > 0 && now - lastRun < SYNC_INTERVAL_MS) {
+        // Skipped, not failed: the status stays as it is.
         return null;
       }
     }
+
+    setStatus({ state: 'syncing' });
 
     // The automatic sync remembers that it ran before it asks the server: a
     // phone that is offline tries again at the next start, not on every
@@ -153,25 +221,31 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
     try {
       // `retired=1`: the questions retired on the server come too, so the app
       // hides them and keeps their progress instead of deleting them.
+      failure = 'offline';
       const response = await doFetch(`${SYNC_URL}?since=${since}&retired=1`, {
         signal: controller.signal,
         headers: { Accept: 'application/json' },
       });
 
       if (!response.ok) {
-        return null;
+        return fail('server', `HTTP ${response.status}`);
       }
 
+      failure = 'unreadable';
       payload = await response.json();
+    } catch (error) {
+      // An aborted request is the timeout, whatever the platform calls it.
+      throw controller.signal.aborted ? new SyncTimeout(error) : error;
     } finally {
       clearTimeout(timer);
     }
 
     const snapshot = parseSyncSnapshot(payload);
     if (snapshot === null) {
-      return null;
+      return fail('unreadable', 'the answer is not a sync snapshot');
     }
 
+    failure = 'store';
     const local = await store.readSyncState();
     const plan = planDeckSync(local, snapshot);
 
@@ -180,10 +254,23 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
     await store.writeKv(SYNC_FORMAT_KEY, String(DECK_SYNC_FORMAT));
 
     const decks = plan.decks.length + plan.deletedDeckIds.length;
-    return { decks, message: summaryMessage(decks), cursor: plan.cursor };
-  } catch {
-    // Offline, no answer, a broken answer: the player never sees an error.
-    return null;
+    const message = summaryMessage(decks);
+    setStatus({ state: 'ok', message, at: Date.now() });
+    return { decks, message, cursor: plan.cursor };
+  } catch (error) {
+    // Offline, no answer, a broken answer: the player keeps studying, and
+    // the home screen says what happened.
+    if (error instanceof SyncTimeout) {
+      return fail('timeout', error.original);
+    }
+    return fail(failure, error);
+  }
+}
+
+/** The request ran out of time (see {@link SYNC_TIMEOUT_MS}). */
+class SyncTimeout extends Error {
+  constructor(readonly original: unknown) {
+    super('The sync timed out.');
   }
 }
 
