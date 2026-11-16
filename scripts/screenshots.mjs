@@ -51,7 +51,7 @@ const MIME = {
 /** Runs a command and waits for it. */
 function run(command, args, cwd) {
   return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(command, args, { cwd, stdio: 'inherit', shell: false });
+    const child = spawn(command, args, { cwd, stdio: 'inherit', shell: process.platform === 'win32' });
     child.on('error', rejectPromise);
     child.on('exit', (code) => {
       if (code === 0) {

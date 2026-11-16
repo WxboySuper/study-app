@@ -3,24 +3,27 @@ import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { critterArt } from '@/packs/critterArt';
-import { colors, fonts, radius, rarityGradients, type Gradient } from '@/theme';
-import { GlassCard, RarityBadge, Shine } from '@/ui';
+import { colors, fonts, radius, rarityColors, rarityGradients, rarityLabels } from '@/theme';
+import { GlassCard, Shine } from '@/ui';
+
+import { CritterFrame } from './CritterFrame';
+import { RarityPips } from './RarityPips';
 
 /**
- * One critter of the album.
+ * One critter of the album, drawn as a study card.
  *
- * The card is a pane of glass in the gradient of the rarity of the critter,
- * so the shelf of the album is a rainbow of rarities. A critter the player
- * owns is drawn in full and counts its copies in a bubble; a critter that is
- * still missing is a dark silhouette with a question mark that shimmers, so
- * the album always shows what is still to be found.
+ * Top row: the catalogue number and the rarity as five diamonds. Then the art
+ * window (a sheet of graph paper tinted with the rarity), the name and a
+ * line of vibe. A critter the player owns is drawn in full and counts its
+ * copies in a chip; a missing one is a dark silhouette with "???" so the
+ * album always shows what is left to find.
  */
 export interface CritterCardProps {
   /** The critter of the catalogue. */
   critter: CritterDef;
   /** How many copies the player owns. */
   count: number;
-  /** The position of the card in the grid (for the entrance). */
+  /** The position of the card in the grid (also its catalogue number). */
   index: number;
   /** Called when the card is tapped. */
   onPress: () => void;
@@ -32,10 +35,7 @@ export function CritterCard({ critter, count, index, onPress }: CritterCardProps
   const art = critterArt(critter);
   const face = rarityGradients[critter.rarity];
   const shiny = critter.rarity === 'legendary' || critter.rarity === 'epic';
-
-  // The face of the card is the gradient of the rarity, but see-through:
-  // the glass of the card still shows the background of the screen.
-  const tinted: Gradient = [`${face[0]}4d`, `${face[1]}1a`];
+  const number = String(index + 1).padStart(2, '0');
 
   return (
     <Animated.View
@@ -45,7 +45,9 @@ export function CritterCard({ critter, count, index, onPress }: CritterCardProps
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={
-          owned ? `${critter.name}, ${count} owned` : `${critter.name}, not collected yet`
+          owned
+            ? `${critter.name}, ${rarityLabels[critter.rarity]}, ${count} owned`
+            : `Number ${number}, not collected yet`
         }
         onPress={onPress}
         style={({ pressed }) => [styles.press, pressed && styles.pressed]}
@@ -53,45 +55,47 @@ export function CritterCard({ critter, count, index, onPress }: CritterCardProps
         <GlassCard
           style={styles.card}
           contentStyle={styles.cardContent}
-          tint={face[0]}
-          face={owned ? tinted : undefined}
-          borderRadius={radius.tile}
-          accessibilityLabel={critter.name}
+          tint={owned ? face[0] : '#ffffff'}
+          borderRadius={radius.card}
         >
-          <View style={styles.artBox}>
+          <View style={styles.top}>
+            <Text style={styles.number}>No. {number}</Text>
+            <RarityPips rarity={critter.rarity} />
+          </View>
+
+          <CritterFrame rarity={critter.rarity} missing={!owned}>
             {art === null ? (
-              <Text style={[styles.emoji, !owned && styles.emojiMissing]}>{critter.emoji}</Text>
+              <Text style={[styles.emoji, !owned && styles.dim]}>{critter.emoji}</Text>
             ) : (
               <Image
                 source={art}
-                style={[styles.art, !owned && styles.silhouette]}
+                style={[styles.art, !owned && styles.dim]}
                 resizeMode="contain"
               />
             )}
-
             {!owned ? (
               <>
                 <View style={styles.shade} pointerEvents="none" />
                 <Text style={styles.question}>?</Text>
-                <View style={styles.shimmer} pointerEvents="none">
-                  <Shine width={54} duration={2000} interval={1500} />
-                </View>
               </>
             ) : null}
-
-            {owned && shiny ? <Shine width={130} duration={1300} interval={2400} /> : null}
-
+            {owned && shiny ? <Shine width={130} duration={1300} interval={2600} /> : null}
             {owned ? (
-              <View style={styles.countBubble}>
+              <View style={styles.countChip}>
                 <Text style={styles.countText}>x{count}</Text>
               </View>
             ) : null}
-          </View>
+          </CritterFrame>
 
           <View style={styles.meta}>
-            <RarityBadge rarity={critter.rarity} size="sm" />
-            <Text style={[styles.name, !owned && styles.nameMissing]} numberOfLines={2}>
-              {critter.name}
+            <Text style={[styles.name, !owned && styles.nameMissing]} numberOfLines={1}>
+              {owned ? critter.name : '???'}
+            </Text>
+            <Text
+              style={[styles.vibe, { color: owned ? rarityColors[critter.rarity] : colors.textDim }]}
+              numberOfLines={1}
+            >
+              {owned ? rarityLabels[critter.rarity] : 'Not found yet'}
             </Text>
           </View>
         </GlassCard>
@@ -102,40 +106,44 @@ export function CritterCard({ critter, count, index, onPress }: CritterCardProps
 
 const styles = StyleSheet.create({
   wrap: {
-    width: '31.5%',
+    width: '48.4%',
   },
   press: {
     flex: 1,
   },
   pressed: {
-    opacity: 0.82,
-    transform: [{ scale: 0.96 }],
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
   },
   card: {
     overflow: 'hidden',
   },
   cardContent: {
-    padding: 7,
-    gap: 6,
+    padding: 10,
+    gap: 8,
   },
-  artBox: {
-    width: '100%',
-    aspectRatio: 1,
+  top: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    borderRadius: radius.tile - 6,
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  number: {
+    color: colors.textMuted,
+    fontFamily: fonts.titleSemi,
+    fontSize: 12,
+    letterSpacing: 0.4,
   },
   art: {
-    width: '100%',
-    height: '100%',
+    width: '88%',
+    height: '88%',
   },
-  silhouette: {
+  dim: {
     opacity: 0.9,
   },
   shade: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(5, 7, 12, 0.88)',
+    backgroundColor: 'rgba(5, 7, 12, 0.86)',
   },
   question: {
     position: 'absolute',
@@ -144,34 +152,27 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     textAlign: 'center',
-    color: 'rgba(255,255,255,0.42)',
+    color: 'rgba(255,255,255,0.34)',
     fontFamily: fonts.title,
-    fontSize: 46,
-    lineHeight: 52,
+    fontSize: 54,
+    lineHeight: 60,
     textAlignVertical: 'center',
   },
-  shimmer: {
-    ...StyleSheet.absoluteFill,
-    opacity: 0.4,
-  },
   emoji: {
-    fontSize: 44,
+    fontSize: 52,
     textAlign: 'center',
   },
-  emojiMissing: {
-    opacity: 0.35,
-  },
-  countBubble: {
+  countChip: {
     position: 'absolute',
-    right: 4,
-    top: 4,
-    minWidth: 26,
-    height: 26,
-    paddingHorizontal: 6,
-    borderRadius: 13,
-    backgroundColor: colors.primary,
-    borderWidth: 2,
-    borderColor: 'rgba(8, 10, 16, 0.9)',
+    right: 6,
+    bottom: 6,
+    minWidth: 28,
+    height: 22,
+    paddingHorizontal: 8,
+    borderRadius: 11,
+    backgroundColor: 'rgba(8, 10, 16, 0.78)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -181,17 +182,20 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   meta: {
-    alignItems: 'center',
-    gap: 4,
+    gap: 1,
+    paddingHorizontal: 2,
   },
   name: {
     color: colors.text,
-    fontFamily: fonts.titleSemi,
-    fontSize: 10,
-    textAlign: 'center',
-    lineHeight: 13,
+    fontFamily: fonts.title,
+    fontSize: 15,
   },
   nameMissing: {
     color: colors.textDim,
+  },
+  vibe: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    letterSpacing: 0.3,
   },
 });
