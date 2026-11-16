@@ -3,6 +3,7 @@ import {
   buildQueue,
   canSpin,
   countScope,
+  deckSyncLines,
   filterByScope,
   filterByTrack,
   findCritter,
@@ -11,6 +12,7 @@ import {
   masteryForecast,
   parseDailyDone,
   type DailyDone,
+  type DeckSyncStatus,
   type QuestionTrack,
   type StudyOptions,
   PACKS,
@@ -20,6 +22,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Modal,
   Platform,
@@ -31,8 +34,6 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
-  FadeIn,
-  FadeOut,
   cancelAnimation,
   useAnimatedStyle,
   useSharedValue,
@@ -63,7 +64,12 @@ import {
 import { DeckPicker } from '@/study/DeckPicker';
 import { DAILY_DONE_KEY, DAILY_DONE_MATH_KEY, readStudyOptions } from '@/study/studyOptions';
 import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
-import { syncDecks } from '@/sync/syncDecks';
+import {
+  getDeckSyncStatus,
+  readLastSynced,
+  subscribeDeckSyncStatus,
+  syncDecks,
+} from '@/sync/syncDecks';
 import { colors, fonts, radius, spacing } from '@/theme';
 import {
   appVersion,
@@ -99,7 +105,6 @@ import {
 const HERO_CRITTER_ID = 'mnemo_the_memory_jelly';
 
 /** How long the result of a deck sync stays on the screen. */
-const SYNC_TOAST_MS = 2200;
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -146,10 +151,12 @@ export default function HomeScreen() {
   const [movingDeck, setMovingDeck] = useState<DeckCard | null>(null);
   /** The release of the game that is newer than the app. */
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
-  /** `true` while the decks are being pulled from the server. */
-  const [syncing, setSyncing] = useState(false);
-  /** The result of the last manual sync (a toast). */
-  const [syncToast, setSyncToast] = useState<string | null>(null);
+  /** What the last sync of the decks did (the Sync now bar shows it). */
+  const [syncStatus, setSyncStatus] = useState<DeckSyncStatus>(getDeckSyncStatus);
+  /** When the decks were last synced for real (`null`: never). */
+  const [lastSynced, setLastSynced] = useState<number | null>(null);
+  /** The clock of the Sync now bar ("5 min ago" moves on by itself). */
+  const [clock, setClock] = useState(() => Date.now());
   /** `true` while the hidden admin panel is open. */
   const [adminOpen, setAdminOpen] = useState(false);
   /** `true` while the 'Settings and more' section is open. */
@@ -219,44 +226,43 @@ export default function HomeScreen() {
     }, [loadDecks]),
   );
 
-  // The toast of the manual sync goes away by itself.
+  // The Sync now bar follows the sync of the decks, the automatic one at the
+  // start of the app included: a sync that failed is shown, and a sync that
+  // worked refreshes the decks on the screen.
   useEffect(() => {
-    if (syncToast === null) {
-      return undefined;
-    }
+    void readLastSynced().then(setLastSynced);
 
-    const timer = setTimeout(() => {
-      setSyncToast(null);
-    }, SYNC_TOAST_MS);
+    return subscribeDeckSyncStatus((next) => {
+      setSyncStatus(next);
+      if (next.state === 'ok') {
+        setLastSynced(next.at);
+        void loadDecks();
+      }
+    });
+  }, [loadDecks]);
+
+  // "Last synced 5 min ago" keeps counting while the screen is open.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setClock(Date.now());
+    }, 30_000);
 
     return () => {
-      clearTimeout(timer);
+      clearInterval(timer);
     };
-  }, [syncToast]);
+  }, []);
 
   // The button of the home screen always asks the server: a player who taps
-  // it wants to know *now* what changed. A sync that fails (offline) says
-  // nothing.
+  // it wants to know *now* what changed. The bar shows the progress and the
+  // result (or why it failed), so the button itself only starts the sync.
   const onSyncDecks = useCallback(() => {
-    if (syncing) {
+    if (syncStatus.state === 'syncing') {
       return;
     }
 
     play('tap');
-    setSyncing(true);
-
-    void (async () => {
-      try {
-        const result = await syncDecks({ force: true });
-        if (result !== null) {
-          setSyncToast(result.message);
-          await loadDecks();
-        }
-      } finally {
-        setSyncing(false);
-      }
-    })();
-  }, [loadDecks, syncing]);
+    void syncDecks({ force: true });
+  }, [syncStatus.state]);
 
   // The hidden admin panel changes the wallet and the collection: Home shows
   // the new numbers right away.
@@ -695,12 +701,6 @@ export default function HomeScreen() {
                 router.push('/quiz');
               }}
             />
-            <QuickLink
-              label={syncing ? 'Syncing…' : 'Sync'}
-              emoji="🔄"
-              disabled={syncing}
-              onPress={onSyncDecks}
-            />
           </View>
 
           <View style={styles.rewardsBlock}>
@@ -797,16 +797,7 @@ export default function HomeScreen() {
           </View>
         </ScrollView>
 
-        {syncToast === null ? null : (
-          <Animated.View
-            entering={FadeIn}
-            exiting={FadeOut}
-            style={styles.syncToast}
-            pointerEvents="none"
-          >
-            <Text style={styles.syncToastText}>{syncToast}</Text>
-          </Animated.View>
-        )}
+        <SyncBar status={syncStatus} lastSynced={lastSynced} now={clock} onPress={onSyncDecks} />
       </SafeAreaView>
 
       {pendingDelete === null ? null : (
@@ -1118,6 +1109,70 @@ function Count({ label, value, color }: { label: string; value: number; color: s
   );
 }
 
+/**
+ * The Sync now bar.
+ *
+ * It floats low on the home screen so a thumb reaches it, always shows what
+ * the last sync did (progress, result or the reason it failed) and is the
+ * one button that asks the server for the decks *now*.
+ */
+function SyncBar({
+  status,
+  lastSynced,
+  now,
+  onPress,
+}: {
+  status: DeckSyncStatus;
+  lastSynced: number | null;
+  now: number;
+  onPress: () => void;
+}) {
+  const lines = deckSyncLines(status, lastSynced, now);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${lines.title}. ${lines.detail}`}
+      accessibilityHint={lines.busy ? undefined : 'Pulls the latest decks from the server'}
+      accessibilityState={{ busy: lines.busy, disabled: lines.busy }}
+      disabled={lines.busy}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.syncBar,
+        lines.failed ? styles.syncBarFailed : null,
+        pressed ? styles.syncBarPressed : null,
+      ]}
+      testID="sync-now-bar"
+    >
+      <View style={styles.syncText}>
+        <Text
+          style={[styles.syncTitle, lines.failed ? styles.syncTitleFailed : null]}
+          numberOfLines={1}
+        >
+          {lines.title}
+        </Text>
+        <Text style={styles.syncDetail} numberOfLines={2}>
+          {lines.detail}
+        </Text>
+      </View>
+
+      <View
+        style={[
+          styles.syncAction,
+          lines.failed ? styles.syncActionFailed : null,
+          lines.busy ? styles.syncActionBusy : null,
+        ]}
+      >
+        {lines.busy ? (
+          <ActivityIndicator color={colors.text} />
+        ) : (
+          <Text style={styles.syncActionText}>{lines.action}</Text>
+        )}
+      </View>
+    </Pressable>
+  );
+}
+
 /** A small tappable chip of the secondary links. */
 function QuickLink({
   label,
@@ -1186,7 +1241,8 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.lg,
-    paddingBottom: 48,
+    // Room for the Sync now bar that floats at the bottom of the screen.
+    paddingBottom: 112,
     gap: spacing.lg,
   },
   header: {
@@ -1428,24 +1484,67 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
-  syncToast: {
+  syncBar: {
     position: 'absolute',
     left: spacing.lg,
     right: spacing.lg,
-    bottom: spacing.xl,
-    borderRadius: radius.button,
-    backgroundColor: 'rgba(18, 20, 26, 0.96)',
-    borderWidth: 1,
-    borderColor: colors.collection,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    bottom: spacing.md,
+    minHeight: 64,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
+    borderRadius: radius.card,
+    backgroundColor: '#12141a',
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    paddingVertical: spacing.sm,
+    paddingLeft: spacing.lg,
+    paddingRight: spacing.sm,
   },
-  syncToastText: {
+  syncBarFailed: {
+    borderColor: colors.danger,
+  },
+  syncBarPressed: {
+    opacity: 0.85,
+  },
+  syncText: {
+    flex: 1,
+    gap: 2,
+  },
+  syncTitle: {
     color: colors.text,
     fontFamily: fonts.title,
-    fontSize: 14,
-    textAlign: 'center',
+    fontSize: 15,
+  },
+  syncTitleFailed: {
+    color: colors.danger,
+  },
+  syncDetail: {
+    color: colors.textMuted,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  syncAction: {
+    minWidth: 104,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.button,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.md,
+  },
+  syncActionFailed: {
+    backgroundColor: colors.danger,
+  },
+  syncActionBusy: {
+    backgroundColor: colors.surfaceLight,
+  },
+  syncActionText: {
+    color: colors.text,
+    fontFamily: fonts.title,
+    fontSize: 13,
+    letterSpacing: 0.5,
   },
   versionPressable: {
     alignSelf: 'center',

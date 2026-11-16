@@ -102,6 +102,11 @@ interface QuestionRow {
   math_json: string | null;
 }
 
+/** A question row of the sync query, which reads many decks at once. */
+interface SyncQuestionRow extends QuestionRow {
+  deck_id: string;
+}
+
 /**
  * Reads a deck of a text (a JSON deck or a pasted deck).
  *
@@ -696,28 +701,52 @@ export async function readDecksSince(
   since: number,
   includeRetired = false,
 ): Promise<SyncDeck[]> {
-  const decks = await db
-    .prepare(
-      `SELECT id, name, class_name, updated_at, deleted
-       FROM decks
-       WHERE updated_at > ?
-       ORDER BY updated_at ASC, id ASC`,
-    )
-    .bind(since)
-    .all<DeckRow>();
+  // Two statements in ONE round trip (and one transaction, so the questions
+  // always belong to the decks that were read): the decks that changed and the
+  // questions of those decks, joined on the same `updated_at` test. Reading
+  // the questions deck by deck was one D1 query per deck, which took many
+  // seconds for a couple of hundred decks and made the phone give up.
+  const [decksResult, questionsResult] = await db.batch<DeckRow | SyncQuestionRow>([
+    db
+      .prepare(
+        `SELECT id, name, class_name, updated_at, deleted
+         FROM decks
+         WHERE updated_at > ?
+         ORDER BY updated_at ASC, id ASC`,
+      )
+      .bind(since),
+    db
+      .prepare(
+        `SELECT q.deck_id AS deck_id, q.id, q.position, q.question, q.correct, q.wrong_json,
+                q.retired, q.type, q.math_json
+         FROM questions q
+         JOIN decks d ON d.id = q.deck_id
+         WHERE d.updated_at > ? AND d.deleted = 0${includeRetired ? '' : ' AND q.retired = 0'}
+         ORDER BY q.deck_id ASC, q.retired ASC, q.position ASC, q.id ASC`,
+      )
+      .bind(since),
+  ]);
 
-  const out: SyncDeck[] = [];
-  for (const deck of decks.results ?? []) {
-    out.push({
-      id: deck.id,
-      name: deck.name,
-      class: deck.class_name,
-      updatedAt: deck.updated_at,
-      deleted: deck.deleted === 1,
-      questions: deck.deleted === 1 ? [] : await readQuestions(db, deck.id, includeRetired),
-    });
+  // The questions of every deck, in the order of the query (retired last,
+  // then position, then id), exactly as `readQuestions` returns them.
+  const byDeck = new Map<string, QuestionRow[]>();
+  for (const row of (questionsResult?.results ?? []) as SyncQuestionRow[]) {
+    const list = byDeck.get(row.deck_id);
+    if (list === undefined) {
+      byDeck.set(row.deck_id, [row]);
+    } else {
+      list.push(row);
+    }
   }
-  return out;
+
+  return ((decksResult?.results ?? []) as DeckRow[]).map((deck) => ({
+    id: deck.id,
+    name: deck.name,
+    class: deck.class_name,
+    updatedAt: deck.updated_at,
+    deleted: deck.deleted === 1,
+    questions: deck.deleted === 1 ? [] : toQuestions(byDeck.get(deck.id) ?? []),
+  }));
 }
 
 /** Finds the id of a deck by its name (`null` when there is none). */

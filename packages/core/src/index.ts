@@ -477,3 +477,4 @@ export * from './mathGrade';
 export * from './mathKeyboard';
 export * from './reviewPersist';
 export * from './deckSyncFormat';
+export * from './deckSyncStatus';
