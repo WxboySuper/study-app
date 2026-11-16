@@ -68,7 +68,7 @@ export const CRITTERS: readonly CritterDef[] = [
     name: 'Nibbles the Notecard',
     packId: 'brain_buddies',
     rarity: 'common',
-    vibe: 'A folded index card that snacks on loose facts.',
+    vibe: 'A neat index card that snacks on loose facts.',
     assetId: 'critter_nibbles_the_notecard',
     emoji: '🗂️',
   },
