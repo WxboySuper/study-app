@@ -242,15 +242,7 @@ export function PacksScreen() {
     <GameBackground variant="packs">
       <SafeAreaView style={styles.container}>
         <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <ScreenHeader
-            title="PACK SHOP"
-            subtitle="Open a pack, find a critter"
-            right={
-              <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.headerChip}>
-                <TokenCounter value={balance} size={18} />
-              </GlassCard>
-            }
-          />
+          <ScreenHeader title="PACK SHOP" subtitle="Open a pack, find a critter" />
 
           <GlassCard contentStyle={styles.wallet} tint={colors.ticket}>
             <View style={styles.walletCell}>
@@ -374,16 +366,6 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 48,
     gap: 14,
-  },
-  headerChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  headerChipText: {
-    fontSize: 14,
   },
   wallet: {
     flexDirection: 'row',
