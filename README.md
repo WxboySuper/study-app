@@ -122,6 +122,14 @@ builds the APK with Gradle, re-signs it with `apksigner` using the release
 keystore from the repository secrets and uploads it to the GitHub release. The
 keystore itself is never committed.
 
+**Releasing is automatic.** Bump `version` in `apps/mobile/app.json` in the PR
+(every PR that changes the app does). When that lands on `main`,
+[`.github/workflows/release-on-version-bump.yml`](.github/workflows/release-on-version-bump.yml)
+creates the `v<version>` tag and starts the Android build on it, and the build
+publishes the GitHub release. The in-app update check reads the latest release,
+so phones see the new version about half an hour after the merge. If the tag
+already exists nothing happens; pushing a `v*` tag by hand still works too.
+
 Locally you can build the same thing with:
 
 ```bash
