@@ -1,0 +1,107 @@
+name: Release on merge
+
+# Every merge to main that changes the app (apps/mobile, packages/core or the
+# lockfile) gets a version, a git tag and an Android build, so phones always
+# get what is on main.
+#
+#  * If the PR already bumped `version` in apps/mobile/app.json and that
+#    version has no tag yet, that version is released as it is.
+#  * If the version is already released (the PR did not bump it), the patch
+#    number is bumped here, committed to main, and that commit is released.
+#
+# The APK is built from a `v*` tag and the in-app update check reads the latest
+# GitHub release. A tag pushed with the built-in GITHUB_TOKEN does not start
+# other workflows, but a workflow_dispatch does, so this workflow creates the
+# tag and then dispatches `android-release.yml` on it; that run sees a tag ref
+# and publishes a normal (not pre-release) GitHub release, exactly as a manual
+# tag push would. A tag pushed by hand still works too.
+#
+# The run always releases the latest main, so two quick merges end up in one
+# build: the later run finds main already tagged and stops.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/**
+      - packages/core/**
+      - pnpm-lock.yaml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only print what would happen (no commit, tag or build)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: release-on-merge
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Version, tag and build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force origin
+
+          if [[ -n "$(git tag --points-at HEAD)" ]]; then
+            echo "main ($(git rev-parse --short HEAD)) is already tagged: $(git tag --points-at HEAD | tr '\n' ' '). Nothing to release."
+            exit 0
+          fi
+
+          VERSION="$(node -p "require('./apps/mobile/app.json').expo.version")"
+          if ! [[ "$VERSION" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "::error::apps/mobile/app.json version '$VERSION' is not x.y.z"
+            exit 1
+          fi
+          MAJOR="${BASH_REMATCH[1]}"; MINOR="${BASH_REMATCH[2]}"; PATCH="${BASH_REMATCH[3]}"
+
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            # This version is already released, so the merge did not bump it.
+            while git rev-parse -q --verify "refs/tags/v$MAJOR.$MINOR.$PATCH" >/dev/null; do
+              PATCH=$((PATCH + 1))
+            done
+            NEW="$MAJOR.$MINOR.$PATCH"
+            echo "v$VERSION is already released; bumping the app to $NEW."
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY RUN: would commit 'chore: bump app to $NEW', tag v$NEW and start the Android build."
+              exit 0
+            fi
+            sed -i -E "0,/\"version\": \"[0-9.]+\"/s//\"version\": \"$NEW\"/" apps/mobile/app.json
+            [[ "$(node -p "require('./apps/mobile/app.json').expo.version")" == "$NEW" ]] \
+              || { echo "::error::could not write the new version"; exit 1; }
+            git add apps/mobile/app.json
+            git commit -m "chore: bump app to $NEW (automatic release)"
+            git push origin HEAD:main
+            VERSION="$NEW"
+          else
+            echo "v$VERSION has no tag yet; releasing it as it is."
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "DRY RUN: would tag v$VERSION and start the Android build."
+              exit 0
+            fi
+          fi
+
+          TAG="v$VERSION"
+          SHA="$(git rev-parse HEAD)"
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" >/dev/null
+          echo "Created tag $TAG at $SHA"
+          gh workflow run android-release.yml --ref "$TAG"
+          echo "Started the Android release for $TAG"
