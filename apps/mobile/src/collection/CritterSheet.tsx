@@ -13,6 +13,9 @@ import { critterArt } from '@/packs/critterArt';
 import { colors, fonts, radius, rarityGradients } from '@/theme';
 import { GameButton, GlassCard, Glow, RarityBadge } from '@/ui';
 
+import { CritterFrame } from './CritterFrame';
+import { RarityPips } from './RarityPips';
+
 /**
  * The sheet of a critter.
  *
@@ -85,19 +88,27 @@ export function CritterSheet({
       <Animated.View style={[styles.sheetWrap, sheetStyle]}>
         <View style={styles.handle} />
 
-        <GlassCard contentStyle={styles.sheet} tint={face[0]} face={face} padded>
-          <View style={styles.artBox}>
+        <GlassCard
+          contentStyle={styles.sheet}
+          tint={face[0]}
+          face={[`${face[0]}33`, `${face[1]}12`]}
+          padded
+        >
+          <CritterFrame rarity={critter.rarity} style={styles.window}>
             <Animated.View style={[styles.glow, glowStyle]} pointerEvents="none">
-              <Glow color={face[0]} size={210} opacity={0.8} />
+              <Glow color={face[0]} size={210} opacity={0.55} />
             </Animated.View>
             {art === null ? (
               <Text style={styles.emoji}>{critter.emoji}</Text>
             ) : (
               <Image source={art} style={styles.art} resizeMode="contain" />
             )}
-          </View>
+          </CritterFrame>
 
-          <RarityBadge rarity={critter.rarity} size="md" />
+          <View style={styles.rarityRow}>
+            <RarityBadge rarity={critter.rarity} size="md" />
+            <RarityPips rarity={critter.rarity} size={9} />
+          </View>
 
           <Text style={styles.name}>{critter.name}</Text>
           <Text style={styles.vibe}>{critter.vibe}</Text>
@@ -219,17 +230,21 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     paddingVertical: 20,
   },
-  artBox: {
-    height: 130,
+  window: {
+    aspectRatio: 1.7,
+  },
+  rarityRow: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 12,
   },
   glow: {
     position: 'absolute',
   },
   art: {
-    width: 120,
-    height: 120,
+    width: '78%',
+    height: '86%',
   },
   emoji: {
     fontSize: 78,
