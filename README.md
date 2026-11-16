@@ -122,13 +122,16 @@ builds the APK with Gradle, re-signs it with `apksigner` using the release
 keystore from the repository secrets and uploads it to the GitHub release. The
 keystore itself is never committed.
 
-**Releasing is automatic.** Bump `version` in `apps/mobile/app.json` in the PR
-(every PR that changes the app does). When that lands on `main`,
-[`.github/workflows/release-on-version-bump.yml`](.github/workflows/release-on-version-bump.yml)
-creates the `v<version>` tag and starts the Android build on it, and the build
-publishes the GitHub release. The in-app update check reads the latest release,
-so phones see the new version about half an hour after the merge. If the tag
-already exists nothing happens; pushing a `v*` tag by hand still works too.
+**Releasing is automatic.** Every merge to `main` that changes the app
+(`apps/mobile`, `packages/core` or the lockfile) is released by
+[`.github/workflows/release-on-merge.yml`](.github/workflows/release-on-merge.yml):
+if the PR bumped `version` in `apps/mobile/app.json` to a version that has no tag
+yet, that version is released; otherwise the workflow bumps the patch number,
+commits it to `main`, tags `v<version>` and starts the Android build on the tag.
+The build publishes the GitHub release and the in-app update check reads it, so
+phones get the new version about half an hour after the merge. A PR can still
+bump the version itself (for a minor or major bump), and pushing a `v*` tag by
+hand still works. Run the workflow with `dry_run` to see what it would do.
 
 Locally you can build the same thing with:
 
