@@ -249,6 +249,8 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
 
   const cardsRef = useRef<StudyCard[]>([]);
   const statesRef = useRef<Map<string, CardState>>(new Map());
+  /** The states graded in this session (a card that came back is a repeat, not new). */
+  const gradedRef = useRef<ReadonlyMap<string, CardState>>(new Map());
   /** The Mastery inputs of the forecast on the Done-for-today screen. */
   const forecastInputRef = useRef<{
     options: StudyOptions;
@@ -330,19 +332,19 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
         queueRng,
       );
 
+      // A card that was already graded in this session is no longer new: it is
+      // due again (a learning step) or a repeat, so it never rolls the critter
+      // special or a ticket as a first look would.
+      const state = gradedRef.current.get(question.id) ?? question.state;
       const kind: QueueItemKind =
-        question.state === undefined
-          ? 'new'
-          : question.state.due <= Date.now()
-            ? 'due'
-            : 'bonus';
+        state === undefined ? 'new' : state.due <= Date.now() ? 'due' : 'bonus';
 
       return {
         cardId: question.id,
         card: { ...question.card, choices: built.options, answerIndex: built.answerIndex },
         kind,
         bonus: kind === 'bonus',
-        ...(question.state === undefined ? {} : { state: question.state }),
+        ...(state === undefined ? {} : { state }),
       };
     },
     [queueRng],
@@ -684,6 +686,10 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
       return;
     }
     engineRef.current = updateSessionStates(engine, machine.session.cardStates);
+  }, [machine.session.cardStates]);
+
+  useEffect(() => {
+    gradedRef.current = machine.session.cardStates;
   }, [machine.session.cardStates]);
 
   const machineRef = useRef(machine);

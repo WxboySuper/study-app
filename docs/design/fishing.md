@@ -416,7 +416,7 @@ Multiplayer, real distractions against other players, timers, an aquarium displa
 - [ ] The HOOKED! banner, GOT_AWAY and the in-session lure ranks 1–5 work. Frenzy lasts 5 catches. Powerups, critter catches and the Pack Ticket caps all work.
 - [ ] A critter catch is a catch: it counts for the haul and it is shown on the reveal and on the payout screen, but it **never** enters the collection. Only a pack grants a critter (a duplicate only bumps the count there).
 - [ ] Only the critters of the packs that are on sale swim up.
-- [ ] Bonus cards roll at rank 1 at most and never roll the critter special or a ticket.
+- [ ] Bonus (repeat) cards roll at the current lure rank, without the Frenzy lift, and never roll the critter special or a ticket. A card that was already graded in this session is a repeat, not new.
 - [ ] About 2 % of the catches are heavy catches at the best lure: they use the Angler's Legend tier, sit inside their wiki row's weight range and pay 15 tokens each at the end of the session.
 - [ ] Sound, haptics and Reduce Motion all have toggles.
 - [ ] Unit tests cover the reducer, the tier odds per rank, the weight roll, the specials and their caps (seeded RNG), and that a simulated session leaves the collection unchanged.
