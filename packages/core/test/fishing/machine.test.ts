@@ -712,8 +712,9 @@ describe('the fishing machine', () => {
     expect(landed.session.roll.lureRank).toBe(2);
   });
 
-  it('lands a second catch with the Double Hook only when it is a catch', () => {
-    // The first roll is a fish, the second (the Double Hook) is a special.
+  it('lands a second catch with the Double Hook even when its first roll is a special', () => {
+    // The first roll is a fish, the second (the Double Hook) is a special and
+    // is rerolled, so the player never loses the second catch.
     const state = createState({ rng: sequenceRng([0.1, 0.0, 0.0, 0.97, 0.1]) });
     const withHook: FishingState = {
       ...state,
@@ -722,7 +723,7 @@ describe('the fishing machine', () => {
 
     const answered = answer(toHooked(withHook), 0);
 
-    expect(answered.landing).toHaveLength(1);
+    expect(answered.landing).toHaveLength(2);
   });
 
   it('ignores an answer when there is no card', () => {
