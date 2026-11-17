@@ -849,9 +849,11 @@ export async function applyLocalSyncPlan(
             question.retired ? 1 : 0,
           );
 
+          // A progress row left behind by a question that was deleted earlier
+          // (same id) is replaced by the fresh one.
           const state = createInitialState(question.localId, new Date(now));
           await db.runAsync(
-            `INSERT INTO local_card_state
+            `INSERT OR REPLACE INTO local_card_state
                (card_id, due, stability, difficulty, elapsed_days, scheduled_days, learning_steps, reps, lapses, state, last_review)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             state.cardId,
