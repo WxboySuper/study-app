@@ -8,6 +8,7 @@ import {
   splitSyncPlan,
   type DeckSyncFailure,
   type DeckSyncStatus,
+  type SyncPlan,
 } from '@study-app/core';
 import { AppState, type AppStateStatus } from 'react-native';
 
@@ -135,11 +136,17 @@ function fail(reason: DeckSyncFailure, error?: unknown): null {
   return null;
 }
 
+/** Names the deck of a failed part with the reason. */
+function describeBroken(part: SyncPlan, error: unknown): string {
+  const what = part.decks[0]?.title ?? (part.classes.length > 0 ? 'classes' : 'deletions');
+  return `${what}: ${errorText(error)}`;
+}
+
 /** A short, readable text for an error (empty when there is nothing to say). */
 function errorText(error: unknown): string {
   const text =
     error instanceof Error ? error.message : typeof error === 'string' ? error : '';
-  return text.replace(/\s+/g, ' ').trim().slice(0, 120);
+  return text.replace(/\s+/g, ' ').trim().slice(0, 400);
 }
 
 /** Reads the cursor of the last sync (`0` when the app never synced). */
@@ -264,11 +271,32 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
     const plan = planDeckSync(local, snapshot);
 
     // Small transactions: a big one on the shared connection can collide with
-    // the screens that read at the same time. The cursor only moves at the
-    // end, so a retry plans the rest again.
+    // the screens that read at the same time. A batch that fails is retried
+    // deck by deck, so one bad deck never blocks the others.
+    const broken: string[] = [];
     for (const part of splitSyncPlan(plan, SYNC_BATCH_DECKS)) {
-      await store.applySyncPlan(part);
+      try {
+        await store.applySyncPlan(part);
+      } catch (batchError) {
+        if (part.decks.length <= 1 && part.classes.length === 0 && part.deletedDeckIds.length === 0) {
+          broken.push(describeBroken(part, batchError));
+          continue;
+        }
+        for (const single of splitSyncPlan(part, 1)) {
+          try {
+            await store.applySyncPlan(single);
+          } catch (error) {
+            broken.push(describeBroken(single, error));
+          }
+        }
+      }
     }
+
+    if (broken.length > 0) {
+      // The cursor stays: the next sync plans the broken decks again.
+      return fail('store', `${broken.length} failed: ${broken.slice(0, 3).join(' | ')}`);
+    }
+
     await store.writeKv(SYNC_CURSOR_KEY, String(plan.cursor));
     await store.writeKv(SYNC_FORMAT_KEY, String(DECK_SYNC_FORMAT));
 

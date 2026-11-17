@@ -1151,7 +1151,7 @@ function SyncBar({
         >
           {lines.title}
         </Text>
-        <Text style={styles.syncDetail} numberOfLines={2}>
+        <Text style={styles.syncDetail} numberOfLines={lines.failed ? 10 : 2}>
           {lines.detail}
         </Text>
       </View>
