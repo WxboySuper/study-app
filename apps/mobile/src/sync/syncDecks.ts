@@ -5,6 +5,7 @@ import {
   describeSyncFailure,
   parseSyncSnapshot,
   planDeckSync,
+  splitSyncPlan,
   type DeckSyncFailure,
   type DeckSyncStatus,
 } from '@study-app/core';
@@ -38,6 +39,9 @@ export const SYNC_TIMEOUT_MS = 30_000;
 
 /** The shortest time between two automatic syncs. */
 export const SYNC_INTERVAL_MS = 10 * 60 * 1000;
+
+/** How many decks one transaction of the local store writes. */
+const SYNC_BATCH_DECKS = 8;
 
 /** The key of the cursor of the next sync in the key/value store. */
 export const SYNC_CURSOR_KEY = 'sync:lastSync';
@@ -124,8 +128,18 @@ export async function readLastSynced(store?: LocalStore): Promise<number | null>
 /** Logs a failed sync, keeps the reason in the status and answers `null`. */
 function fail(reason: DeckSyncFailure, error?: unknown): null {
   console.warn(`[sync] decks sync failed (${reason}): ${describeSyncFailure(reason)}`, error ?? '');
-  setStatus({ state: 'error', reason, at: Date.now() });
+  const detail = errorText(error);
+  setStatus(
+    detail === '' ? { state: 'error', reason, at: Date.now() } : { state: 'error', reason, at: Date.now(), detail },
+  );
   return null;
+}
+
+/** A short, readable text for an error (empty when there is nothing to say). */
+function errorText(error: unknown): string {
+  const text =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  return text.replace(/\s+/g, ' ').trim().slice(0, 120);
 }
 
 /** Reads the cursor of the last sync (`0` when the app never synced). */
@@ -249,7 +263,12 @@ async function runSync(options: DeckSyncOptions): Promise<DeckSyncSummary | null
     const local = await store.readSyncState();
     const plan = planDeckSync(local, snapshot);
 
-    await store.applySyncPlan(plan);
+    // Small transactions: a big one on the shared connection can collide with
+    // the screens that read at the same time. The cursor only moves at the
+    // end, so a retry plans the rest again.
+    for (const part of splitSyncPlan(plan, SYNC_BATCH_DECKS)) {
+      await store.applySyncPlan(part);
+    }
     await store.writeKv(SYNC_CURSOR_KEY, String(plan.cursor));
     await store.writeKv(SYNC_FORMAT_KEY, String(DECK_SYNC_FORMAT));
 

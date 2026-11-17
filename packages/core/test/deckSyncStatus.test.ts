@@ -99,3 +99,14 @@ describe('deckSyncLines', () => {
     expect(lines.detail).toContain('Never synced');
   });
 });
+
+describe('error detail', () => {
+  it('shows the detail of a failure in the second line', () => {
+    const lines = deckSyncLines(
+      { state: 'error', reason: 'store', at: NOW, detail: 'database is locked' },
+      null,
+      NOW,
+    );
+    expect(lines.detail).toContain('(database is locked)');
+  });
+});

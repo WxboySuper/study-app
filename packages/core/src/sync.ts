@@ -476,3 +476,31 @@ function defaultClassId(name: string): string {
 
   return `class_sync_${slug === '' ? 'class' : slug}`;
 }
+
+/**
+ * Cuts a plan in plans that are small enough for one transaction each.
+ *
+ * The classes come first, then the decks in groups of `size`, and the deleted
+ * decks last. Applying the parts in order is the same as applying the plan.
+ */
+export function splitSyncPlan(plan: SyncPlan, size: number): SyncPlan[] {
+  const step = Math.max(1, Math.floor(size));
+  const parts: SyncPlan[] = [];
+
+  if (plan.classes.length > 0) {
+    parts.push({ cursor: plan.cursor, classes: plan.classes, decks: [], deletedDeckIds: [] });
+  }
+  for (let index = 0; index < plan.decks.length; index += step) {
+    parts.push({
+      cursor: plan.cursor,
+      classes: [],
+      decks: plan.decks.slice(index, index + step),
+      deletedDeckIds: [],
+    });
+  }
+  if (plan.deletedDeckIds.length > 0) {
+    parts.push({ cursor: plan.cursor, classes: [], decks: [], deletedDeckIds: plan.deletedDeckIds });
+  }
+
+  return parts;
+}

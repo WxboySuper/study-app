@@ -30,7 +30,7 @@ export type DeckSyncStatus =
   /** The last sync worked. */
   | { state: 'ok'; message: string; at: number }
   /** The last sync failed. */
-  | { state: 'error'; reason: DeckSyncFailure; at: number };
+  | { state: 'error'; reason: DeckSyncFailure; at: number; detail?: string };
 
 /** The status of an app that has not synced yet. */
 export const DECK_SYNC_IDLE: DeckSyncStatus = { state: 'idle' };
@@ -124,7 +124,9 @@ export function deckSyncLines(
     case 'error':
       return {
         title: DECK_SYNC_ERROR_LINE,
-        detail: `${describeSyncFailure(status.reason)} ${last}.`,
+        detail:
+          `${describeSyncFailure(status.reason)} ${last}.` +
+          (status.detail === undefined || status.detail === '' ? '' : ` (${status.detail})`),
         action: 'RETRY',
         busy: false,
         failed: true,
