@@ -45,6 +45,7 @@ export {
 export {
   parseSyncSnapshot,
   planDeckSync,
+  splitSyncPlan,
   type LocalSyncClass,
   type LocalSyncDeck,
   type LocalSyncQuestion,
