@@ -1,5 +1,15 @@
 export { computeStudyStats, type StudyStats } from './stats';
 export {
+  daysUntil,
+  examHeadline,
+  examPace,
+  readiness,
+  weakDecks,
+  type ExamCard,
+  type ExamPlan,
+  type Readiness,
+} from './exam';
+export {
   DEFAULT_AUTO_RATING_THRESHOLDS,
   autoRating,
   type AutoRatingInput,
