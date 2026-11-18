@@ -1,4 +1,5 @@
 import {
+  CRITTERS,
   DAILY_GOAL_QUESTIONS,
   localDay,
   settleMissedDays,
@@ -6,11 +7,13 @@ import {
   type StreakState,
 } from '@study-app/core';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { refreshReminderContent } from '@/notifications';
+import { critterArt } from '@/packs/critterArt';
 import { colors, fonts, radius, spacing } from '@/theme';
 
+import { readCompanion, subscribeCompanion } from './companion';
 import { readGoalDays, readStreak, subscribeStreak } from './streak';
 
 /**
@@ -23,6 +26,12 @@ import { readGoalDays, readStreak, subscribeStreak } from './streak';
 export function StreakCard() {
   const [state, setState] = useState<StreakState | null>(null);
   const [goalDays, setGoalDays] = useState<string[]>([]);
+  const [companionId, setCompanionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void readCompanion().then(setCompanionId);
+    return subscribeCompanion(setCompanionId);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -69,6 +78,8 @@ export function StreakCard() {
     return null;
   }
 
+  const companion = CRITTERS.find((critter) => critter.id === companionId) ?? null;
+  const companionArt = companion === null ? null : critterArt(companion);
   const week = weeklyGoal(goalDays, localDay(new Date()));
   const done = DAILY_GOAL_QUESTIONS - view.remaining;
   const ratio = Math.min(1, done / DAILY_GOAL_QUESTIONS);
@@ -109,6 +120,15 @@ export function StreakCard() {
           {week.chestReady ? ' · chest earned' : ' · 5 days earns 2 tickets'}
         </Text>
       </View>
+
+      {companionArt === null ? null : (
+        <Image
+          source={companionArt}
+          style={styles.companion}
+          resizeMode="contain"
+          accessibilityLabel={`${companion?.name ?? 'Companion'}, your companion`}
+        />
+      )}
 
       <View style={styles.shields} accessibilityLabel={`${view.freezes} of 2 shields`}>
         {[0, 1].map((index) => (
@@ -180,6 +200,10 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     fontFamily: fonts.bodySemi,
     fontSize: 12,
+  },
+  companion: {
+    width: 52,
+    height: 52,
   },
   shields: {
     alignItems: 'center',

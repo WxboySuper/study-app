@@ -37,6 +37,10 @@ export interface CritterSheetProps {
   onClose: () => void;
   /** Called when the player sells `qty` copies. */
   onSell: (qty: number) => void;
+  /** `true` when this critter is the companion of the home screen. */
+  isCompanion?: boolean;
+  /** Makes this critter the companion (or removes it when it already is). */
+  onCompanion?: () => void;
 }
 
 /** The sheet of a critter. */
@@ -47,6 +51,8 @@ export function CritterSheet({
   sellValue,
   onClose,
   onSell,
+  isCompanion = false,
+  onCompanion,
 }: CritterSheetProps) {
   const [qty, setQty] = useState(1);
   const open = useSharedValue(0);
@@ -112,6 +118,15 @@ export function CritterSheet({
 
           <Text style={styles.name}>{critter.name}</Text>
           <Text style={styles.vibe}>{critter.vibe}</Text>
+
+          {count > 0 && onCompanion !== undefined ? (
+            <GameButton
+              label={isCompanion ? 'COMPANION · TAP TO REMOVE' : 'MAKE COMPANION'}
+              variant={isCompanion ? 'secondary' : 'primary'}
+              size="md"
+              onPress={onCompanion}
+            />
+          ) : null}
 
           {duplicates === 0 ? (
             <View style={styles.note}>
