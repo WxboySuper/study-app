@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { StudyCalendar } from "@/stats/StudyCalendar";
 import { openLocalStore } from "@/db/local";
 import { readHistory } from "@/study/reviewHistory";
 import { colors, fonts, spacing } from "@/theme";
@@ -52,7 +53,7 @@ function Tile({
   );
 }
 
-const HISTORY_DAYS = 28;
+const HISTORY_DAYS = 84;
 
 function percent(value: number | null): string {
   return value === null ? "—" : `${Math.round(value * 100)}%`;
@@ -104,7 +105,7 @@ export default function StatsRoute() {
   const historyPeak = Math.max(1, ...recent.map((point) => point.reviews));
   const trend = retentionTrend(history);
   const weeks = [0, 1, 2, 3].map((w) => {
-    const slice = history.slice(w * 7, w * 7 + 7);
+    const slice = history.slice(-28).slice(w * 7, w * 7 + 7);
     const t = retentionTrend(slice, 7);
     return {
       label: w === 3 ? "This wk" : `${3 - w} wk ago`,
@@ -160,6 +161,10 @@ export default function StatsRoute() {
                   </View>
                 </GlassCard>
               )}
+              <GlassCard style={styles.card} elevated={false}>
+                <Text style={styles.section}>STUDY CALENDAR</Text>
+                <StudyCalendar points={history} />
+              </GlassCard>
               <GlassCard style={styles.card} elevated={false}>
                 <Text style={styles.section}>NEXT 7 DAYS</Text>
                 <View style={styles.chart} testID="stats-forecast">
