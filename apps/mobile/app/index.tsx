@@ -63,6 +63,7 @@ import {
   type DeckCard,
 } from '@/study/decks';
 import { DeckPicker } from '@/study/DeckPicker';
+import { StreakCard } from '@/study/StreakCard';
 import { DAILY_DONE_KEY, DAILY_DONE_MATH_KEY, readStudyOptions } from '@/study/studyOptions';
 import { CreateClassSheet, EditClassSheet, MoveDeckSheet } from '@/study/ClassSheets';
 import {
@@ -624,6 +625,8 @@ export default function HomeScreen() {
               ) : null}
             </View>
           </View>
+
+          <StreakCard />
 
           <SectionTabs track={track} mathCount={mathCount} onChange={setTrack} />
 
