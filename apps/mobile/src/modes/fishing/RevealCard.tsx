@@ -1,7 +1,7 @@
 import type { CatchTier, RolledCatch } from '@study-app/core';
 import { CATCH_TIERS, formatLbs, isCatchOutcome } from '@study-app/core';
 import { useEffect, useState } from 'react';
-import { Image, ImageBackground, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -84,7 +84,6 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
 
   // The art of the UI pieces of the card.
   const raysArt = artFor('ui_reveal_rays');
-  const tagArt = artFor('ui_tag_wood');
 
   useEffect(() => {
     if (!visible) {
@@ -160,7 +159,6 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
       <View style={styles.center} pointerEvents="none">
         <Animated.View style={[styles.card, cardStyle]}>
           <GlassCard
-            contentStyle={styles.cardContent}
             tint={rarityColor}
             face={
               isHeavy
@@ -168,72 +166,71 @@ export function RevealCard({ visible, catch: landed, onContinue, reduceMotion }:
                 : [`${rarityColor}33`, `${rarityColor}0f`]
             }
           >
-            <Text style={[styles.category, isHeavy ? { color: HEAVY_THEME.gold } : null]}>
-              {categoryOf(landed)}
-            </Text>
+            <View style={styles.cardContent}>
+              <Text style={[styles.category, isHeavy ? { color: HEAVY_THEME.gold } : null]}>
+                {categoryOf(landed)}
+              </Text>
 
-            <Text style={styles.name}>{nameOf(landed)}</Text>
+              <Text style={styles.name}>{nameOf(landed)}</Text>
 
-            {tierName === null ? null : (
-              <View
-                style={[
-                  styles.ribbon,
-                  { backgroundColor: color, borderBottomColor: 'rgba(0,0,0,0.32)' },
-                ]}
-              >
-                <Text style={styles.ribbonText}>{tierName}</Text>
-              </View>
-            )}
-
-            <View style={styles.art}>
-              <Glow
-                color={isHeavy ? HEAVY_THEME.gold : rarityColor}
-                size={250}
-                opacity={0.65}
-                style={styles.artGlow}
-              />
-              {raysArt === null ? null : (
-                <Animated.View style={[styles.raysSpin, spinStyle]} pointerEvents="none">
-                  <Image
-                    source={raysArt}
-                    resizeMode="contain"
-                    style={styles.raysImage}
-                    accessibilityIgnoresInvertColors
-                  />
-                </Animated.View>
-              )}
-              <Sprite assetId={assetIdOf(landed)} size={isHeavy ? 168 : 150} />
-            </View>
-
-            {isCatch ? (
-              <View style={styles.weightRow}>
-                <Text style={styles.weightLabel}>WEIGHT</Text>
-                <Text
+              {tierName === null ? null : (
+                <View
                   style={[
-                    styles.weight,
-                    { color: isHeavy ? HEAVY_THEME.gold : '#fff3cf' },
+                    styles.ribbon,
+                    { backgroundColor: color, borderBottomColor: 'rgba(0,0,0,0.32)' },
                   ]}
                 >
-                  {formatLbs(lbs)}
-                </Text>
-              </View>
-            ) : null}
+                  <Text style={styles.ribbonText}>{tierName}</Text>
+                </View>
+              )}
 
-            {tagArt === null ? null : (
-              <ImageBackground
-                source={tagArt}
-                resizeMode="cover"
-                style={styles.tag}
-                imageStyle={styles.tagImage}
+              <View style={styles.art}>
+                <Glow
+                  color={isHeavy ? HEAVY_THEME.gold : rarityColor}
+                  size={250}
+                  opacity={0.65}
+                  style={styles.artGlow}
+                />
+                {raysArt === null ? null : (
+                  <Animated.View style={[styles.raysSpin, spinStyle]} pointerEvents="none">
+                    <Image
+                      source={raysArt}
+                      resizeMode="contain"
+                      style={styles.raysImage}
+                      accessibilityIgnoresInvertColors
+                    />
+                  </Animated.View>
+                )}
+                <Sprite assetId={assetIdOf(landed)} size={isHeavy ? 168 : 150} />
+              </View>
+
+              {isCatch ? (
+                <View style={styles.weightRow}>
+                  <Text style={styles.weightLabel}>WEIGHT</Text>
+                  <Text
+                    style={[
+                      styles.weight,
+                      { color: isHeavy ? HEAVY_THEME.gold : '#fff3cf' },
+                    ]}
+                  >
+                    {formatLbs(lbs)}
+                  </Text>
+                </View>
+              ) : null}
+
+              <View
+                style={[
+                  styles.claimButton,
+                  { backgroundColor: isHeavy ? HEAVY_THEME.gold : color },
+                ]}
               >
                 <Text style={styles.claim}>TAP TO CLAIM</Text>
-              </ImageBackground>
-            )}
-            {tagArt === null ? <Text style={styles.claimPlain}>TAP TO CLAIM</Text> : null}
+              </View>
 
-            {captionOf(landed) === undefined ? null : (
-              <Text style={styles.joke}>“{captionOf(landed)}”</Text>
-            )}
+              {captionOf(landed) === undefined ? null : (
+                <Text style={styles.joke}>“{captionOf(landed)}”</Text>
+              )}
+            </View>
           </GlassCard>
         </Animated.View>
       </View>
@@ -299,9 +296,11 @@ const styles = StyleSheet.create({
     maxWidth: 380,
   },
   cardContent: {
-    paddingVertical: 18,
+    paddingTop: 24,
+    paddingBottom: 18,
     paddingHorizontal: 18,
     alignItems: 'center',
+    gap: 4,
   },
   category: {
     color: colors.textMuted,
@@ -342,7 +341,8 @@ const styles = StyleSheet.create({
   },
   art: {
     width: 190,
-    height: 190,
+    height: 176,
+    marginVertical: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -377,19 +377,18 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
   },
-  tag: {
+  claimButton: {
     alignSelf: 'stretch',
     alignItems: 'center',
     justifyContent: 'center',
-    height: 48,
-    marginTop: 12,
-    overflow: 'hidden',
-  },
-  tagImage: {
-    borderRadius: radius.chip,
+    height: 52,
+    marginTop: 14,
+    borderRadius: radius.pill,
+    borderBottomWidth: 5,
+    borderBottomColor: 'rgba(0,0,0,0.3)',
   },
   claim: {
-    color: '#3a2208',
+    color: '#0b1020',
     fontFamily: fonts.title,
     fontSize: 14,
     letterSpacing: 1.8,

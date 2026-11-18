@@ -25,7 +25,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-import { artFor } from '@/content/art';
+import { type artFor } from '@/content/art';
 import { MathText } from '@/math/MathText';
 import { fonts, radius } from '@/theme';
 import { GameButton, Particles } from '@/ui';
@@ -153,7 +153,8 @@ export function QuestionNote({
   // The trigger of the confetti burst of a correct answer.
   const [burst, setBurst] = useState(0);
   // The parchment of the question card (the art of the UI piece).
-  const parchment = artFor('ui_parchment_note');
+  // The note is a clean dark study card now; the torn parchment art is retired.
+  const parchment = null as ReturnType<typeof artFor>;
   // The size of the content box of the note: the art is stretched past it.
   const [noteSize, setNoteSize] = useState<{ width: number; height: number } | null>(null);
   const onNoteLayout = useCallback((event: LayoutChangeEvent) => {
@@ -265,7 +266,7 @@ export function QuestionNote({
         <MathText
           text={question.prompt}
           style={[styles.prompt, { fontSize, lineHeight: Math.round(fontSize * 1.24) }]}
-          color="#3b2a12"
+          color="#f8fafc"
           fontSize={fontSize}
           center
         />
@@ -308,7 +309,7 @@ export function QuestionNote({
                 <MathText
                   text={question.answer}
                   style={styles.revealAnswer}
-                  color="#3b2a12"
+                  color="#f8fafc"
                   fontSize={layout.fontSize + 3}
                   center
                 />
@@ -694,9 +695,8 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 520,
     alignItems: 'center',
-    // Room for the torn margin of the art drawn past the content box.
-    marginTop: 26,
-    marginBottom: 20,
+    marginTop: 10,
+    marginBottom: 12,
   },
   note: {
     width: '100%',
@@ -705,11 +705,11 @@ const styles = StyleSheet.create({
     // The parchment art has a transparent, torn border (roughly a tenth of
     // its width on each side): the inner padding has to clear it, or the
     // text ends up on the ragged edge of the paper.
-    paddingLeft: 52,
-    paddingRight: 52,
+    paddingLeft: 18,
+    paddingRight: 18,
     paddingTop: 14,
-    paddingBottom: 12,
-    gap: 6,
+    paddingBottom: 16,
+    gap: 8,
     // The paper grows with its content; nothing is clipped.
     overflow: 'visible',
   },
@@ -719,8 +719,10 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   notePlain: {
-    borderRadius: 14,
-    backgroundColor: '#f4e3b2',
+    borderRadius: radius.card,
+    backgroundColor: 'rgba(14, 16, 24, 0.985)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   noteHead: {
     flexDirection: 'row',
@@ -732,10 +734,10 @@ const styles = StyleSheet.create({
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#8d5b34',
+    backgroundColor: '#a78bfa',
   },
   noteLabel: {
-    color: '#7a5a2e',
+    color: '#a5b0c8',
     fontFamily: fonts.titleSemi,
     fontSize: 9,
     letterSpacing: 2,
@@ -751,14 +753,14 @@ const styles = StyleSheet.create({
   },
   prompt: {
     width: '100%',
-    color: '#3b2a12',
+    color: '#f8fafc',
     fontFamily: fonts.bodyBold,
     textAlign: 'center',
     flexShrink: 1,
   },
   bonus: {
     marginTop: 4,
-    color: '#6b4f22',
+    color: '#a5b0c8',
     fontFamily: fonts.bodySemi,
     fontSize: 10,
     fontStyle: 'italic',
@@ -858,7 +860,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   revealAnswer: {
-    color: '#3b2a12',
+    color: '#f8fafc',
     fontFamily: fonts.title,
     fontSize: 20,
     textAlign: 'center',

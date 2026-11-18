@@ -3,7 +3,7 @@ import { CATCH_TIERS, LURE_RANKS, POWERUPS, formatLbs } from '@study-app/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radius } from '@/theme';
-import { GlassCard, TokenCounter } from '@/ui';
+import { TokenCounter } from '@/ui';
 
 import { tierColor } from './assets';
 import { Sprite } from './Sprite';
@@ -67,10 +67,11 @@ export function Hud({
 
   return (
     <View style={styles.container} pointerEvents="box-none">
+      <View style={styles.plate} pointerEvents="box-none">
       <View style={styles.topRow} pointerEvents="box-none">
-        <GlassCard borderRadius={radius.chip} elevated={false} contentStyle={styles.walletChip}>
+        <View style={styles.walletChip}>
           <TokenCounter value={tokens} size={17} />
-        </GlassCard>
+        </View>
 
         <View style={styles.center} pointerEvents="none">
           <View style={styles.chipRow}>
@@ -128,9 +129,7 @@ export function Hud({
           </Text>
         </View>
 
-        <View style={styles.stats}>
-          <Text style={styles.stat}>{session.answered} answered</Text>
-        </View>
+        <Text style={styles.stat}>{session.answered} answered</Text>
       </View>
 
       {mastery && today !== null ? (
@@ -188,6 +187,7 @@ export function Hud({
           </View>
         </View>
       )}
+      </View>
     </View>
   );
 }
@@ -207,9 +207,17 @@ export const TIER_COLORS = CATCH_TIERS.reduce<Record<string, string>>((colors, t
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    paddingTop: 10,
+    paddingTop: 8,
     paddingHorizontal: 12,
+  },
+  plate: {
     gap: 8,
+    borderRadius: radius.card,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    backgroundColor: 'rgba(14, 16, 24, 0.9)',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   topRow: {
     flexDirection: 'row',
@@ -222,6 +230,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 10,
     paddingVertical: 6,
+    borderRadius: radius.chip,
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
   center: {
     flex: 1,
@@ -299,12 +309,12 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   endButton: {
-    backgroundColor: 'rgba(8, 16, 34, 0.72)',
+    backgroundColor: 'rgba(255,255,255,0.07)',
     borderRadius: radius.pill,
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.55)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.4)',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 8,
     minHeight: 40,
     justifyContent: 'center',
   },
@@ -320,17 +330,14 @@ const styles = StyleSheet.create({
   },
   bottomRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: 4,
   },
   haulBox: {
-    alignSelf: 'flex-start',
-    borderRadius: radius.tile,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(8, 16, 34, 0.55)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.12)',
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 8,
   },
   haulLabel: {
     color: colors.textMuted,
@@ -343,7 +350,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.title,
     fontSize: 20,
     padding: 0,
-    width: 104,
+    minWidth: 104,
   },
   stats: {
     alignItems: 'flex-end',
@@ -353,21 +360,18 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.86)',
     fontFamily: fonts.titleSemi,
     fontSize: 12,
-    textShadowColor: 'rgba(6, 12, 28, 0.9)',
-    textShadowRadius: 4,
   },
   todayBox: {
-    alignSelf: 'flex-end',
+    alignSelf: 'stretch',
     gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: 'rgba(6, 12, 28, 0.55)',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.1)',
   },
   todayCounts: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     gap: 12,
   },
   todayTitle: {
@@ -404,7 +408,6 @@ const styles = StyleSheet.create({
   },
   masteryTrack: {
     flex: 1,
-    maxWidth: 210,
     height: 8,
     borderRadius: 4,
     overflow: 'hidden',
@@ -431,12 +434,10 @@ const styles = StyleSheet.create({
     fontFamily: fonts.titleSemi,
     fontSize: 8,
     letterSpacing: 1.4,
-    textAlign: 'right',
   },
   log: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    justifyContent: 'flex-end',
     gap: 6,
   },
   logItem: {

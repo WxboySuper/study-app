@@ -209,12 +209,12 @@ export function LakeScene({
   const { width, height } = useWindowDimensions();
 
   // The far shore and the water.
-  const horizonY = height * 0.545;
-  const waterY = height * 0.575;
+  const horizonY = height * 0.32;
+  const waterY = height * 0.35;
 
   // The boat floats in the foreground, the bobber waits far out on the lake.
   const boatX = width * 0.22;
-  const boatWaterY = height * 0.7;
+  const boatWaterY = height * 0.5;
   const bobHomeX = width * 0.68;
 
   /**
@@ -861,7 +861,11 @@ export function LakeScene({
       </Svg>
 
       {/* The water. */}
-      <LinearGradient colors={WATER} style={[styles.water, { top: waterY }]} />
+      <LinearGradient
+        colors={WATER}
+        locations={[0, 0.06, 0.16, 0.4, 1]}
+        style={[styles.water, { top: waterY }]}
+      />
 
       {/* The glitter of the sun on the water. */}
       <Svg style={StyleSheet.absoluteFill} width={width} height={height} pointerEvents="none">
