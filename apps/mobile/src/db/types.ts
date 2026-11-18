@@ -298,6 +298,8 @@ export interface LocalStore {
   resetTokens(): Promise<void>;
   /** Adds tokens to the wallet. */
   addTokens(amount: number): Promise<void>;
+  /** Adds pack tickets to the wallet (a milestone reward). */
+  addPackTickets(amount: number): Promise<void>;
   /** Forgets the spins, so the wheel can be spun again. */
   resetSpinCooldown(): Promise<void>;
   /** Deletes every scheduling state and pending review (the Mastery reset). */

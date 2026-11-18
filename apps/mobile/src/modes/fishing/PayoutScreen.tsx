@@ -1,4 +1,4 @@
-import type { FishingSessionResult } from '@study-app/core';
+import type { FishingSessionResult, Milestone } from '@study-app/core';
 import { CATCH_TIERS, DEFAULT_PAYOUT_RULES, formatLbs } from '@study-app/core';
 import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -35,6 +35,8 @@ export interface PayoutScreenProps {
   tokens: number;
   /** Starts the same mode and scope again. */
   onPlayAgain: () => void;
+  /** The mastery milestones that the session crossed. */
+  milestones?: readonly Milestone[];
   /** How many questions were missed in the session. */
   missedCount?: number;
   /** Starts a calm retry of the missed questions (hidden when there is none). */
@@ -50,6 +52,7 @@ export function PayoutScreen({
   tokens,
   onPlayAgain,
   missedCount = 0,
+  milestones = [],
   onRetryMissed,
   onHome,
   reduceMotion,
@@ -168,6 +171,25 @@ export function PayoutScreen({
               </View>
             ))}
           </View>
+
+          {milestones.length === 0 ? null : (
+            <View style={styles.section} testID="payout-milestones">
+              <Text style={styles.sectionTitle}>MILESTONES</Text>
+              {milestones.map((milestone) => (
+                <Text key={milestone.key} style={styles.ticketText}>
+                  {milestone.deckTitle}: {milestone.step}% mastered ·{' '}
+                  {[
+                    milestone.reward.tokens > 0 ? `${milestone.reward.tokens} tokens` : null,
+                    milestone.reward.packTickets > 0
+                      ? `${milestone.reward.packTickets} pack ticket${milestone.reward.packTickets === 1 ? '' : 's'}`
+                      : null,
+                  ]
+                    .filter((part) => part !== null)
+                    .join(' + ')}
+                </Text>
+              ))}
+            </View>
+          )}
 
           {result.packTickets === 0 ? null : (
             <View style={styles.section}>

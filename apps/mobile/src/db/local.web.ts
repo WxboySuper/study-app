@@ -754,6 +754,13 @@ async function openRawLocalStore(): Promise<LocalStore> {
       const current = demo();
       current.wallet = applyTokenAdminAction(current.wallet, 'grant', amount);
     },
+    addPackTickets: async (amount) => {
+      const current = demo();
+      current.wallet = {
+        ...current.wallet,
+        packTickets: current.wallet.packTickets + Math.max(0, Math.floor(amount)),
+      };
+    },
     resetScheduling: async () => {
       demo().cardStates.clear();
       demo().outbox.length = 0;

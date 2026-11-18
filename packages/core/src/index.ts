@@ -502,3 +502,17 @@ export {
   type ReminderText,
   type ReminderTime,
 } from './reminders';
+
+export {
+  MILESTONE_MIN_CARDS,
+  MILESTONE_STEPS,
+  WEEKLY_TARGET_DAYS,
+  milestoneKey,
+  newMilestones,
+  rewardOf,
+  totalReward,
+  weeklyGoal,
+  type Milestone,
+  type MilestoneDeck,
+  type MilestoneReward,
+} from './milestones';
