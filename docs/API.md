@@ -82,13 +82,39 @@ Errors of these routes look like `{error: code, errors: [message]}`.
 
 ### `POST /quizzes` (Muse)
 
+Assign a quiz made of what you name:
+
 ```json
-{ "deckId": "set_123", "count": 10, "dueAt": "2026-10-30T17:00:00-05:00", "title": "Ch. 4 check" }
+{ "deckIds": ["set_123", "set_456"], "classIds": ["Calc 2"], "count": 10,
+  "dueAt": "2026-10-30T17:00:00-05:00", "title": "Ch. 4 check" }
 ```
 
-- Exactly one of `deckId` or `classId` is required.
-- `count` must be 1–100. If the pool is smaller than `count`, the whole pool is used.
-- Response: `201 {id, title, deckId|classId, cardIds[], seed, dueAt, createdAt, status:"assigned"}`.
+- Name at least one deck or class: `deckId` / `classId` (one of them), or the lists `deckIds` / `classIds` (up to 50 each, they can be mixed). A question in two of them is picked once.
+- `count` must be 1-100. If the pool is smaller than `count`, the whole pool is used.
+
+Or hand-pick the questions:
+
+```json
+{ "cardIds": ["q_1", "q_2", "q_3"], "title": "The ones I keep missing", "dueAt": null }
+```
+
+- `cardIds` is exactly the quiz, in that order (1-100). It cannot be mixed with decks or classes. An id that does not exist (or is retired) answers `404 {error:"unknown_cards", cardIds:[...]}`.
+- Response: `201 {id, title, deckId|classId (only when the quiz is made of exactly one deck or class), cardIds[], seed, dueAt, createdAt, status:"assigned"}`.
+
+### `PATCH /quizzes/:id` (Muse)
+
+Edits a quiz that is still `assigned` (a completed or withdrawn quiz answers `409 not_assigned`). Send any of:
+
+```json
+{ "title": "New name", "dueAt": "2026-11-02T09:00:00Z" }
+{ "dueAt": null }
+{ "addCardIds": ["q_9"], "removeCardIds": ["q_2"] }
+{ "cardIds": ["q_5", "q_1"] }
+```
+
+- `dueAt: null` clears the due date. `cardIds` replaces the whole list and cannot be mixed with `addCardIds` / `removeCardIds`. Added ids must be live questions; a quiz keeps 1-100 questions.
+- Answers that were already given are kept. A removed question stops counting; if every remaining question already has an answer the quiz becomes `completed`.
+- Response: the quiz, as in `POST`.
 
 ### `GET /quizzes?status=assigned|completed|all` (Muse or device)
 
