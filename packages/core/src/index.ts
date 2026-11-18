@@ -517,3 +517,13 @@ export {
   type MilestoneDeck,
   type MilestoneReward,
 } from './milestones';
+
+export {
+  QUIZ_LIMITS,
+  bestQuizPercent,
+  parseLocalQuizzes,
+  quizDueLabel,
+  quizQuestionIds,
+  type LocalQuiz,
+  type QuizResult,
+} from "./localQuiz";
