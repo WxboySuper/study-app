@@ -35,6 +35,10 @@ export interface PayoutScreenProps {
   tokens: number;
   /** Starts the same mode and scope again. */
   onPlayAgain: () => void;
+  /** How many questions were missed in the session. */
+  missedCount?: number;
+  /** Starts a calm retry of the missed questions (hidden when there is none). */
+  onRetryMissed?: () => void;
   /** Goes back to the home screen. */
   onHome: () => void;
   /** `true` when the animations have to be reduced. */
@@ -45,6 +49,8 @@ export function PayoutScreen({
   result,
   tokens,
   onPlayAgain,
+  missedCount = 0,
+  onRetryMissed,
   onHome,
   reduceMotion,
 }: PayoutScreenProps) {
@@ -172,7 +178,20 @@ export function PayoutScreen({
         </ScrollView>
 
         <View style={styles.actions}>
-          <GameButton label="PLAY AGAIN" variant="primary" size="lg" onPress={onPlayAgain} />
+          {onRetryMissed === undefined ? null : (
+            <GameButton
+              label={`RETRY ${missedCount} MISSED`}
+              variant="primary"
+              size="lg"
+              onPress={onRetryMissed}
+            />
+          )}
+          <GameButton
+            label="PLAY AGAIN"
+            variant={onRetryMissed === undefined ? 'primary' : 'ghost'}
+            size="lg"
+            onPress={onPlayAgain}
+          />
           <GameButton label="HOME" variant="ghost" size="lg" onPress={onHome} />
         </View>
 

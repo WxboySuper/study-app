@@ -47,6 +47,7 @@ export default function FishingRoute() {
     demo?: string;
     mastery?: string;
     track?: string;
+    ids?: string;
   }>();
   const [session, setSession] = useState(0);
 
@@ -58,6 +59,10 @@ export default function FishingRoute() {
   const mastery = params.mastery === '1' || params.mastery === 'true';
   // Multiple choice or math: a session never mixes the two.
   const track = parseTrack(params.track);
+
+  // A retry of the missed questions: only these ids, never the daily limits.
+  const onlyCardIds =
+    typeof params.ids === 'string' && params.ids !== '' ? params.ids.split(',') : null;
 
   const scope: ScopeChoice = (() => {
     if (params.kind === 'set' && typeof params.id === 'string') {
@@ -76,16 +81,23 @@ export default function FishingRoute() {
   return (
     <View style={styles.container}>
       <FishingScreen
-        key={`${session}-${mastery ? 'm' : 'n'}-${track}`}
+        key={`${session}-${mastery ? 'm' : 'n'}-${track}-${params.ids ?? ''}`}
         scope={scope}
         mastery={mastery}
         track={track}
+        onlyCardIds={onlyCardIds}
         demo={demo}
         onHome={() => {
           router.replace('/');
         }}
         onPlayAgain={() => {
           setSession((current) => current + 1);
+        }}
+        onRetryMissed={(cardIds) => {
+          router.replace({
+            pathname: '/fishing',
+            params: { kind: 'all', mastery: '0', track, ids: cardIds.join(',') },
+          });
         }}
         onKeepPlaying={() => {
           // Done for today: Normal mode stays open on the same scope.
