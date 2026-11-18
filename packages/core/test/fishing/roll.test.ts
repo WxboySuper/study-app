@@ -35,7 +35,7 @@ import { findsCatch, fixedRng, sequenceRng } from './helpers';
 /** Oct 21 2026: inside the window of the seasonal pack. */
 const INSIDE_THE_WINDOW = Date.UTC(2026, 9, 21, 12, 0, 0);
 /** Dec 24 2026: after the window of the seasonal pack. */
-const OUTSIDE_THE_WINDOW = Date.UTC(2026, 11, 24, 12, 0, 0);
+const OUTSIDE_THE_WINDOW = Date.UTC(2027, 1, 24, 12, 0, 0);
 
 describe('the seeded RNG', () => {
   it('is deterministic', () => {

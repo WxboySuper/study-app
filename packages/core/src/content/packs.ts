@@ -47,6 +47,12 @@ export const HALLOWEEN_PACK_ID = 'midterm_monsters';
  */
 export const THANKSGIVING_PACK_ID = 'gobble_scholars';
 
+/**
+ * The Winter 2026 seasonal pack. It follows Thanksgiving: on sale from Dec 1
+ * 2026 to Jan 1 2027 (US Central time), the finals season.
+ */
+export const WINTER_PACK_ID = 'frostbitten_finals';
+
 /** Every pack of the catalogue. */
 export const CRITTER_PACKS: readonly CritterPackDef[] = [
   {
@@ -80,5 +86,16 @@ export const CRITTER_PACKS: readonly CritterPackDef[] = [
     availableUntil: Date.UTC(2026, 11, 1, 6, 0, 0),
     assetId: 'pack_gobble_scholars',
     emoji: '🦃',
+  },
+  {
+    id: WINTER_PACK_ID,
+    name: 'Winter 2026 — Frostbitten Finals',
+    kind: 'seasonal',
+    priceTokens: 25,
+    // Dec 1 2026 00:00 CST (UTC-6) -> Jan 1 2027 00:00 CST (UTC-6).
+    availableFrom: Date.UTC(2026, 11, 1, 6, 0, 0),
+    availableUntil: Date.UTC(2027, 0, 1, 6, 0, 0),
+    assetId: 'pack_frostbitten_finals',
+    emoji: '❄️',
   },
 ];

@@ -7,6 +7,7 @@ import {
   CRITTERS,
   HALLOWEEN_PACK_ID,
   THANKSGIVING_PACK_ID,
+  WINTER_PACK_ID,
   STARTER_PACK_ID,
   crittersByRarity,
   crittersOfPack,
@@ -65,7 +66,7 @@ describe('the critter catalogue', () => {
   });
 
   it('lists the critters of a rarity', () => {
-    expect(crittersByRarity('legendary')).toHaveLength(3);
+    expect(crittersByRarity('legendary')).toHaveLength(4);
     expect(crittersByRarity('legendary', STARTER_PACK_ID)).toHaveLength(1);
     expect(crittersByRarity('legendary', STARTER_PACK_ID)[0]?.id).toBe('gigabrain_golem');
   });
@@ -92,8 +93,8 @@ describe('the packs', () => {
     expect(isPackAvailable(pack!, Date.UTC(2026, 10, 2, 6, 0, 0))).toBe(false);
   });
 
-  it('has three packs', () => {
-    expect(CRITTER_PACKS).toHaveLength(3);
+  it('has four packs', () => {
+    expect(CRITTER_PACKS).toHaveLength(4);
   });
 });
 
@@ -110,5 +111,20 @@ describe('the Thanksgiving pack', () => {
     expect(isPackAvailable(pack, Date.UTC(2026, 10, 2, 6, 0, 0))).toBe(true);
     expect(isPackAvailable(pack, Date.UTC(2026, 10, 26))).toBe(true);
     expect(isPackAvailable(pack, Date.UTC(2026, 11, 1, 6, 0, 0))).toBe(false);
+  });
+});
+
+describe('the Winter pack', () => {
+  it('has the eight Frostbitten Finals critters and sells in December', () => {
+    const critters = crittersOfPack(WINTER_PACK_ID);
+    expect(critters).toHaveLength(8);
+    expect(critters.filter((critter) => critter.rarity === 'legendary')).toHaveLength(1);
+
+    const pack = findPack(WINTER_PACK_ID)!;
+    expect(pack.kind).toBe('seasonal');
+    expect(isPackAvailable(pack, Date.UTC(2026, 11, 1, 5, 59, 59))).toBe(false);
+    expect(isPackAvailable(pack, Date.UTC(2026, 11, 1, 6, 0, 0))).toBe(true);
+    expect(isPackAvailable(pack, Date.UTC(2026, 11, 25))).toBe(true);
+    expect(isPackAvailable(pack, Date.UTC(2027, 0, 1, 6, 0, 0))).toBe(false);
   });
 });

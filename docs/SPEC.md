@@ -69,7 +69,22 @@ Blooket-style themed **packs** bought with tokens. Opening a pack gives one rand
 | The Witching Hour Owl | Epic | Only appears during late-night sessions. Spooky smart. |
 | Headless Homework Horseman | Legendary | Lost his head, never his GPA. |
 
-**Next seasonal packs:** Thanksgiving (Nov 2026: e.g. "Gobble Scholars") and Winter (Dec–Jan). Packs are data, not code: adding a season is a seed/migration plus art, with no deploy logic changes.
+**Seasonal calendar** (US Central; each is a core-priced 25 token pack of 8 critters, 3 common / 2 uncommon / 1 rare / 1 epic / 1 legendary; critters stay in the collection forever). Packs are data, not code: adding a season is one entry in `content/packs.ts`, eight entries in `content/critters.ts` and the art.
+
+| Window | Pack | Theme |
+|---|---|---|
+| Oct 1 – Nov 2 | Midterm Monsters | Halloween (shipped) |
+| Nov 2 – Dec 1 | Gobble Scholars | Thanksgiving (shipped) |
+| Dec 1 – Jan 1 | Frostbitten Finals | Winter and finals week (shipped) |
+| Jan 1 – Feb 1 | Resolution Rookies | New year: planners, habit trackers, gym-bro flashcards |
+| Feb 1 – Mar 1 | Flashcard Flirts | Valentine's: study-date critters (love notes as mnemonics) |
+| Mar 1 – Apr 1 | Spring Break Scholars | Spring break: beach towels, sunscreen sage, the one who actually studies |
+| Apr 1 – May 1 | Bloom & Boom | Spring: sprouting knowledge, April-fools quiz gremlins |
+| May 1 – Jun 1 | Finals Frenzy | Exam season: energy-drink sprites, library campers |
+| Jun 1 – Sep 1 | Summer School Sidekicks | Summer: lifeguard tutors, ice-pop study snacks |
+| Sep 1 – Oct 1 | Syllabus Week | Back to school: planners, highlighters, first-day nerves |
+
+Seasonal critters never come back as a pack the next year unless the whole set is remixed with new variants ("2027 Edition"), so the book stays a record of when you studied.
 
 ### End-of-session payout
 `tokens = floor(1.5·correct + 1·newCardsGraduated + 0.25·dueCleared) + modeBonus(score)` (see Economy tuning: ~50 tokens per 10 min session), with a soft cap per day (~500, diminishing returns after ~N tokens) so grinding doesn't beat spacing. You get one free pack each day you clear your due queue. **The payout is computed on the server** from the review logs, so the client can't pay itself.
