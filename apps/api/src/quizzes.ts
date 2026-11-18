@@ -95,7 +95,9 @@ function view(row: QuizRow) {
     title: row.title,
     ...(row.deck_id !== null
       ? { deckId: row.deck_id }
-      : { classId: row.class_id }),
+      : row.class_id !== null
+        ? { classId: row.class_id }
+        : {}),
     cardIds: JSON.parse(row.card_ids_json) as string[],
     seed: row.seed,
     dueAt: row.due_at,
@@ -123,7 +125,92 @@ async function readBody(c: Ctx): Promise<Record<string, unknown> | null> {
   }
 }
 
-/** `POST /api/quizzes` (Muse) - assigns a quiz. */
+/** The most decks or classes one quiz can name. */
+export const QUIZ_MAX_SOURCES = 50;
+
+/** A list of ids (`null` when it is not a list of texts, `undefined` when absent). */
+function readIdList(value: unknown, max: number): string[] | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value) || value.length > max) {
+    return null;
+  }
+  const out: string[] = [];
+  for (const item of value) {
+    const id = text(item);
+    if (id === null) {
+      return null;
+    }
+    if (!out.includes(id)) {
+      out.push(id);
+    }
+  }
+  return out;
+}
+
+/** The live questions of some decks and classes, in library order, without repeats. */
+async function poolOf(
+  c: Ctx,
+  decks: readonly string[],
+  classes: readonly string[],
+): Promise<string[]> {
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const add = (rows: readonly { id: string }[] | undefined) => {
+    for (const row of rows ?? []) {
+      if (!seen.has(row.id)) {
+        seen.add(row.id);
+        ids.push(row.id);
+      }
+    }
+  };
+  for (const deck of decks) {
+    const result = await c.env.DB.prepare(
+      `SELECT q.id FROM questions q JOIN decks d ON d.id = q.deck_id
+       WHERE d.id = ? AND d.deleted = 0 AND q.retired = 0 ORDER BY q.position, q.id`,
+    )
+      .bind(deck)
+      .all<{ id: string }>();
+    add(result.results);
+  }
+  for (const klass of classes) {
+    const result = await c.env.DB.prepare(
+      `SELECT q.id FROM questions q JOIN decks d ON d.id = q.deck_id
+       WHERE d.class_name = ? AND d.deleted = 0 AND q.retired = 0 ORDER BY d.id, q.position, q.id`,
+    )
+      .bind(klass)
+      .all<{ id: string }>();
+    add(result.results);
+  }
+  return ids;
+}
+
+/** The ids (of the given ones) that are live questions: not retired, deck not deleted. */
+async function liveIds(c: Ctx, ids: readonly string[]): Promise<Set<string>> {
+  const live = new Set<string>();
+  if (ids.length === 0) {
+    return live;
+  }
+  const rows = await c.env.DB.prepare(
+    `SELECT q.id FROM questions q JOIN decks d ON d.id = q.deck_id
+     WHERE d.deleted = 0 AND q.retired = 0 AND q.id IN (${ids.map(() => "?").join(",")})`,
+  )
+    .bind(...ids)
+    .all<{ id: string }>();
+  for (const row of rows.results ?? []) {
+    live.add(row.id);
+  }
+  return live;
+}
+
+/**
+ * `POST /api/quizzes` (Muse) - assigns a quiz.
+ *
+ * Either name what it is made of (`deckId` / `classId`, or the lists `deckIds`
+ * and `classIds`, with a `count` of questions to pick from them), or hand-pick
+ * the questions with `cardIds` (exactly those, in that order).
+ */
 export async function createQuiz(c: Ctx): Promise<Response> {
   const body = await readBody(c);
   if (body === null) {
@@ -131,52 +218,79 @@ export async function createQuiz(c: Ctx): Promise<Response> {
   }
   const deckId = text(body.deckId);
   const classId = text(body.classId);
-  if ((deckId === null) === (classId === null)) {
+  if (deckId !== null && classId !== null) {
     return c.json(
-      { error: "bad_request", detail: "exactly one of deckId or classId" },
+      { error: "bad_request", detail: "use deckIds / classIds to name several" },
       400,
     );
   }
-  const count = body.count;
-  if (
-    typeof count !== "number" ||
-    !Number.isInteger(count) ||
-    count < 1 ||
-    count > QUIZ_MAX_COUNT
-  ) {
-    return c.json(
-      { error: "bad_request", detail: `count must be 1-${QUIZ_MAX_COUNT}` },
-      400,
-    );
+  const deckIds = readIdList(body.deckIds, QUIZ_MAX_SOURCES);
+  const classIds = readIdList(body.classIds, QUIZ_MAX_SOURCES);
+  const picked = readIdList(body.cardIds, QUIZ_MAX_COUNT);
+  if (deckIds === null || classIds === null || picked === null) {
+    return c.json({ error: "bad_request", detail: "invalid id list" }, 400);
   }
   const dueAt = readDueAt(body.dueAt);
   if (dueAt === undefined) {
     return c.json({ error: "bad_request", detail: "invalid dueAt" }, 400);
   }
 
-  const pool = await c.env.DB.prepare(
-    deckId !== null
-      ? `SELECT q.id FROM questions q JOIN decks d ON d.id = q.deck_id
-         WHERE d.id = ? AND d.deleted = 0 AND q.retired = 0 ORDER BY q.position, q.id`
-      : `SELECT q.id FROM questions q JOIN decks d ON d.id = q.deck_id
-         WHERE d.class_name = ? AND d.deleted = 0 AND q.retired = 0 ORDER BY d.id, q.position, q.id`,
-  )
-    .bind(deckId ?? classId)
-    .all<{ id: string }>();
-  const ids = (pool.results ?? []).map((row) => row.id);
-  if (ids.length === 0) {
-    return c.json({ error: "empty_pool" }, 404);
+  const decks = [...(deckId === null ? [] : [deckId]), ...(deckIds ?? [])];
+  const classes = [...(classId === null ? [] : [classId]), ...(classIds ?? [])];
+
+  let cardIds: string[];
+  if (picked !== undefined) {
+    if (picked.length === 0 || decks.length > 0 || classes.length > 0) {
+      return c.json(
+        {
+          error: "bad_request",
+          detail: "cardIds is a non-empty list and cannot be mixed with decks or classes",
+        },
+        400,
+      );
+    }
+    const live = await liveIds(c, picked);
+    const missing = picked.filter((id) => !live.has(id));
+    if (missing.length > 0) {
+      return c.json({ error: "unknown_cards", cardIds: missing }, 404);
+    }
+    cardIds = picked;
+  } else {
+    if (decks.length + classes.length === 0) {
+      return c.json(
+        { error: "bad_request", detail: "name a deck, a class or cardIds" },
+        400,
+      );
+    }
+    const count = body.count;
+    if (
+      typeof count !== "number" ||
+      !Number.isInteger(count) ||
+      count < 1 ||
+      count > QUIZ_MAX_COUNT
+    ) {
+      return c.json(
+        { error: "bad_request", detail: `count must be 1-${QUIZ_MAX_COUNT}` },
+        400,
+      );
+    }
+    const ids = await poolOf(c, decks, classes);
+    if (ids.length === 0) {
+      return c.json({ error: "empty_pool" }, 404);
+    }
+    const seedBytes = new Uint32Array(1);
+    crypto.getRandomValues(seedBytes);
+    cardIds = pickQuizCards(ids, count, (seedBytes[0] as number) >>> 1);
   }
 
   const seedBytes = new Uint32Array(1);
   crypto.getRandomValues(seedBytes);
   const seed = (seedBytes[0] as number) >>> 1;
-  const cardIds = pickQuizCards(ids, count, seed);
   const row: QuizRow = {
     id: newQuizId(),
     title: text(body.title) ?? "Quiz",
-    deck_id: deckId,
-    class_id: classId,
+    deck_id: decks.length === 1 && classes.length === 0 ? decks[0]! : null,
+    class_id: classes.length === 1 && decks.length === 0 ? classes[0]! : null,
     card_ids_json: JSON.stringify(cardIds),
     seed,
     due_at: dueAt,
@@ -201,6 +315,101 @@ export async function createQuiz(c: Ctx): Promise<Response> {
     )
     .run();
   return c.json(view(row), 201);
+}
+
+/**
+ * `PATCH /api/quizzes/:id` (Muse) - edits an assigned quiz.
+ *
+ * Any of: `title`, `dueAt` (`null` clears it), `cardIds` (replaces the whole
+ * list), `addCardIds` and `removeCardIds`. A quiz that is completed or
+ * withdrawn cannot be edited. Answers already given are kept; a removed
+ * question simply stops counting.
+ */
+export async function editQuiz(c: Ctx, id: string): Promise<Response> {
+  const body = await readBody(c);
+  if (body === null) {
+    return c.json({ error: "bad_request" }, 400);
+  }
+  const row = await readQuiz(c, id);
+  if (row === null || row.status === "withdrawn") {
+    return c.json({ error: "not_found" }, 404);
+  }
+  if (row.status !== "assigned") {
+    return c.json({ error: "not_assigned", status: row.status }, 409);
+  }
+
+  let title = row.title;
+  if (body.title !== undefined) {
+    const next = text(body.title);
+    if (next === null) {
+      return c.json({ error: "bad_request", detail: "invalid title" }, 400);
+    }
+    title = next;
+  }
+
+  let dueAt = row.due_at;
+  if ("dueAt" in body) {
+    const next = readDueAt(body.dueAt);
+    if (next === undefined) {
+      return c.json({ error: "bad_request", detail: "invalid dueAt" }, 400);
+    }
+    dueAt = next;
+  }
+
+  const replace = readIdList(body.cardIds, QUIZ_MAX_COUNT);
+  const add = readIdList(body.addCardIds, QUIZ_MAX_COUNT);
+  const remove = readIdList(body.removeCardIds, QUIZ_MAX_COUNT);
+  if (replace === null || add === null || remove === null) {
+    return c.json({ error: "bad_request", detail: "invalid id list" }, 400);
+  }
+  if (replace !== undefined && (add !== undefined || remove !== undefined)) {
+    return c.json(
+      { error: "bad_request", detail: "cardIds cannot be mixed with addCardIds or removeCardIds" },
+      400,
+    );
+  }
+
+  const current = JSON.parse(row.card_ids_json) as string[];
+  let cardIds = current;
+  if (replace !== undefined) {
+    cardIds = replace;
+  } else if (add !== undefined || remove !== undefined) {
+    const drop = new Set(remove ?? []);
+    cardIds = current.filter((cardId) => !drop.has(cardId));
+    for (const cardId of add ?? []) {
+      if (!cardIds.includes(cardId)) {
+        cardIds = [...cardIds, cardId];
+      }
+    }
+  }
+
+  if (cardIds !== current) {
+    if (cardIds.length < 1 || cardIds.length > QUIZ_MAX_COUNT) {
+      return c.json(
+        { error: "bad_request", detail: `a quiz has 1-${QUIZ_MAX_COUNT} questions` },
+        400,
+      );
+    }
+    // Only the new questions have to exist; the old ones are already on the quiz.
+    const fresh = cardIds.filter((cardId) => !current.includes(cardId));
+    const live = await liveIds(c, fresh);
+    const missing = fresh.filter((cardId) => !live.has(cardId));
+    if (missing.length > 0) {
+      return c.json({ error: "unknown_cards", cardIds: missing }, 404);
+    }
+  }
+
+  await c.env.DB.prepare(
+    "UPDATE quizzes SET title = ?, due_at = ?, card_ids_json = ? WHERE id = ? AND status = 'assigned'",
+  )
+    .bind(title, dueAt, JSON.stringify(cardIds), id)
+    .run();
+
+  // Removing the last unanswered question can finish the quiz.
+  await completeIfAnswered(c.env.DB, id);
+
+  const saved = await readQuiz(c, id);
+  return saved === null ? c.json({ error: "not_found" }, 404) : c.json(view(saved));
 }
 
 /** `GET /api/quizzes?status=` (Muse or device) - newest first. */
@@ -438,14 +647,22 @@ export async function recordQuizAnswers(
     touched.add(answer.quizId);
   }
   for (const quizId of touched) {
-    await db
-      .prepare(
-        `UPDATE quizzes SET status = 'completed',
-           completed_at = (SELECT MAX(answered_at) FROM quiz_answers WHERE quiz_id = quizzes.id)
-         WHERE id = ? AND status = 'assigned'
-           AND (SELECT COUNT(*) FROM quiz_answers WHERE quiz_id = quizzes.id) >= json_array_length(card_ids_json)`,
-      )
-      .bind(quizId)
-      .run();
+    await completeIfAnswered(db, quizId);
   }
+}
+
+/** Marks an assigned quiz completed when every one of its questions has an answer. */
+async function completeIfAnswered(db: D1Database, quizId: string): Promise<void> {
+  await db
+    .prepare(
+      `UPDATE quizzes SET status = 'completed',
+         completed_at = (SELECT MAX(answered_at) FROM quiz_answers WHERE quiz_id = quizzes.id)
+       WHERE id = ? AND status = 'assigned'
+         AND (SELECT COUNT(*) FROM quiz_answers WHERE quiz_id = quizzes.id
+                AND card_id IN (SELECT value FROM json_each(quizzes.card_ids_json)))
+             >= json_array_length(card_ids_json)
+         AND EXISTS (SELECT 1 FROM quiz_answers WHERE quiz_id = quizzes.id)`,
+    )
+    .bind(quizId)
+    .run();
 }

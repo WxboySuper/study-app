@@ -295,3 +295,153 @@ describe("quiz endpoints", () => {
     expect(all.quizzes).toHaveLength(0);
   });
 });
+
+describe("agents add and edit quizzes", () => {
+  it("assigns a quiz from several decks and classes", async () => {
+    const env = await setup();
+    await seedDeck(env, "set_a", "Bio", 3);
+    await seedDeck(env, "set_b", "Chem", 3);
+    await seedDeck(env, "set_c", "Hist", 3);
+
+    const quiz = await json<Quiz & { deckId?: string; classId?: string }>(
+      await post(
+        env,
+        "/api/quizzes",
+        { deckIds: ["set_a", "set_b"], classIds: ["Hist"], count: 100 },
+        MUSE,
+      ),
+    );
+    expect(quiz.cardIds).toHaveLength(9);
+    expect(quiz.deckId).toBeUndefined();
+    expect(quiz.classId).toBeUndefined();
+
+    // A repeated deck does not repeat its questions.
+    const repeated = await json<Quiz>(
+      await post(env, "/api/quizzes", { deckId: "set_a", deckIds: ["set_a"], count: 100 }, MUSE),
+    );
+    expect(repeated.cardIds).toHaveLength(3);
+  });
+
+  it("hand-picks the questions of a quiz", async () => {
+    const env = await setup();
+    await seedDeck(env, "set_a", "Bio", 4);
+    const all = await json<Quiz>(
+      await post(env, "/api/quizzes", { deckId: "set_a", count: 4 }, MUSE),
+    );
+    const ids = [...all.cardIds].reverse().slice(0, 2);
+
+    const made = await post(env, "/api/quizzes", { cardIds: ids, title: "Two" }, MUSE);
+    expect(made.status).toBe(201);
+    expect((await json<Quiz>(made)).cardIds).toEqual(ids);
+
+    const bad = [
+      { cardIds: [] },
+      { cardIds: ["nope"] },
+      { cardIds: ids, deckId: "set_a" },
+      { cardIds: "x" },
+    ];
+    expect((await post(env, "/api/quizzes", bad[0], MUSE)).status).toBe(400);
+    const unknown = await post(env, "/api/quizzes", bad[1], MUSE);
+    expect(unknown.status).toBe(404);
+    expect((await json<{ cardIds: string[] }>(unknown)).cardIds).toEqual(["nope"]);
+    expect((await post(env, "/api/quizzes", bad[2], MUSE)).status).toBe(400);
+    expect((await post(env, "/api/quizzes", bad[3], MUSE)).status).toBe(400);
+  });
+
+  it("edits the title, the due date and the questions", async () => {
+    const env = await setup();
+    await seedDeck(env, "set_a", "Bio", 5);
+    const quiz = await json<Quiz & { title: string; dueAt: number | null }>(
+      await post(env, "/api/quizzes", { deckId: "set_a", count: 2, title: "Old" }, MUSE),
+    );
+    const patch = (body: unknown) =>
+      call(env, `/api/quizzes/${quiz.id}`, { method: "PATCH", body: JSON.stringify(body) }, MUSE);
+
+    expect((await call(env, `/api/quizzes/${quiz.id}`, { method: "PATCH", body: "{}" })).status).toBe(401);
+
+    const renamed = await json<Quiz & { title: string; dueAt: number | null }>(
+      await patch({ title: "New", dueAt: "2026-12-01T12:00:00Z" }),
+    );
+    expect(renamed.title).toBe("New");
+    expect(renamed.dueAt).toBe(Date.parse("2026-12-01T12:00:00Z"));
+    expect(renamed.cardIds).toEqual(quiz.cardIds);
+
+    const cleared = await json<{ dueAt: number | null }>(await patch({ dueAt: null }));
+    expect(cleared.dueAt).toBeNull();
+
+    // Add every question of the deck, then drop one.
+    const everything = await json<Quiz>(
+      await post(env, "/api/quizzes", { deckId: "set_a", count: 5 }, MUSE),
+    );
+    const grown = await json<Quiz>(await patch({ addCardIds: everything.cardIds }));
+    expect(grown.cardIds).toHaveLength(5);
+    expect(grown.cardIds.slice(0, 2)).toEqual(quiz.cardIds);
+    const dropped = grown.cardIds[4] as string;
+    const shrunk = await json<Quiz>(await patch({ removeCardIds: [dropped] }));
+    expect(shrunk.cardIds).toHaveLength(4);
+    expect(shrunk.cardIds).not.toContain(dropped);
+
+    // Replace the whole list.
+    const replaced = await json<Quiz>(await patch({ cardIds: [everything.cardIds[0] as string] }));
+    expect(replaced.cardIds).toEqual([everything.cardIds[0]]);
+
+    const rejects = [
+      { title: "  " },
+      { dueAt: "never" },
+      { cardIds: [] },
+      { cardIds: ["a"], addCardIds: ["b"] },
+      { removeCardIds: replaced.cardIds },
+      { addCardIds: [7] },
+    ];
+    for (const body of rejects) {
+      expect((await patch(body)).status).toBe(400);
+    }
+    expect((await patch({ addCardIds: ["ghost"] })).status).toBe(404);
+    expect(
+      (await call(env, "/api/quizzes/qz_none", { method: "PATCH", body: "{}" }, MUSE)).status,
+    ).toBe(404);
+    expect(
+      (await call(env, `/api/quizzes/${quiz.id}`, { method: "PATCH", body: "nope" }, MUSE)).status,
+    ).toBe(400);
+  });
+
+  it("finishes a quiz when the last unanswered question is removed, and locks it after", async () => {
+    const env = await setup();
+    await seedDeck(env, "set_a", "Bio", 3);
+    const quiz = await json<Quiz>(
+      await post(env, "/api/quizzes", { deckId: "set_a", count: 2 }, MUSE),
+    );
+    const [first, second] = quiz.cardIds as [string, string];
+    const token = await phone(env);
+    const push = await post(
+      env,
+      "/api/sync/push",
+      {
+        events: [
+          {
+            id: "evt-edit-quiz-1-xx",
+            seq: 1,
+            at: 1_000,
+            type: "quiz_answer",
+            payload: {
+              quizId: quiz.id,
+              cardId: first,
+              chosen: "A",
+              correct: true,
+              timeMs: 1000,
+              answeredAt: 1_000,
+            },
+          },
+        ],
+      },
+      token,
+    );
+    expect(push.status).toBeLessThan(300);
+
+    const patch = (body: unknown) =>
+      call(env, `/api/quizzes/${quiz.id}`, { method: "PATCH", body: JSON.stringify(body) }, MUSE);
+    const done = await json<Quiz>(await patch({ removeCardIds: [second] }));
+    expect(done.status).toBe("completed");
+    expect((await patch({ title: "Late" })).status).toBe(409);
+  });
+});

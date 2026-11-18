@@ -26,7 +26,7 @@ import {
   revokeDevice,
   startPairing,
 } from './progress';
-import { createQuiz, getQuiz, listQuizzes, quizResults, withdrawQuiz } from './quizzes';
+import { createQuiz, editQuiz, getQuiz, listQuizzes, quizResults, withdrawQuiz } from './quizzes';
 import { latestRelease, RELEASE_ASSET_URL, RELEASE_USER_AGENT } from './release';
 import type { Bindings } from './types';
 
@@ -309,6 +309,9 @@ app.get('/api/quizzes/:id', async (c) =>
 );
 app.get('/api/quizzes/:id/results', async (c) =>
   isMuse(c) ? quizResults(c, c.req.param('id')) : c.json({ error: 'unauthorized' }, 401),
+);
+app.patch('/api/quizzes/:id', async (c) =>
+  isMuse(c) ? editQuiz(c, c.req.param('id')) : c.json({ error: 'unauthorized' }, 401),
 );
 app.delete('/api/quizzes/:id', async (c) =>
   isMuse(c) ? withdrawQuiz(c, c.req.param('id')) : c.json({ error: 'unauthorized' }, 401),
