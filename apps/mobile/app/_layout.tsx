@@ -15,6 +15,7 @@ import { useEffect, type ReactNode } from 'react';
 import { Platform, View } from 'react-native';
 import { SafeAreaInsetsContext, SafeAreaProvider, type EdgeInsets } from 'react-native-safe-area-context';
 
+import { refreshReminderContent } from '@/notifications';
 import { SettingsProvider } from '@/settings';
 import { startProgressSync } from '@/sync/progressSync';
 import { startDeckSync } from '@/sync/syncDecks';
@@ -56,6 +57,11 @@ export default function RootLayout() {
   // hours when it comes back from the background.
   useEffect(() => {
     return startUpdateChecks();
+  }, []);
+
+  // The scheduled study reminders carry today's numbers.
+  useEffect(() => {
+    void refreshReminderContent();
   }, []);
 
   // The decks of the server are pulled when the app starts, and again when it

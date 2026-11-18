@@ -49,6 +49,7 @@ import {
   type LocalSet,
 } from '@/db/local';
 import { critterArt } from '@/packs/critterArt';
+import { RemindersSettings } from '@/reminders/RemindersSettings';
 import { scopeTitle, useSettings } from '@/settings';
 import { play } from '@/sound/sfx';
 import {
@@ -755,6 +756,7 @@ export default function HomeScreen() {
                     setReduceMotion(value);
                   }}
                 />
+                <RemindersSettings />
                 <GameButton
                   label={Platform.OS === 'web' ? 'LINK TO PHONE' : 'LINK A BROWSER'}
                   variant="ghost"
