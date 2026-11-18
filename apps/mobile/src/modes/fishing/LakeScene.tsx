@@ -31,6 +31,7 @@ import { Glow } from '@/ui';
 import { assetIdOf } from './catchArt';
 import { Sprite } from './Sprite';
 import { tierColor } from './assets';
+import { LakeFish } from './LakeFish';
 
 /**
  * The lake of the fishing mode (docs/design/fishing.md §11).
@@ -908,6 +909,14 @@ export function LakeScene({
       >
         <WaveBand width={width} height={78} amplitude={15} wavelength={280} phase={3.9} color="#1c5ea6" opacity={0.8} />
       </Animated.View>
+
+      {/* The shadows of fish in the deep water under the boat. */}
+      <LakeFish
+        top={waterY + 170}
+        bottom={height * 0.7}
+        width={width}
+        reduceMotion={reduceMotion}
+      />
 
       {/*
         The big splash of the catch that comes out of the water. It is drawn
