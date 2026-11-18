@@ -29,6 +29,8 @@ import {
 
 import { CoinFlight } from './CoinFlight';
 import { CritterCard } from './CritterCard';
+import { readCompanion, saveCompanion, subscribeCompanion } from '@/study/companion';
+
 import { CritterSheet } from './CritterSheet';
 import { PackHeader } from './PackHeader';
 import { PackTabs } from './PackTabs';
@@ -49,6 +51,12 @@ export function CollectionScreen() {
   const [wallet, setWallet] = useState<WalletSnapshot | null>(null);
   const [packId, setPackId] = useState(PACKS[0]?.id ?? '');
   const [sheet, setSheet] = useState<CritterDef | null>(null);
+  /** The critter that rides along on the home screen. */
+  const [companion, setCompanion] = useState<string | null>(null);
+  useEffect(() => {
+    void readCompanion().then(setCompanion);
+    return subscribeCompanion(setCompanion);
+  }, []);
   const [sellAll, setSellAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [flight, setFlight] = useState<{
@@ -261,6 +269,10 @@ export function CollectionScreen() {
             }}
             onSell={(qty) => {
               void onSell(sheet.id, qty);
+            }}
+            isCompanion={companion === sheet.id}
+            onCompanion={() => {
+              void saveCompanion(companion === sheet.id ? null : sheet.id);
             }}
           />
         )}
