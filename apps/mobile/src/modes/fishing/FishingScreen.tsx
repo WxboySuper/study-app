@@ -194,6 +194,10 @@ export interface FishingScreenProps {
   onHome: () => void;
   /** Called when the player plays the same scope again. */
   onPlayAgain: () => void;
+  /** Starts a calm session with only these questions (the ones that were missed). */
+  onRetryMissed?: (cardIds: string[]) => void;
+  /** Restricts the session to these questions (a retry of the missed ones). */
+  onlyCardIds?: readonly string[] | null;
   /** The state the demo of the web build jumps to. */
   demo?: FishingDemo | null;
 }
@@ -242,7 +246,7 @@ function saveMasteryCounts(state: Parameters<typeof masteryCounts>[0]): void {
   })();
 }
 
-export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, onPlayAgain, onKeepPlaying, demo = null }: FishingScreenProps) {
+export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, onPlayAgain, onRetryMissed, onlyCardIds = null, onKeepPlaying, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { bait } = useSettings();
   const insets = useSafeAreaInsets();
@@ -427,6 +431,10 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
         // and the queue of the core decides what comes next.
         const scoped = filterByScope(cardsRef.current, queueScope, deckClassesRef.current);
         let pool = scoped;
+        if (onlyCardIds !== null) {
+          const only = new Set(onlyCardIds);
+          pool = scoped.filter((card) => only.has(card.id));
+        }
         if (mastery) {
           const options = await readStudyOptions(store);
           const done = parseDailyDone(await store.readKv(dailyDoneKey(track)), localDayKey(new Date()));
@@ -1319,6 +1327,11 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
     }
   }, [demo, machine.phase]);
 
+  // The questions that were answered wrong (rating 1 is "Again"), once each.
+  const missedIds = [
+    ...new Set(result.reviews.filter((review) => review.rating === 1).map((review) => review.cardId)),
+  ];
+
   // The session is over: the payout screen takes over.
   if (machine.ended) {
     return (
@@ -1326,6 +1339,14 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
         result={result}
         tokens={tokens}
         onPlayAgain={onPlayAgain}
+        missedCount={missedIds.length}
+        onRetryMissed={
+          onRetryMissed === undefined || missedIds.length === 0
+            ? undefined
+            : () => {
+                onRetryMissed(missedIds);
+              }
+        }
         onHome={onHome}
         reduceMotion={reduceMotion}
       />
