@@ -54,9 +54,9 @@ describe('the pack catalogue', () => {
     expect(pack!.availableUntil).not.toBeNull();
   });
 
-  it('has the three packs of the catalogue', () => {
-    expect(PACKS).toHaveLength(3);
-    expect(PACKS.map((pack) => pack.id)).toEqual([STARTER, SEASONAL, 'gobble_scholars']);
+  it('has the four packs of the catalogue', () => {
+    expect(PACKS).toHaveLength(4);
+    expect(PACKS.map((pack) => pack.id)).toEqual([STARTER, SEASONAL, 'gobble_scholars', 'frostbitten_finals']);
   });
 });
 
