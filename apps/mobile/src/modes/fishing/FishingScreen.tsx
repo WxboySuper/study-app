@@ -57,6 +57,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { openLocalStore } from '@/db/local';
+import { earnDailyFreeze, recordSessionAnswers } from '@/study/streak';
 import { MathText } from '@/math/MathText';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
 import { play } from '@/sound/sfx';
@@ -400,6 +401,9 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
   const [loading, setLoading] = useState(true);
   // Mastery sessions follow the daily limits of the deck presets.
   const [doneToday, setDoneToday] = useState(false);
+  useEffect(() => {
+    if (doneToday) void earnDailyFreeze();
+  }, [doneToday]);
   const doneRef = useRef<DailyDone | null>(null);
 
   // Load the cards of the scope and hand them to the machine.
@@ -653,6 +657,7 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
 
     const fresh = reviews.slice(persistedRef.current);
     persistedRef.current = reviews.length;
+    fresh.forEach(() => recordSessionAnswers(1));
 
     void (async () => {
       try {
