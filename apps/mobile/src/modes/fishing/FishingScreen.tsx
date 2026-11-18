@@ -38,6 +38,7 @@ import {
   type FishingEvent,
   type FishingState,
   type MasteryProgress,
+  type Milestone,
   type QueueItem,
   type QueueItemKind,
   type QueueScope,
@@ -57,6 +58,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { openLocalStore } from '@/db/local';
+import { checkMilestones } from '@/study/milestones';
 import { earnDailyFreeze, recordSessionAnswers } from '@/study/streak';
 import { MathText } from '@/math/MathText';
 import { useReduceMotion, useSettings, type ScopeChoice } from '@/settings';
@@ -275,6 +277,8 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
   const persistedRef = useRef(0);
   const sessionIdRef = useRef(`fishing-${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [settledTokens, setSettledTokens] = useState<number | null>(null);
+  /** The mastery milestones that this session crossed. */
+  const [milestones, setMilestones] = useState<Milestone[]>([]);
   /** The tokens of the player (the HUD counts them). */
   const [balance, setBalance] = useState(0);
   /** The progress of the session (the HUD shows it in mastery mode). */
@@ -935,6 +939,11 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
           setSettledTokens(settlement.payout.tokens);
           setBalance(settlement.wallet.balance);
         }
+        const crossed = await checkMilestones();
+        if (crossed.length > 0) {
+          setMilestones(crossed);
+          setBalance((await store.readWallet(localDayKey(new Date()))).balance);
+        }
       } catch {
         // The estimate stays on screen; nothing was credited.
       }
@@ -1345,6 +1354,7 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
         tokens={tokens}
         onPlayAgain={onPlayAgain}
         missedCount={missedIds.length}
+        milestones={milestones}
         onRetryMissed={
           onRetryMissed === undefined || missedIds.length === 0
             ? undefined

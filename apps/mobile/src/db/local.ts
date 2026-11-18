@@ -379,6 +379,7 @@ async function openRawLocalStore(): Promise<LocalStore> {
     clearCollection: () => clearLocalCollection(db),
     resetTokens: () => resetLocalTokens(db),
     addTokens: (amount) => addLocalTokens(db, amount),
+    addPackTickets: (amount) => addLocalPackTickets(db, amount),
     resetSpinCooldown: () => resetLocalSpinCooldown(db),
     resetScheduling: async () => {
       await db.execAsync('DELETE FROM local_card_state; DELETE FROM outbox;');
@@ -715,6 +716,15 @@ export async function addLocalTokens(
   const today = localDayKey(new Date());
   const wallet = await readWallet(db, today);
   await writeWallet(db, applyTokenAdminAction(wallet, 'grant', amount));
+}
+
+/** Adds pack tickets to the wallet (a milestone reward). */
+export async function addLocalPackTickets(
+  db: SQLite.SQLiteDatabase,
+  amount: number,
+): Promise<void> {
+  const wallet = await readWallet(db, localDayKey(new Date()));
+  await writeWallet(db, { ...wallet, packTickets: wallet.packTickets + Math.max(0, Math.floor(amount)) });
 }
 
 /** Forgets the daily spins, so the wheel can be spun again. */
