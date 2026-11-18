@@ -2,6 +2,7 @@ import {
   DAILY_GOAL_QUESTIONS,
   localDay,
   settleMissedDays,
+  weeklyGoal,
   type StreakState,
 } from '@study-app/core';
 import { useEffect, useState } from 'react';
@@ -10,7 +11,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { refreshReminderContent } from '@/notifications';
 import { colors, fonts, radius, spacing } from '@/theme';
 
-import { readStreak, subscribeStreak } from './streak';
+import { readGoalDays, readStreak, subscribeStreak } from './streak';
 
 /**
  * The daily streak card of the home screen.
@@ -21,6 +22,7 @@ import { readStreak, subscribeStreak } from './streak';
  */
 export function StreakCard() {
   const [state, setState] = useState<StreakState | null>(null);
+  const [goalDays, setGoalDays] = useState<string[]>([]);
 
   useEffect(() => {
     let live = true;
@@ -29,9 +31,19 @@ export function StreakCard() {
         setState(loaded);
       }
     });
+    void readGoalDays().then((days) => {
+      if (live) {
+        setGoalDays(days);
+      }
+    });
     const stop = subscribeStreak((next) => {
       if (live) {
         setState(next);
+        void readGoalDays().then((days) => {
+          if (live) {
+            setGoalDays(days);
+          }
+        });
       }
     });
     return () => {
@@ -57,6 +69,7 @@ export function StreakCard() {
     return null;
   }
 
+  const week = weeklyGoal(goalDays, localDay(new Date()));
   const done = DAILY_GOAL_QUESTIONS - view.remaining;
   const ratio = Math.min(1, done / DAILY_GOAL_QUESTIONS);
 
@@ -90,6 +103,10 @@ export function StreakCard() {
         <Text style={styles.sub}>
           {done}/{DAILY_GOAL_QUESTIONS} questions today
           {state !== null && state.best > view.current ? ` · best ${state.best}` : ''}
+        </Text>
+        <Text style={styles.sub}>
+          This week {week.done}/{week.target}
+          {week.chestReady ? ' · chest earned' : ' · 5 days earns 2 tickets'}
         </Text>
       </View>
 
