@@ -1,6 +1,12 @@
+import {
+  bestQuizPercent,
+  localDay,
+  quizDueLabel,
+  type LocalQuiz,
+} from "@study-app/core";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { openLocalStore } from "@/db/local";
@@ -12,6 +18,14 @@ import {
   type QuizDetail,
   type QuizSummary,
 } from "@/sync/quizzes";
+import { QuizBuilder } from "@/study/QuizBuilder";
+import {
+  buildQuizDetail,
+  deleteLocalQuiz,
+  questionIdsOf,
+  readLocalQuizzes,
+  recordLocalQuizResult,
+} from "@/study/quizzes";
 import { colors, fonts, spacing } from "@/theme";
 import { GameBackground, GameButton, GlassCard, ScreenHeader } from "@/ui";
 
@@ -70,6 +84,42 @@ export default function QuizRoute() {
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>({ kind: "list" });
   const shownAt = useRef(Date.now());
+  // The quizzes the player made, and the one that is being played (if local).
+  const [mine, setMine] = useState<LocalQuiz[]>([]);
+  const [building, setBuilding] = useState(false);
+  const localPlaying = useRef<string | null>(null);
+
+  const loadMine = useCallback(async () => {
+    setMine(await readLocalQuizzes());
+  }, []);
+
+  const startLocal = async (quiz: LocalQuiz) => {
+    const detail = await buildQuizDetail(quiz);
+    if (detail.questions.length === 0) {
+      setError("That quiz has no questions left. Check its decks.");
+      return;
+    }
+    localPlaying.current = quiz.id;
+    shownAt.current = Date.now();
+    setPhase({
+      kind: "play",
+      quiz: detail,
+      index: 0,
+      answers: [],
+      choices: choicesOf(detail, 0),
+    });
+  };
+
+  const studyFor = async (quiz: LocalQuiz) => {
+    const ids = await questionIdsOf(quiz);
+    if (ids.length === 0) {
+      return;
+    }
+    router.push({
+      pathname: "/fishing",
+      params: { kind: "all", mastery: "0", track: "mc", ids: ids.join(",") },
+    });
+  };
 
   const refresh = useCallback(async () => {
     const result = await listAssignedQuizzes();
@@ -89,10 +139,12 @@ export default function QuizRoute() {
   useFocusEffect(
     useCallback(() => {
       void refresh();
-    }, [refresh]),
+      void loadMine();
+    }, [refresh, loadMine]),
   );
 
   const start = async (id: string) => {
+    localPlaying.current = null;
     const result = await fetchQuiz(id);
     if (!result.ok || result.value.questions.length === 0) {
       setError("Could not open that quiz.");
@@ -121,17 +173,27 @@ export default function QuizRoute() {
       correct: choice === q.back,
       timeMs,
     };
-    await recordQuizAnswer(await openLocalStore(), {
-      quizId: phase.quiz.id,
-      cardId: q.cardId,
-      chosen: choice,
-      correct: played.correct,
-      timeMs,
-      answeredAt: Date.now(),
-    });
+    // A quiz of the player stays on the phone; a quiz from Muse is reported.
+    if (localPlaying.current === null) {
+      await recordQuizAnswer(await openLocalStore(), {
+        quizId: phase.quiz.id,
+        cardId: q.cardId,
+        chosen: choice,
+        correct: played.correct,
+        timeMs,
+        answeredAt: Date.now(),
+      });
+    }
     const answers = [...phase.answers, played];
     const next = phase.index + 1;
     if (next >= phase.quiz.questions.length) {
+      if (localPlaying.current !== null) {
+        await recordLocalQuizResult(
+          localPlaying.current,
+          answers.filter((a) => a.correct).length,
+          answers.length,
+        );
+      }
       setPhase({ kind: "done", quiz: phase.quiz, answers });
       return;
     }
@@ -162,12 +224,79 @@ export default function QuizRoute() {
               ? `Question ${phase.index + 1} of ${phase.quiz.questions.length}`
               : phase.kind === "done"
                 ? `Score ${score}/${phase.quiz.questions.length}`
-                : "Assigned by Muse"
+                : "Make a quiz and choose what is on it"
           }
         />
         <ScrollView contentContainerStyle={styles.body}>
-          {phase.kind === "list" ? (
+          {phase.kind === "list" && building ? (
+            <GlassCard style={styles.card} elevated={false}>
+              <QuizBuilder
+                onCancel={() => {
+                  setBuilding(false);
+                }}
+                onDone={() => {
+                  setBuilding(false);
+                  void loadMine();
+                }}
+              />
+            </GlassCard>
+          ) : null}
+
+          {phase.kind === "list" && !building ? (
             <>
+              <GameButton
+                label="NEW QUIZ"
+                variant="primary"
+                size="md"
+                onPress={() => {
+                  setBuilding(true);
+                }}
+              />
+
+              {mine.length > 0 ? <Text style={styles.heading}>MY QUIZZES</Text> : null}
+              {mine.map((quiz) => {
+                const best = bestQuizPercent(quiz.results);
+                return (
+                  <GlassCard key={quiz.id} style={styles.card} elevated={false}>
+                    <Text style={styles.title}>{quiz.title}</Text>
+                    <Text style={styles.muted}>
+                      {quizDueLabel(quiz.dueDay, localDay(new Date()))}
+                      {best === null ? "" : ` · best ${best}%`}
+                      {quiz.limit === null ? "" : ` · ${quiz.limit} questions`}
+                    </Text>
+                    <View style={styles.quizActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        testID={`quiz-start-${quiz.id}`}
+                        onPress={() => void startLocal(quiz)}
+                        style={[styles.smallButton, styles.smallPrimary]}
+                      >
+                        <Text style={styles.smallText}>TAKE QUIZ</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        testID={`quiz-study-${quiz.id}`}
+                        onPress={() => void studyFor(quiz)}
+                        style={styles.smallButton}
+                      >
+                        <Text style={styles.smallText}>STUDY FOR IT</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={`Delete ${quiz.title}`}
+                        onPress={() => {
+                          void deleteLocalQuiz(quiz.id).then(loadMine);
+                        }}
+                        style={styles.smallButton}
+                      >
+                        <Text style={styles.smallText}>DELETE</Text>
+                      </Pressable>
+                    </View>
+                  </GlassCard>
+                );
+              })}
+
+              <Text style={styles.heading}>FROM MUSE</Text>
               {error !== null ? (
                 <Text style={styles.muted}>{error}</Text>
               ) : null}
@@ -175,7 +304,7 @@ export default function QuizRoute() {
                 <Text style={styles.muted}>Loading…</Text>
               ) : null}
               {quizzes !== null && quizzes.length === 0 && error === null ? (
-                <Text style={styles.muted}>No quizzes assigned. Nice!</Text>
+                <Text style={styles.muted}>Nothing from Muse right now.</Text>
               ) : null}
               {(quizzes ?? []).map((quiz) => (
                 <Pressable
@@ -265,6 +394,7 @@ export default function QuizRoute() {
                 onPress={() => {
                   setPhase({ kind: "list" });
                   void refresh();
+                  void loadMine();
                 }}
               />
             </>
@@ -315,4 +445,20 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   answerPrompt: { color: colors.text, fontSize: 14 },
+  heading: {
+    color: colors.textMuted,
+    fontFamily: fonts.titleSemi,
+    fontSize: 12,
+    letterSpacing: 2,
+    marginTop: spacing.sm,
+  },
+  quizActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: spacing.sm },
+  smallButton: {
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    backgroundColor: "rgba(255,255,255,0.08)",
+  },
+  smallPrimary: { backgroundColor: "#7b61ff" },
+  smallText: { color: "#ffffff", fontFamily: fonts.title, fontSize: 11, letterSpacing: 1 },
 });
