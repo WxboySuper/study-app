@@ -59,7 +59,7 @@ export const CRITTER_PACKS: readonly CritterPackDef[] = [
     id: STARTER_PACK_ID,
     name: 'Brain Buddies',
     kind: 'core',
-    priceTokens: 20,
+    priceTokens: 30,
     availableFrom: null,
     availableUntil: null,
     assetId: 'pack_brain_buddies',
@@ -69,7 +69,7 @@ export const CRITTER_PACKS: readonly CritterPackDef[] = [
     id: HALLOWEEN_PACK_ID,
     name: 'Halloween 2026 — Midterm Monsters',
     kind: 'seasonal',
-    priceTokens: 25,
+    priceTokens: 40,
     // Oct 1 2026 00:00 CDT (UTC-5) -> Nov 2 2026 00:00 CST (UTC-6).
     availableFrom: Date.UTC(2026, 9, 1, 5, 0, 0),
     availableUntil: Date.UTC(2026, 10, 2, 6, 0, 0),
@@ -80,7 +80,7 @@ export const CRITTER_PACKS: readonly CritterPackDef[] = [
     id: THANKSGIVING_PACK_ID,
     name: 'Thanksgiving 2026 — Gobble Scholars',
     kind: 'seasonal',
-    priceTokens: 25,
+    priceTokens: 40,
     // Nov 2 2026 00:00 CST (UTC-6) -> Dec 1 2026 00:00 CST (UTC-6).
     availableFrom: Date.UTC(2026, 10, 2, 6, 0, 0),
     availableUntil: Date.UTC(2026, 11, 1, 6, 0, 0),
@@ -91,7 +91,7 @@ export const CRITTER_PACKS: readonly CritterPackDef[] = [
     id: WINTER_PACK_ID,
     name: 'Winter 2026 — Frostbitten Finals',
     kind: 'seasonal',
-    priceTokens: 25,
+    priceTokens: 40,
     // Dec 1 2026 00:00 CST (UTC-6) -> Jan 1 2027 00:00 CST (UTC-6).
     availableFrom: Date.UTC(2026, 11, 1, 6, 0, 0),
     availableUntil: Date.UTC(2027, 0, 1, 6, 0, 0),

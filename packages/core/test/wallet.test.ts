@@ -79,10 +79,10 @@ describe('settleSession', () => {
       { correct: 30, reviews, packTickets: 0 },
       TODAY,
     );
-    // 30 * 1.5 + 1 * 1 + 4 * 0.25 = 47
+    // 30 * 1 + 1 * 0.5 + 4 * 0.25 = 31.5, rounded down
     expect(result.progress).toEqual({ graduated: 1, dueCleared: 4 });
-    expect(result.payout.tokens).toBe(47);
-    expect(result.wallet).toMatchObject({ balance: 47, tokensToday: 47 });
+    expect(result.payout.tokens).toBe(31);
+    expect(result.wallet).toMatchObject({ balance: 31, tokensToday: 31 });
   });
 
   it('pays the heavy catch bonus', () => {
@@ -97,17 +97,17 @@ describe('settleSession', () => {
       TODAY,
     );
 
-    expect(heavy.payout.heavyTokens).toBe(30);
-    expect(heavy.payout.tokens).toBe(plain.payout.tokens + 30);
-    expect(heavy.wallet.balance).toBe(plain.wallet.balance + 30);
+    expect(heavy.payout.heavyTokens).toBe(10);
+    expect(heavy.payout.tokens).toBe(plain.payout.tokens + 10);
+    expect(heavy.wallet.balance).toBe(plain.wallet.balance + 10);
   });
 
   it('applies the soft daily cap', () => {    const wallet = { ...emptyWallet(TODAY), balance: 10, tokensToday: 490 };
     const result = settleSession(wallet, { correct: 20, reviews: [], packTickets: 0 }, TODAY);
-    // 30 gross, 10 headroom, 20 overflow at 0.25 = 5
-    expect(result.payout.tokens).toBe(15);
+    // 20 gross, no headroom (490 of 300 today), 20 overflow at 0.25 = 5
+    expect(result.payout.tokens).toBe(5);
     expect(result.payout.capped).toBe(true);
-    expect(result.wallet.balance).toBe(25);
+    expect(result.wallet.balance).toBe(15);
   });
 
   it('forgets yesterday when settling today', () => {
@@ -115,7 +115,7 @@ describe('settleSession', () => {
     const result = settleSession(wallet, { correct: 2, reviews: [], packTickets: 1 }, TODAY);
     expect(result.payout.capped).toBe(false);
     expect(result.packTicketsAwarded).toBe(1);
-    expect(result.wallet).toEqual({ balance: 8, day: TODAY, tokensToday: 3, packTicketsToday: 1, packTickets: 1 });
+    expect(result.wallet).toEqual({ balance: 7, day: TODAY, tokensToday: 2, packTicketsToday: 1, packTickets: 1 });
   });
 
   it('caps pack tickets per session and per day', () => {

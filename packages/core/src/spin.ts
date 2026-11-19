@@ -28,14 +28,14 @@ export interface SpinSegment {
  * rewards are rare and the jackpot is the needle in the haystack.
  */
 export const SPIN_SEGMENTS: readonly SpinSegment[] = [
-  { reward: 10, weight: 30 },
-  { reward: 20, weight: 25 },
-  { reward: 30, weight: 17 },
-  { reward: 50, weight: 13 },
-  { reward: 100, weight: 8 },
-  { reward: 250, weight: 5 },
-  { reward: 500, weight: 1.5 },
-  { reward: 1000, weight: 0.5 },
+  { reward: 10, weight: 35 },
+  { reward: 20, weight: 28 },
+  { reward: 30, weight: 18 },
+  { reward: 50, weight: 12 },
+  { reward: 100, weight: 5 },
+  { reward: 250, weight: 1.5 },
+  { reward: 500, weight: 0.4 },
+  { reward: 1000, weight: 0.1 },
 ];
 
 /** The reward of the jackpot segment. */

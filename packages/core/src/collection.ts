@@ -31,9 +31,9 @@ import type { PackDef } from './packs';
 export const CRITTER_SELL_VALUES: Readonly<Record<CritterRarity, number>> = {
   common: 5,
   uncommon: 10,
-  rare: 20,
-  epic: 75,
-  legendary: 200,
+  rare: 15,
+  epic: 40,
+  legendary: 100,
 };
 
 /** The smallest amount of tokens a price or a reward is allowed to be. */

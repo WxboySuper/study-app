@@ -17,18 +17,18 @@ describe('the sell values', () => {
     expect(CRITTER_SELL_VALUES).toEqual({
       common: 5,
       uncommon: 10,
-      rare: 20,
-      epic: 75,
-      legendary: 200,
+      rare: 15,
+      epic: 40,
+      legendary: 100,
     });
   });
 
   it('knows the value of a critter', () => {
     expect(critterSellValue('nibbles_the_notecard')).toBe(5);
     expect(critterSellValue('gummy_eraser')).toBe(10);
-    expect(critterSellValue('synapse_sprite')).toBe(20);
-    expect(critterSellValue('mnemo_the_memory_jelly')).toBe(75);
-    expect(critterSellValue('gigabrain_golem')).toBe(200);
+    expect(critterSellValue('synapse_sprite')).toBe(15);
+    expect(critterSellValue('mnemo_the_memory_jelly')).toBe(40);
+    expect(critterSellValue('gigabrain_golem')).toBe(100);
     expect(critterSellValue('nobody')).toBe(0);
   });
 
@@ -65,7 +65,7 @@ describe('the sell values', () => {
 
   it('pays for a legendary with several packs', () => {
     const cheapestPack = Math.min(...PACKS.map((pack) => pack.priceTokens));
-    expect(cheapestPack).toBe(20);
+    expect(cheapestPack).toBe(30);
 
     // A legendary duplicate is worth more than one pack, so a lucky pull is
     // worth celebrating.
@@ -116,7 +116,7 @@ describe('sellDuplicate', () => {
   it('clamps the quantity to the duplicates the player owns', () => {
     const result = sellDuplicate(new Map([['gigabrain_golem', 2]]), 'gigabrain_golem', 10);
     expect(result.sold).toBe(1);
-    expect(result.tokens).toBe(200);
+    expect(result.tokens).toBe(100);
     expect(result.collection.get('gigabrain_golem')).toBe(1);
   });
 

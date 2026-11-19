@@ -34,21 +34,21 @@ function walletWith(balance: number, packTickets = 0): WalletSnapshot {
 }
 
 describe('the pack catalogue', () => {
-  it('has Brain Buddies for 20 tokens, always on sale', () => {
+  it('has Brain Buddies for 30 tokens, always on sale', () => {
     const pack = findPackDef(STARTER);
     expect(pack).toBeDefined();
     expect(pack!.name).toBe('Brain Buddies');
-    expect(pack!.priceTokens).toBe(20);
+    expect(pack!.priceTokens).toBe(30);
     expect(pack!.kind).toBe('core');
     expect(pack!.critters).toHaveLength(12);
     expect(pack!.availableFrom).toBeNull();
     expect(pack!.availableUntil).toBeNull();
   });
 
-  it('has Midterm Monsters for 25 tokens until Nov 2 2026', () => {
+  it('has Midterm Monsters for 40 tokens until Nov 2 2026', () => {
     const pack = findPackDef(SEASONAL);
     expect(pack).toBeDefined();
-    expect(pack!.priceTokens).toBe(25);
+    expect(pack!.priceTokens).toBe(40);
     expect(pack!.kind).toBe('seasonal');
     expect(pack!.critters).toHaveLength(8);
     expect(pack!.availableUntil).not.toBeNull();
@@ -63,7 +63,7 @@ describe('the pack catalogue', () => {
 describe('the odds of a pack', () => {
   it('uses the odds of the SPEC when every rarity is there', () => {
     const odds = packRarityOdds(findPackDef(STARTER)!);
-    expect(odds).toEqual({ common: 60, uncommon: 25, rare: 10, epic: 4, legendary: 1 });
+    expect(odds).toEqual({ common: 65, uncommon: 24, rare: 8, epic: 2.5, legendary: 0.5 });
     const total = Object.values(odds).reduce((sum, value) => sum + value, 0);
     expect(total).toBeCloseTo(100, 6);
   });
@@ -84,9 +84,9 @@ describe('the odds of a pack', () => {
     };
 
     const odds = packRarityOdds(pack);
-    // 60 and 25 renormalized over 85: 70.58 % and 29.41 %.
-    expect(odds.common).toBeCloseTo((60 / 85) * 100, 6);
-    expect(odds.uncommon).toBeCloseTo((25 / 85) * 100, 6);
+    // 65 and 24 renormalized over 89.
+    expect(odds.common).toBeCloseTo((65 / 89) * 100, 6);
+    expect(odds.uncommon).toBeCloseTo((24 / 89) * 100, 6);
     expect(odds.rare).toBe(0);
     expect(odds.epic).toBe(0);
     expect(odds.legendary).toBe(0);
@@ -176,8 +176,8 @@ describe('buyPack', () => {
     if (!result.ok) {
       return;
     }
-    expect(result.wallet.balance).toBe(80);
-    expect(result.paidTokens).toBe(20);
+    expect(result.wallet.balance).toBe(70);
+    expect(result.paidTokens).toBe(30);
     expect(result.usedTicket).toBe(false);
     expect(result.critterId).toBe('gigabrain_golem');
   });
@@ -276,7 +276,7 @@ describe('canOpenPack', () => {
       return;
     }
     expect(check.useTicket).toBe(false);
-    expect(check.priceTokens).toBe(20);
+    expect(check.priceTokens).toBe(30);
   });
 
   it('refuses a pack the player cannot pay for', () => {

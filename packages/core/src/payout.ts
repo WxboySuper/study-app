@@ -40,12 +40,12 @@ export interface PayoutRules {
  * The soft daily cap (~500) sits well above a normal day's play.
  */
 export const DEFAULT_PAYOUT_RULES: PayoutRules = {
-  tokensPerCorrect: 1.5,
-  tokensPerGraduated: 1,
+  tokensPerCorrect: 1,
+  tokensPerGraduated: 0.5,
   tokensPerDueCleared: 0.25,
   modeBonusPerPoint: 0.01,
-  tokensPerHeavyCatch: 15,
-  softCap: 500,
+  tokensPerHeavyCatch: 5,
+  softCap: 300,
   softCapRatio: 0.25,
 };
 

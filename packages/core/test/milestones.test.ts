@@ -8,28 +8,28 @@ import {
   weeklyGoal,
 } from '../src/milestones';
 
-const deck = (mastered: number, total = 20) => ({ id: 'd1', title: 'Deck', total, mastered });
+const deck = (mastered: number, total = 40) => ({ id: 'd1', title: 'Deck', total, mastered });
 
 describe('newMilestones', () => {
   it('pays each step once', () => {
-    expect(newMilestones([deck(9)], new Set())).toEqual([]);
-    const first = newMilestones([deck(10)], new Set());
+    expect(newMilestones([deck(19)], new Set())).toEqual([]);
+    const first = newMilestones([deck(20)], new Set());
     expect(first.map((m) => m.step)).toEqual([50]);
-    const again = newMilestones([deck(10)], new Set([milestoneKey('d1', 50)]));
+    const again = newMilestones([deck(20)], new Set([milestoneKey('d1', 50)]));
     expect(again).toEqual([]);
   });
 
   it('pays every crossed step at once', () => {
-    expect(newMilestones([deck(20)], new Set()).map((m) => m.step)).toEqual([50, 80, 100]);
+    expect(newMilestones([deck(40)], new Set()).map((m) => m.step)).toEqual([50, 80, 100]);
   });
 
   it('ignores tiny decks', () => {
-    expect(newMilestones([deck(5, 5)], new Set())).toEqual([]);
+    expect(newMilestones([deck(20, 20)], new Set())).toEqual([]);
   });
 
   it('adds up rewards', () => {
-    const all = newMilestones([deck(20)], new Set());
-    expect(totalReward(all)).toEqual({ tokens: 20, packTickets: 3 });
+    const all = newMilestones([deck(40)], new Set());
+    expect(totalReward(all)).toEqual({ tokens: 10, packTickets: 2 });
     expect(rewardOf(80)).toEqual({ tokens: 0, packTickets: 1 });
   });
 });

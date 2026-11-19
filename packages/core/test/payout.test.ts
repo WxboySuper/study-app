@@ -7,46 +7,46 @@ const zero = { correct: 0, graduated: 0, dueCleared: 0, modeScore: 0, tokensToda
 describe('computePayout', () => {
   it('uses the documented token economy', () => {
     expect(DEFAULT_PAYOUT_RULES).toEqual({
-      tokensPerCorrect: 1.5,
-      tokensPerGraduated: 1,
+      tokensPerCorrect: 1,
+      tokensPerGraduated: 0.5,
       tokensPerDueCleared: 0.25,
       modeBonusPerPoint: 0.01,
-      tokensPerHeavyCatch: 15,
-      softCap: 500,
+      tokensPerHeavyCatch: 5,
+      softCap: 300,
       softCapRatio: 0.25,
     });
   });
 
-  it('pays ~1.5 tokens per correct answer (rounded down)', () => {
-    expect(computePayout({ ...zero, correct: 3 }).tokens).toBe(4);
-    expect(computePayout({ ...zero, correct: 4 }).tokens).toBe(6);
+  it('pays 1 token per correct answer', () => {
+    expect(computePayout({ ...zero, correct: 3 }).tokens).toBe(3);
+    expect(computePayout({ ...zero, correct: 4 }).tokens).toBe(4);
   });
 
-  it('hits the ~50 tokens per 10 minute session benchmark', () => {
+  it('hits the ~35 tokens per 10 minute session benchmark', () => {
     const payout = computePayout({ ...zero, correct: 30, graduated: 3, dueCleared: 10, modeScore: 200 });
-    expect(payout.baseTokens).toBe(45 + 3 + 2);
+    expect(payout.baseTokens).toBe(34);
     expect(payout.bonusTokens).toBe(2);
-    expect(payout.tokens).toBeGreaterThanOrEqual(45);
-    expect(payout.tokens).toBeLessThanOrEqual(60);
+    expect(payout.tokens).toBeGreaterThanOrEqual(30);
+    expect(payout.tokens).toBeLessThanOrEqual(45);
     expect(payout.capped).toBe(false);
   });
 
   it('applies the soft daily cap', () => {
-    const payout = computePayout({ ...zero, correct: 100, tokensToday: 450 });
-    expect(payout.grossTokens).toBe(150);
-    expect(payout.tokens).toBe(50 + Math.floor(100 * 0.25));
+    const payout = computePayout({ ...zero, correct: 100, tokensToday: 250 });
+    expect(payout.grossTokens).toBe(100);
+    expect(payout.tokens).toBe(50 + Math.floor(50 * 0.25));
     expect(payout.capped).toBe(true);
   });
 
   it('does not cap a payout that fits into the remaining budget', () => {
-    const payout = computePayout({ ...zero, correct: 20, tokensToday: 450 });
-    expect(payout.tokens).toBe(30);
+    const payout = computePayout({ ...zero, correct: 20, tokensToday: 250 });
+    expect(payout.tokens).toBe(20);
     expect(payout.capped).toBe(false);
   });
 
   it('keeps paying a reduced rate once the cap is reached', () => {
-    const payout = computePayout({ ...zero, correct: 40, tokensToday: 600 });
-    expect(payout.tokens).toBe(15);
+    const payout = computePayout({ ...zero, correct: 40, tokensToday: 400 });
+    expect(payout.tokens).toBe(10);
     expect(payout.capped).toBe(true);
   });
 
@@ -99,25 +99,25 @@ describe('computePayout', () => {
       tokensToday: 0,
     });
 
-    expect(payout.softCap).toBe(500);
+    expect(payout.softCap).toBe(300);
   });
 });
 
 describe('the heavy catch bonus', () => {
-  it('pays 15 tokens per heavy catch', () => {
+  it('pays 5 tokens per heavy catch', () => {
     const payout = computePayout({ ...zero, heavyCatches: 1 });
 
-    expect(payout.heavyTokens).toBe(15);
-    expect(payout.tokens).toBe(15);
+    expect(payout.heavyTokens).toBe(5);
+    expect(payout.tokens).toBe(5);
   });
 
   it('adds the bonus to the rest of the payout', () => {
     const plain = computePayout({ ...zero, correct: 10 });
     const heavy = computePayout({ ...zero, correct: 10, heavyCatches: 2 });
 
-    expect(plain.tokens).toBe(15);
-    expect(heavy.tokens).toBe(plain.tokens + 30);
-    expect(heavy.grossTokens).toBe(plain.grossTokens + 30);
+    expect(plain.tokens).toBe(10);
+    expect(heavy.tokens).toBe(plain.tokens + 10);
+    expect(heavy.grossTokens).toBe(plain.grossTokens + 10);
   });
 
   it('pays a multiple of 5', () => {
@@ -134,10 +134,10 @@ describe('the heavy catch bonus', () => {
   });
 
   it('is capped by the soft daily cap like the rest', () => {
-    const payout = computePayout({ ...zero, heavyCatches: 10, tokensToday: 450 });
+    const payout = computePayout({ ...zero, heavyCatches: 20, tokensToday: 250 });
 
-    expect(payout.grossTokens).toBe(150);
-    expect(payout.tokens).toBe(50 + Math.floor(100 * 0.25));
+    expect(payout.grossTokens).toBe(100);
+    expect(payout.tokens).toBe(50 + Math.floor(50 * 0.25));
     expect(payout.capped).toBe(true);
   });
 });
