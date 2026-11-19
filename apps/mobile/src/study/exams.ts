@@ -1,10 +1,10 @@
-import { readiness, type ExamPlan, type Readiness } from '@study-app/core';
+import { examDeckIds, readiness, type ExamPlan, type Readiness } from '@study-app/core';
 
 import { openLocalStore } from '@/db/local';
 
 const EXAMS_KEY = 'exam-plans';
 
-/** Reads the saved exam date for each class. */
+/** Reads the saved exams. Older saves (one date per class) become exams of that class. */
 export async function readExams(): Promise<ExamPlan[]> {
   const store = await openLocalStore();
   const raw = await store.readKv(EXAMS_KEY);
@@ -13,45 +13,48 @@ export async function readExams(): Promise<ExamPlan[]> {
   try {
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isExamPlan);
+    const plans: ExamPlan[] = [];
+    for (const entry of parsed) {
+      const plan = readPlan(entry);
+      if (plan !== null) plans.push(plan);
+    }
+    return plans;
   } catch {
     return [];
   }
 }
 
-/** Saves or replaces the exam date for a class. */
-export async function saveExam(classId: string, date: string): Promise<void> {
-  const exams = await readExams();
-  const next = exams.filter((exam) => exam.classId !== classId);
-  next.push({ classId, date });
+async function writeExams(plans: ExamPlan[]): Promise<void> {
   const store = await openLocalStore();
-  await store.writeKv(EXAMS_KEY, JSON.stringify(next));
+  await store.writeKv(EXAMS_KEY, JSON.stringify(plans));
 }
 
-/** Removes the saved exam date for a class. */
-export async function clearExam(classId: string): Promise<void> {
-  const exams = await readExams();
-  const next = exams.filter((exam) => exam.classId !== classId);
-  const store = await openLocalStore();
-  if (next.length === 0) {
-    await store.writeKv(EXAMS_KEY, '[]');
-  } else {
-    await store.writeKv(EXAMS_KEY, JSON.stringify(next));
-  }
+/** A fresh id for a new exam. */
+export function newExamId(): string {
+  return `exam_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 }
 
-/** Reads readiness for the active cards in one class. */
-export async function readClassReadiness(
-  classId: string,
-  now: Date = new Date(),
-): Promise<Readiness> {
+/** Saves a new exam, or replaces the one with the same id. */
+export async function saveExam(plan: ExamPlan): Promise<void> {
+  const next = (await readExams()).filter((exam) => exam.id !== plan.id);
+  next.push(plan);
+  await writeExams(next);
+}
+
+/** Removes an exam. */
+export async function clearExam(id: string): Promise<void> {
+  await writeExams((await readExams()).filter((exam) => exam.id !== id));
+}
+
+/** Reads how ready the player is for the decks of one exam. */
+export async function readExamReadiness(plan: ExamPlan, now: Date = new Date()): Promise<Readiness> {
   const store = await openLocalStore();
   const [sets, cards, states] = await Promise.all([
     store.listSets(),
     store.listCards(),
     store.listCardStates(),
   ]);
-  const deckIds = new Set(sets.filter((set) => set.classId === classId).map((set) => set.id));
+  const deckIds = new Set(examDeckIds(plan, sets.map((set) => set.id)));
   return readiness(
     cards
       .filter((card) => deckIds.has(card.setId))
@@ -65,9 +68,25 @@ export async function readClassReadiness(
   );
 }
 
-function isExamPlan(value: unknown): value is ExamPlan {
-  if (typeof value !== 'object' || value === null) return false;
-  const plan = value as Partial<ExamPlan>;
-  return typeof plan.classId === 'string' && typeof plan.date === 'string' &&
-    /^\d{4}-\d{2}-\d{2}$/.test(plan.date);
+function readPlan(value: unknown): ExamPlan | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const raw = value as Record<string, unknown>;
+  if (typeof raw.date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw.date)) return null;
+  const classId = typeof raw.classId === 'string' ? raw.classId : null;
+  const deckIds = Array.isArray(raw.deckIds)
+    ? raw.deckIds.filter((id): id is string => typeof id === 'string')
+    : [];
+  if (typeof raw.id === 'string') {
+    return {
+      id: raw.id,
+      name: typeof raw.name === 'string' && raw.name.trim() !== '' ? raw.name : 'Exam',
+      classId,
+      date: raw.date,
+      deckIds,
+    };
+  }
+  // Legacy: one date per class, covering every deck of the class (filled in on load).
+  return classId === null
+    ? null
+    : { id: `exam_${classId}`, name: '', classId, date: raw.date, deckIds: [] };
 }

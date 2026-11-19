@@ -591,6 +591,17 @@ export default function HomeScreen() {
     });
   }, [router, scope, setScope, mastery, track, dueOnly, picked]);
 
+  const goExam = useCallback(
+    (deckIds: string[], title: string) => {
+      play('cast');
+      router.push({
+        pathname: '/fishing',
+        params: { kind: 'all', title, mastery: '1', track, sets: deckIds.join(',') },
+      });
+    },
+    [router, track],
+  );
+
   const goImport = useCallback(() => {
     play('tap');
     router.push('/import');
@@ -665,7 +676,7 @@ export default function HomeScreen() {
 
           <StreakCard />
 
-          <ExamPanel />
+          <ExamPanel onStudy={goExam} />
 
           <View style={styles.section}>
             <DeckPicker
