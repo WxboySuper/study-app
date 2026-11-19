@@ -301,6 +301,8 @@ describe('the lure pace', () => {
     expect(lurePaceFor({ mastery: false, questionCount: 36 })).toBe(ENDLESS_LURE_PACE);
     expect(lurePaceFor({ mastery: true, questionCount: 0 })).toBe(ENDLESS_LURE_PACE);
     expect(lurePaceFor({ mastery: true, questionCount: 1 })).toBe(3);
+    // A huge scope paces like a session of 36 (the lure used to need ~130 answers a level).
+    expect(lurePaceFor({ mastery: true, questionCount: 266 })).toBeCloseTo(17.55, 2);
   });
 
   it('rolls New Lure as its own 1-in-pace chance and not in the special table', () => {
