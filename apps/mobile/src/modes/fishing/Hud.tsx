@@ -66,7 +66,7 @@ export function Hud({
   // The lure of the session (the art of the rank, not an emoji).
   const lure = LURE_RANKS.find((entry) => entry.rank === session.roll.lureRank) ?? LURE_RANKS[0]!;
 
-  const log = session.log.slice(-5);
+  const log = session.log.slice(-3);
 
   const todayRatio =
     today !== null && today.total > 0 ? Math.max(0, Math.min(1, today.done / today.total)) : 0;
@@ -93,18 +93,6 @@ export function Hud({
                 ))}
               </View>
             </View>
-
-            {session.streak > 0 || session.roll.heat === true ? (
-              <View style={styles.streakChip}>
-                <Text style={styles.flame}>🔥</Text>
-                <Text style={styles.streakText}>{session.streak}</Text>
-                {session.roll.heat === true && session.roll.lureRank < MAX_LURE_RANK ? (
-                  <Text style={styles.heatText} testID="heat-meter">
-                    {session.streak % HEAT_STEP}/{HEAT_STEP}
-                  </Text>
-                ) : null}
-              </View>
-            ) : null}
 
             {powerup === null ? null : (
               <View style={styles.powerupChip}>
@@ -140,6 +128,19 @@ export function Hud({
           </Text>
         </View>
 
+        {session.streak > 0 || session.roll.heat === true ? (
+          <View style={styles.streakChip}>
+            <Text style={styles.flame}>🔥</Text>
+            <Text style={styles.streakText}>{session.streak}</Text>
+            {session.roll.heat === true && session.roll.lureRank < MAX_LURE_RANK ? (
+              <Text style={styles.heatText} testID="heat-meter">
+                {session.streak % HEAT_STEP}/{HEAT_STEP}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+
         <Text style={styles.stat}>{session.answered} answered</Text>
       </View>
 
@@ -152,7 +153,10 @@ export function Hud({
           accessibilityLabel={`Today: ${today.new} new, ${today.learning} learning, ${today.review} due left. ${today.done} of ${today.total} done.`}
         >
           <View style={styles.todayCounts}>
-            <Text style={styles.todayTitle}>TODAY</Text>
+            <View style={styles.todayTitleBox}>
+              <Text style={styles.todayTitle}>TODAY</Text>
+              {limitNote === null ? null : <Text style={styles.limitNote}>{limitNote}</Text>}
+            </View>
             {(['new', 'learning', 'review'] as const).map((stage) => (
               <View key={stage} style={styles.todayCount} testID={`mastery-today-${stage}`}>
                 <Text
@@ -176,7 +180,6 @@ export function Hud({
               {today.done}/{today.total} done today
             </Text>
           </View>
-          {limitNote === null || compact ? null : <Text style={styles.limitNote}>{limitNote}</Text>}
         </View>
       ) : null}
 
@@ -391,12 +394,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 12,
   },
+  todayTitleBox: {
+    alignSelf: 'center',
+  },
   todayTitle: {
     color: 'rgba(255,255,255,0.7)',
     fontFamily: fonts.titleSemi,
     fontSize: 10,
     letterSpacing: 0.8,
-    alignSelf: 'center',
   },
   todayCount: {
     alignItems: 'center',
@@ -446,7 +451,7 @@ const styles = StyleSheet.create({
   limitNote: {
     color: 'rgba(255,255,255,0.6)',
     fontFamily: fonts.bodySemi,
-    fontSize: 10,
+    fontSize: 9,
   },
   logRow: {
     gap: 4,
@@ -459,7 +464,6 @@ const styles = StyleSheet.create({
   },
   log: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 6,
   },
   logItem: {
@@ -471,6 +475,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 3,
+    flexShrink: 1,
     maxWidth: 150,
   },
   logName: {
