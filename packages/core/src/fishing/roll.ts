@@ -290,7 +290,7 @@ export const FRENZY_WEIGHT_MULTIPLIER = 2;
 export const LURE_SAFETY_FACTOR = 1.5;
 
 /** The correct answers per lure level in endless mode. */
-export const ENDLESS_LURE_PACE = 22;
+export const ENDLESS_LURE_PACE = 12;
 
 /**
  * The share of a mastery session's correct answers by which the four lure
