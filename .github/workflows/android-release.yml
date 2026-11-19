@@ -46,14 +46,8 @@ jobs:
       # Caches ~/.gradle (wrapper, deps, build cache)
       - uses: gradle/actions/setup-gradle@v4
 
-      # node_modules cache on top of the pnpm store cache from setup-node
-      - uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            apps/*/node_modules
-            packages/*/node_modules
-          key: node-modules-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+      # (No node_modules cache: 'pnpm install' takes ~4s from the pnpm store
+      # that setup-node caches, and a 520 MB cache cost more to save and restore.)
 
       # Native (C++) compile cache for RN / Hermes / CMake builds
       - uses: hendrikmuhs/ccache-action@v1.2
@@ -82,6 +76,8 @@ jobs:
           {
             echo "android.enableMinifyInReleaseBuilds=false"
             echo "android.enableShrinkResourcesInReleaseBuilds=false"
+            echo "org.gradle.parallel=true"
+            echo "org.gradle.caching=true"
           } >> gradle.properties
 
       - name: Gradle assembleRelease
@@ -89,6 +85,7 @@ jobs:
         # arm64-v8a only -> far less native compile and a much smaller APK
         run: >-
           ./gradlew assembleRelease
+          -x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintVitalRelease
           -PreactNativeArchitectures=arm64-v8a
           --build-cache --max-workers=4
           "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" -Pkotlin.daemon.jvmargs=-Xmx2g
