@@ -22,8 +22,6 @@ import { POWERUPS, SPECIALS } from '../src/content/specials';
 /** The art that is not drawn yet (the entry falls back to its placeholder). */
 const ART_PENDING: readonly string[] = [
   'catch_heavy_void_fish',
-  'junk_pumpkin_carving',
-  'junk_snowy_mittens',
 ];
 
 /** The root of the repository (the test lives in `packages/core/test`). */

@@ -85,7 +85,7 @@ describe('the collection', () => {
 
   it('counts how much of a pack is owned', () => {
     const pack = findPackDef('brain_buddies')!;
-    expect(collectionProgress(new Map(), pack)).toEqual({ owned: 0, total: 12 });
+    expect(collectionProgress(new Map(), pack)).toEqual({ owned: 0, total: 18 });
     expect(
       collectionProgress(
         new Map([
@@ -94,7 +94,7 @@ describe('the collection', () => {
         ]),
         pack,
       ),
-    ).toEqual({ owned: 2, total: 12 });
+    ).toEqual({ owned: 2, total: 18 });
   });
 });
 

@@ -53,6 +53,11 @@ export const THANKSGIVING_PACK_ID = 'gobble_scholars';
  */
 export const WINTER_PACK_ID = 'frostbitten_finals';
 
+/**
+ * The Flight School pack: an aviation-themed core pack, always on sale.
+ */
+export const FLIGHT_PACK_ID = 'flight_school';
+
 /** Every pack of the catalogue. */
 export const CRITTER_PACKS: readonly CritterPackDef[] = [
   {
@@ -64,6 +69,16 @@ export const CRITTER_PACKS: readonly CritterPackDef[] = [
     availableUntil: null,
     assetId: 'pack_brain_buddies',
     emoji: '🧠',
+  },
+  {
+    id: FLIGHT_PACK_ID,
+    name: 'Flight School',
+    kind: 'core',
+    priceTokens: 30,
+    availableFrom: null,
+    availableUntil: null,
+    assetId: 'pack_flight_school',
+    emoji: '✈️',
   },
   {
     id: HALLOWEEN_PACK_ID,

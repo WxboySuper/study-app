@@ -220,6 +220,28 @@ Build Phase 0 + the FSRS core of a personal study app: a solo, untimed, Blooket-
 Finish by listing what was built, how to run it, and anything left TODO.
 ```
 
+## Pack release calendar (planned Nov 19 2026)
+
+Seasonal packs are timed to the moments a student actually feels: back to school, midterms, breaks and finals. Times are US Central, windows are `[from, until)`. A seasonal pack that has closed leaves the shop, and leaves the Collection book unless the player got a critter from it. Seasonal packs hold 8-12 critters and cost 40 tokens; core packs cost 30.
+
+| Pack | Window | Why then | Status |
+|---|---|---|---|
+| Brain Buddies (core) | always | the starter chase | live, 18 critters |
+| Flight School (core, aviation) | always | a second always-on pack so the long chase has variety | live, 12 critters |
+| Midterm Monsters (Halloween) | Oct 1 - Nov 2 2026 | fall midterms | closed |
+| Gobble Scholars (Thanksgiving) | Nov 2 - Dec 1 2026 | the break before finals | live, 12 critters |
+| Frostbitten Finals (Winter) | Dec 1 2026 - Jan 1 2027 | fall finals | opens Dec 1, 12 critters |
+| New Year, New Notes | Jan 1 - Jan 15 2027 | resolutions, fresh start | planned |
+| Syllabus Week | Jan 15 - Feb 5 2027 | spring semester starts | planned |
+| Be Mine, Study Buddy (Valentine's) | Feb 5 - Feb 16 2027 | a short, cute window | planned |
+| Midterm Mayhem (Spring) | Feb 25 - Mar 15 2027 | spring midterms | planned |
+| Spring Break Survivors | Mar 15 - Apr 1 2027 | the break | planned |
+| Cram Season (Spring Finals) | Apr 20 - May 20 2027 | spring finals | planned |
+| Summer Session | Jun 1 - Aug 15 2027 | summer classes, long window | planned |
+| Back to Campus | Aug 15 - Sep 20 2027 | fall semester starts | planned |
+
+Rules: windows never overlap, so there is one seasonal pack on sale at a time; each opens a day before the stress peak; a pack's critters are never added to the always-on pool.
+
 ## Economy retune (Nov 19 2026: the collection filled up far too fast)
 - Tokens: 1 per correct answer (was 1.5), 0.5 per learned card (was 1), heavy catch 5 (was 15), soft daily cap 300 (was 500). A 10-minute session now earns ~35 tokens.
 - Packs: Brain Buddies 30, seasonal 40 (were 20 / 25).

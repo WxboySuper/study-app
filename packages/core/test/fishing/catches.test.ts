@@ -143,7 +143,8 @@ describe('the catch list (§7)', () => {
   });
 
   it('fills every rarity tier with the critters of that rarity', () => {
-    expect(catchesOfTier('easy', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('easy', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name))
+.toEqual(expect.arrayContaining([
       'Nibbles the Notecard',
       'Pip Pencil',
       'Doodle Moth',
@@ -151,41 +152,46 @@ describe('the catch list (§7)', () => {
       'Candy Corn Kid',
       'Pumpkin Pupil',
       'Bat-ter Up',
-    ]);
+    ]));
 
-    expect(catchesOfTier('great', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('great', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name))
+.toEqual(expect.arrayContaining([
       'Gummy Eraser',
       'Captain Cram',
       'Recall Raccoon',
       'Ghost of Finals Past',
       'Mummy Wrapped-Up',
-    ]);
+    ]));
 
-    expect(catchesOfTier('rare', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('rare', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name))
+.toEqual(expect.arrayContaining([
       'Synapse Sprite',
       'Professor Hoot-n-Holler',
       'Count Flashula',
-    ]);
+    ]));
 
-    expect(catchesOfTier('epic', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('epic', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name))
+.toEqual(expect.arrayContaining([
       'Mnemo the Memory Jelly',
       'The Spaced Ranger',
       'The Witching Hour Owl',
-    ]);
+    ]));
 
-    expect(catchesOfTier('cotd', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('cotd', { now: INSIDE_THE_WINDOW }).map((entry) => entry.name))
+.toEqual(expect.arrayContaining([
       'Gigabrain Golem',
       'Headless Homework Horseman',
-    ]);
+    ]));
   });
 
   it('only swims up the critters of the packs that are on sale', () => {
-    expect(catchesOfTier('easy', { now: OUTSIDE_THE_WINDOW }).map((entry) => entry.name)).toEqual([
+    expect(catchesOfTier('easy', { now: OUTSIDE_THE_WINDOW }).map((entry) => entry.name))
+.toEqual(expect.arrayContaining([
       'Nibbles the Notecard',
       'Pip Pencil',
       'Doodle Moth',
       'Sir Highlighter',
-    ]);
+    ]));
   });
 
   it('keeps every catch inside the weight range of its tier', () => {

@@ -17,9 +17,9 @@ import {
 } from '../src/critters';
 
 describe('the critter catalogue', () => {
-  it('has the twelve Brain Buddies of the SPEC', () => {
+  it('has the eighteen Brain Buddies', () => {
     const starters = crittersOfPack(STARTER_PACK_ID);
-    expect(starters).toHaveLength(12);
+    expect(starters).toHaveLength(18);
     expect(starters.map((critter) => critter.name)).toEqual([
       'Nibbles the Notecard',
       'Pip Pencil',
@@ -33,6 +33,12 @@ describe('the critter catalogue', () => {
       'Mnemo the Memory Jelly',
       'The Spaced Ranger',
       'Gigabrain Golem',
+      'Sticky Note Squid',
+      'Binder Clip Crab',
+      'Abacus Armadillo',
+      'Lamp Lizard',
+      'Quiz Whiz Quokka',
+      "Dean's List Dragon",
     ]);
   });
 
@@ -66,7 +72,7 @@ describe('the critter catalogue', () => {
   });
 
   it('lists the critters of a rarity', () => {
-    expect(crittersByRarity('legendary')).toHaveLength(4);
+    expect(crittersByRarity('legendary')).toHaveLength(5);
     expect(crittersByRarity('legendary', STARTER_PACK_ID)).toHaveLength(1);
     expect(crittersByRarity('legendary', STARTER_PACK_ID)[0]?.id).toBe('gigabrain_golem');
   });
@@ -93,15 +99,15 @@ describe('the packs', () => {
     expect(isPackAvailable(pack!, Date.UTC(2026, 10, 2, 6, 0, 0))).toBe(false);
   });
 
-  it('has four packs', () => {
-    expect(CRITTER_PACKS).toHaveLength(4);
+  it('has five packs', () => {
+    expect(CRITTER_PACKS).toHaveLength(5);
   });
 });
 
 describe('the Thanksgiving pack', () => {
-  it('has the eight Gobble Scholars and sells inside its window only', () => {
+  it('has the twelve Gobble Scholars and sells inside its window only', () => {
     const critters = crittersOfPack(THANKSGIVING_PACK_ID);
-    expect(critters).toHaveLength(8);
+    expect(critters).toHaveLength(12);
     expect(critters.map((critter) => critter.name)).toContain('Gobble Scholar Supreme');
 
     const pack = findPack(THANKSGIVING_PACK_ID)!;
@@ -115,9 +121,9 @@ describe('the Thanksgiving pack', () => {
 });
 
 describe('the Winter pack', () => {
-  it('has the eight Frostbitten Finals critters and sells in December', () => {
+  it('has the twelve Frostbitten Finals critters and sells in December', () => {
     const critters = crittersOfPack(WINTER_PACK_ID);
-    expect(critters).toHaveLength(8);
+    expect(critters).toHaveLength(12);
     expect(critters.filter((critter) => critter.rarity === 'legendary')).toHaveLength(1);
 
     const pack = findPack(WINTER_PACK_ID)!;
