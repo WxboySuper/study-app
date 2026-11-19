@@ -38,6 +38,7 @@ import {
   createRollState,
   isCatchOutcome,
   applySpecialReward,
+  heatLureRank,
   rollCatch,
   type CatchOutcome,
   type Rng,
@@ -287,7 +288,7 @@ export type FishingEvent =
   /** The end sheet is confirmed: the session is over. */
   | { type: 'confirm_end' }
   /** The queue was (re)built by the app. */
-  | { type: 'set_queue'; queue: readonly QueueItem[]; lurePace?: number };
+  | { type: 'set_queue'; queue: readonly QueueItem[]; lurePace?: number; heat?: boolean };
 
 /** How a fishing session is created. */
 export interface FishingMachineOptions {
@@ -446,10 +447,11 @@ export function fishingReducer(state: FishingState, event: FishingEvent): Fishin
           ...state.session,
           queue: event.queue,
           queueIndex: 0,
-          roll:
-            event.lurePace === undefined
-              ? state.session.roll
-              : { ...state.session.roll, lurePace: event.lurePace },
+          roll: {
+            ...state.session.roll,
+            ...(event.lurePace === undefined ? {} : { lurePace: event.lurePace }),
+            ...(event.heat === undefined ? {} : { heat: event.heat }),
+          },
         },
       };
   }
@@ -544,7 +546,19 @@ function handleAnswer(
     streak: correct ? state.session.streak + 1 : 0,
     bestStreak: correct ? Math.max(state.session.bestStreak, state.session.streak + 1) : state.session.bestStreak,
     reviews: [...state.session.reviews, review],
-    roll: { ...state.session.roll, correctCount: state.session.correct + (correct ? 1 : 0) },
+    roll: {
+      ...state.session.roll,
+      correctCount: state.session.correct + (correct ? 1 : 0),
+      ...(state.session.roll.heat === true
+        ? {
+            lureRank: heatLureRank(
+              state.session.roll.lureRank,
+              correct,
+              correct ? state.session.streak + 1 : 0,
+            ),
+          }
+        : {}),
+    },
   };
 
   const feedback: FishingFeedback = {

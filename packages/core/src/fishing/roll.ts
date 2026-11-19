@@ -397,6 +397,26 @@ export interface RollState {
    * share of the special table. `undefined` keeps the legacy special share.
    */
   lurePace?: number;
+  /**
+   * Heat mode (endless): the lure follows the streak instead of the rolls.
+   * Every {@link HEAT_STEP} correct answers in a row raise it by one rank, and
+   * a miss cools it down by one. No "New Lure!" catch is rolled.
+   */
+  heat?: boolean;
+}
+
+/** The correct answers in a row that heat the lure up by one rank (endless). */
+export const HEAT_STEP = 5;
+
+/**
+ * The lure rank after an answer in heat mode. `streak` is the streak that
+ * the answer leaves behind (0 after a miss).
+ */
+export function heatLureRank(rank: number, correct: boolean, streak: number): number {
+  if (!correct) {
+    return Math.max(1, rank - 1);
+  }
+  return streak > 0 && streak % HEAT_STEP === 0 ? Math.min(MAX_LURE_RANK, rank + 1) : rank;
 }
 
 /** A fresh roll state. */
@@ -490,7 +510,8 @@ export function specialOddsFor(
   const critterShare = equippedBaitEffect(state.baits).critterShare;
   const critterAllowed = !bonus;
 
-  const lureShare = state.lurePace === undefined ? BASE_SPECIAL_ODDS.newLure : 0;
+  const lureShare =
+    state.lurePace === undefined && state.heat !== true ? BASE_SPECIAL_ODDS.newLure : 0;
   const withoutCritter = lureShare + BASE_SPECIAL_ODDS.frenzy + BASE_SPECIAL_ODDS.powerup;
   // Pack tickets only roll on due or new cards, and only once per session
   // and once per day (§8).
@@ -665,6 +686,7 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
   // 1. The lure guarantee.
   // The rank itself moves when the catch is claimed (see applyLureUpgrade).
   if (
+    next.heat !== true &&
     next.lureRank < MAX_LURE_RANK &&
     next.luresReeledUp < guaranteedLureCount(next.correctCount, next.lurePace)
   ) {
@@ -674,7 +696,7 @@ export function rollCatch(rng: Rng, state: RollState, options: RollOptions = {})
   // 1b. The paced lure roll: a 1-in-lurePace chance on every catch. The fish
   // has to be landed (a correct answer) for the upgrade to count, so the
   // expected spacing is `lurePace` correct answers per level.
-  if (next.lurePace !== undefined && next.lureRank < MAX_LURE_RANK && !bonus) {
+  if (next.heat !== true && next.lurePace !== undefined && next.lureRank < MAX_LURE_RANK && !bonus) {
     if (rng.next() < 1 / next.lurePace) {
       return { outcome: { kind: 'new_lure' }, state: next, rank, luckyCharmUsed: false, frenzyActive };
     }

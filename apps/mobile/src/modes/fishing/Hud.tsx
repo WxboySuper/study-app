@@ -1,5 +1,5 @@
 import type { CatchTier, FishingSession, SessionStage, SessionStageCounts } from '@study-app/core';
-import { CATCH_TIERS, LURE_RANKS, POWERUPS, formatLbs } from '@study-app/core';
+import { CATCH_TIERS, HEAT_STEP, LURE_RANKS, MAX_LURE_RANK, POWERUPS, formatLbs } from '@study-app/core';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { colors, fonts, radius } from '@/theme';
@@ -94,10 +94,15 @@ export function Hud({
               </View>
             </View>
 
-            {session.streak > 0 ? (
+            {session.streak > 0 || session.roll.heat === true ? (
               <View style={styles.streakChip}>
                 <Text style={styles.flame}>🔥</Text>
                 <Text style={styles.streakText}>{session.streak}</Text>
+                {session.roll.heat === true && session.roll.lureRank < MAX_LURE_RANK ? (
+                  <Text style={styles.heatText} testID="heat-meter">
+                    {session.streak % HEAT_STEP}/{HEAT_STEP}
+                  </Text>
+                ) : null}
               </View>
             ) : null}
 
@@ -296,6 +301,11 @@ const styles = StyleSheet.create({
   },
   flame: {
     fontSize: 13,
+  },
+  heatText: {
+    color: 'rgba(255,255,255,0.75)',
+    fontFamily: fonts.titleSemi,
+    fontSize: 10,
   },
   streakText: {
     color: '#ffffff',
