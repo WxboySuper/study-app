@@ -29,6 +29,13 @@ const THEMES: Record<string, PackTheme> = {
     ribbon: ['#8b5cf6', '#4f7dff'],
     label: 'Brain Buddies',
   },
+  flight_school: {
+    gradient: ['#38bdf8', '#1e3a8a'],
+    crimp: ['#7dd3fc', '#3b82f6'],
+    glow: '#38bdf8',
+    ribbon: ['#0ea5e9', '#1e40af'],
+    label: 'Flight School',
+  },
   midterm_monsters: {
     gradient: ['#fb923c', '#7c3aed'],
     crimp: ['#fdba74', '#a78bfa'],
