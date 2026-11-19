@@ -206,6 +206,8 @@ export interface FishingScreenProps {
   onlyCardIds?: readonly string[] | null;
   /** `true` to play only the questions that are due (or learning) right now. */
   dueOnly?: boolean;
+  /** The decks of a session that studies several decks together. */
+  setIds?: readonly string[] | null;
   /** The state the demo of the web build jumps to. */
   demo?: FishingDemo | null;
 }
@@ -254,7 +256,7 @@ function saveMasteryCounts(state: Parameters<typeof masteryCounts>[0]): void {
   })();
 }
 
-export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, onPlayAgain, onRetryMissed, onlyCardIds = null, dueOnly = false, onKeepPlaying, demo = null }: FishingScreenProps) {
+export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, onPlayAgain, onRetryMissed, onlyCardIds = null, dueOnly = false, setIds = null, onKeepPlaying, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { bait } = useSettings();
   const insets = useSafeAreaInsets();
@@ -443,7 +445,9 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
 
         // The session plays the cards of the scope: the order is shuffled
         // and the queue of the core decides what comes next.
-        const scoped = filterByScope(cardsRef.current, queueScope, deckClassesRef.current);
+        const inScope = filterByScope(cardsRef.current, queueScope, deckClassesRef.current);
+        const deckSet = setIds === null ? null : new Set(setIds);
+        const scoped = deckSet === null ? inScope : inScope.filter((card) => deckSet.has(card.setId));
         let pool = scoped;
         if (onlyCardIds !== null) {
           const only = new Set(onlyCardIds);
@@ -463,7 +467,8 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
             { options, done, now: Date.now(), classOf: (deckId) => classOfDeck.get(deckId), track },
           );
           const keep = new Set(limited.questions.map((question) => question.id));
-          pool = scoped.filter((card) => keep.has(card.id));
+          const onlyIds = onlyCardIds === null ? null : new Set(onlyCardIds);
+          pool = scoped.filter((card) => keep.has(card.id) && (onlyIds === null || onlyIds.has(card.id)));
           setDoneToday(limited.doneForToday);
           const groups = new Map(
             scoped.map((card) => [limitGroup(card.setId, classOfDeck.get(card.setId)), card.setId] as const),
