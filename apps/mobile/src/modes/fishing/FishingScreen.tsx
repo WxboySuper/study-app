@@ -474,8 +474,8 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
           const only = presets.size === 1 ? [...presets.values()][0] : undefined;
           setLimitNote(
             only === undefined
-              ? 'Daily limits apply per class'
-              : `Daily limit: ${only.newPerDay} new and ${only.reviewsPerDay} reviews per class${groups.size > 1 ? ` (${groups.size} classes)` : ''}`,
+              ? 'limits per class'
+              : `${only.newPerDay} new / class`,
           );
         }
         const stepOptions = await readStudyOptions(store);
