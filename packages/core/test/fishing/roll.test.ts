@@ -623,11 +623,11 @@ describe('the weight helpers', () => {
 describe('rolling a critter', () => {
   it('uses the pack odds of the SPEC', () => {
     expect(CRITTER_RARITY_ODDS).toEqual({
-      common: 60,
-      uncommon: 25,
-      rare: 10,
-      epic: 4,
-      legendary: 1,
+      common: 65,
+      uncommon: 24,
+      rare: 8,
+      epic: 2.5,
+      legendary: 0.5,
     });
   });
 

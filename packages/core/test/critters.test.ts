@@ -43,7 +43,7 @@ describe('the critter catalogue', () => {
   });
 
   it('uses the pack odds of the SPEC', () => {
-    expect(CRITTER_RARITY_ODDS).toEqual({ common: 60, uncommon: 25, rare: 10, epic: 4, legendary: 1 });
+    expect(CRITTER_RARITY_ODDS).toEqual({ common: 65, uncommon: 24, rare: 8, epic: 2.5, legendary: 0.5 });
     const total = Object.values(CRITTER_RARITY_ODDS).reduce((sum, value) => sum + value, 0);
     expect(total).toBe(100);
     expect(CRITTER_RARITIES).toEqual(['common', 'uncommon', 'rare', 'epic', 'legendary']);
@@ -61,7 +61,7 @@ describe('the critter catalogue', () => {
   it('finds a critter and a pack by id', () => {
     expect(findCritter('gigabrain_golem')?.rarity).toBe('legendary');
     expect(findCritter('nope')).toBeUndefined();
-    expect(findPack(STARTER_PACK_ID)?.priceTokens).toBe(20);
+    expect(findPack(STARTER_PACK_ID)?.priceTokens).toBe(30);
     expect(findPack('nope')).toBeUndefined();
   });
 
@@ -106,7 +106,7 @@ describe('the Thanksgiving pack', () => {
 
     const pack = findPack(THANKSGIVING_PACK_ID)!;
     expect(pack.kind).toBe('seasonal');
-    expect(pack.priceTokens).toBe(25);
+    expect(pack.priceTokens).toBe(40);
     expect(isPackAvailable(pack, Date.UTC(2026, 10, 2, 5, 59, 59))).toBe(false);
     expect(isPackAvailable(pack, Date.UTC(2026, 10, 2, 6, 0, 0))).toBe(true);
     expect(isPackAvailable(pack, Date.UTC(2026, 10, 26))).toBe(true);

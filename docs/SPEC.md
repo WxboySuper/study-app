@@ -220,6 +220,14 @@ Build Phase 0 + the FSRS core of a personal study app: a solo, untimed, Blooket-
 Finish by listing what was built, how to run it, and anything left TODO.
 ```
 
+## Economy retune (Nov 19 2026: the collection filled up far too fast)
+- Tokens: 1 per correct answer (was 1.5), 0.5 per learned card (was 1), heavy catch 5 (was 15), soft daily cap 300 (was 500). A 10-minute session now earns ~35 tokens.
+- Packs: Brain Buddies 30, seasonal 40 (were 20 / 25).
+- Odds per pack: Common 65 / Uncommon 24 / Rare 8 / Epic 2.5 / Legendary 0.5 (was 60/25/10/4/1).
+- Duplicate sell values: 5 / 10 / 15 / 40 / 100 (was 5 / 10 / 20 / 75 / 200); a pack still sells for less than it costs.
+- Daily wheel: 10-50 pays 93 % of spins; 250 / 500 / 1000 are 1.5 / 0.4 / 0.1 % (was 5 / 1.5 / 0.5 %).
+- Deck milestones: only decks of 25+ questions pay (was 8+), 5 tokens at 50 %, 1 ticket at 80 %, 5 tokens + 1 ticket at 100 % (was 10 / 1 ticket / 10 + 2 tickets), because many small decks multiplied the rewards.
+
 ## Economy tuning (Alex, Oct 21 2026; revised Oct 21 2026 — Blooket scale)
 - Benchmark: a ~10 min session at ~70% accuracy (~30 correct) should earn ~50 tokens (~1.5 tokens/correct, before mode bonuses).
 - Pack prices: standard packs 20–25 tokens (Brain Buddies 20, seasonal packs like Midterm Monsters 25), so ~2 packs per solid session.

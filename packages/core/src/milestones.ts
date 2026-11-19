@@ -10,7 +10,7 @@
 export const MILESTONE_STEPS = [50, 80, 100] as const;
 
 /** The smallest deck that can pay milestones (tiny decks are too easy to max). */
-export const MILESTONE_MIN_CARDS = 8;
+export const MILESTONE_MIN_CARDS = 25;
 
 /** A deck as the milestones see it. */
 export interface MilestoneDeck {
@@ -42,11 +42,11 @@ export interface Milestone {
 export function rewardOf(step: (typeof MILESTONE_STEPS)[number]): MilestoneReward {
   switch (step) {
     case 50:
-      return { tokens: 10, packTickets: 0 };
+      return { tokens: 5, packTickets: 0 };
     case 80:
       return { tokens: 0, packTickets: 1 };
     case 100:
-      return { tokens: 10, packTickets: 2 };
+      return { tokens: 5, packTickets: 1 };
   }
 }
 

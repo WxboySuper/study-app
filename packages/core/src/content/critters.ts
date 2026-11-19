@@ -30,11 +30,11 @@ export const CRITTER_RARITIES: readonly CritterRarity[] = [
  * "Common 60% · Uncommon 25% · Rare 10% · Epic 4% · Legendary 1%".
  */
 export const CRITTER_RARITY_ODDS: Readonly<Record<CritterRarity, number>> = {
-  common: 60,
-  uncommon: 25,
-  rare: 10,
-  epic: 4,
-  legendary: 1,
+  common: 65,
+  uncommon: 24,
+  rare: 8,
+  epic: 2.5,
+  legendary: 0.5,
 };
 
 /** A single critter. */
