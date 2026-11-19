@@ -49,6 +49,7 @@ export default function FishingRoute() {
     track?: string;
     ids?: string;
     due?: string;
+    sets?: string;
   }>();
   const [session, setSession] = useState(0);
 
@@ -64,6 +65,10 @@ export default function FishingRoute() {
   // A retry of the missed questions: only these ids, never the daily limits.
   const onlyCardIds =
     typeof params.ids === 'string' && params.ids !== '' ? params.ids.split(',') : null;
+
+  // Several decks studied together.
+  const setIds =
+    typeof params.sets === 'string' && params.sets !== '' ? params.sets.split(',') : null;
 
   // Only what is due (or learning) right now.
   const dueOnly = params.due === '1';
@@ -85,12 +90,13 @@ export default function FishingRoute() {
   return (
     <View style={styles.container}>
       <FishingScreen
-        key={`${session}-${mastery ? 'm' : 'n'}-${track}-${params.ids ?? ''}-${dueOnly ? 'd' : 'a'}`}
+        key={`${session}-${mastery ? 'm' : 'n'}-${track}-${params.ids ?? ''}-${dueOnly ? 'd' : 'a'}-${params.sets ?? ''}`}
         scope={scope}
         mastery={mastery}
         track={track}
         onlyCardIds={onlyCardIds}
         dueOnly={dueOnly}
+        setIds={setIds}
         demo={demo}
         onHome={() => {
           router.replace('/');

@@ -95,6 +95,8 @@ import {
 
 export default function HomeScreen() {
   const router = useRouter();
+  // Decks ticked to be studied together (many small decks).
+  const [picked, setPicked] = useState<string[]>([]);
   const {
     scope,
     setScope,
@@ -386,7 +388,8 @@ export default function HomeScreen() {
   // practice queue, with the numbers the play card shows.
   const plan = useMemo(() => {
     const deckClasses = buildDeckClassMap(sets);
-    const cards = trackCards;
+    const cards =
+      picked.length === 0 ? trackCards : trackCards.filter((card) => picked.includes(card.setId));
     const kind = track === 'math' ? 'math question' : 'question';
     if (cards.length === 0) {
       return {
@@ -403,7 +406,7 @@ export default function HomeScreen() {
       // Mastery: today's queue of the scope, the way Anki's deck list counts it.
       const classOf = new Map(sets.map((set) => [set.id, set.classId]));
       const today = masteryForecast(
-        filterByScope(cards, queueScopeOf(scope), deckClasses).map((card) => ({
+        filterByScope(cards, picked.length > 0 ? { kind: 'all' } : queueScopeOf(scope), deckClasses).map((card) => ({
           id: card.id,
           deckId: card.setId,
           state: cardStates.get(card.id),
@@ -419,10 +422,10 @@ export default function HomeScreen() {
 
     const queue = buildQueue(cards, cardStates, Date.now(), {
       newCap: 20,
-      scope: queueScopeOf(scope),
+      scope: picked.length > 0 ? { kind: 'all' } : queueScopeOf(scope),
       deckClasses,
     });
-    const due = countScope(cards, cardStates, Date.now(), queueScopeOf(scope), deckClasses).due;
+    const due = countScope(cards, cardStates, Date.now(), picked.length > 0 ? { kind: 'all' } : queueScopeOf(scope), deckClasses).due;
     return {
       line:
         queue.length === 0
@@ -433,7 +436,7 @@ export default function HomeScreen() {
       today: null,
       empty: false,
     };
-  }, [cardStates, trackCards, scope, sets, mastery, studyDay, trackDone, track]);
+  }, [cardStates, trackCards, scope, sets, mastery, studyDay, trackDone, track, picked]);
 
   // The chip of the class row that is selected.
   const selectedChip = useMemo(() => {
@@ -566,7 +569,10 @@ export default function HomeScreen() {
   const [dueOnly, setDueOnly] = useState(false);
   const go = useCallback((practice = false) => {
     const useMastery = mastery && !practice;
-    const dueParam = dueOnly && !practice ? { due: '1' } : {};
+    const dueParam = {
+      ...(dueOnly && !practice ? { due: '1' } : {}),
+      ...(picked.length > 0 ? { sets: picked.join(',') } : {}),
+    };
     setScope(scope);
     play('cast');
     router.push({
@@ -583,7 +589,7 @@ export default function HomeScreen() {
               ...dueParam,
             },
     });
-  }, [router, scope, setScope, mastery, track, dueOnly]);
+  }, [router, scope, setScope, mastery, track, dueOnly, picked]);
 
   const goImport = useCallback(() => {
     play('tap');
@@ -641,7 +647,7 @@ export default function HomeScreen() {
           <PlayCard
             track={track}
             mastery={mastery}
-            scopeTitle={scopeTitle(scope)}
+            scopeTitle={picked.length > 0 ? `${picked.length} picked deck${picked.length === 1 ? '' : 's'}` : scopeTitle(scope)}
             line={plan.line}
             today={plan.today}
             empty={plan.empty}
@@ -685,6 +691,15 @@ export default function HomeScreen() {
               onDelete={(deck) => {
                 play('tap');
                 setPendingDelete(deck);
+              }}
+              picked={picked}
+              onTogglePick={(deck) => {
+                setPicked((list) =>
+                  list.includes(deck.id) ? list.filter((id) => id !== deck.id) : [...list, deck.id],
+                );
+              }}
+              onClearPicks={() => {
+                setPicked([]);
               }}
               onOpenDeck={(deck, deckFilter) => {
                 router.push({ pathname: '/deck', params: { id: deck.id, filter: deckFilter, track } });

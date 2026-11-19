@@ -9,7 +9,7 @@ import {
 } from "@study-app/core";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { StudyCalendar } from "@/stats/StudyCalendar";
@@ -68,6 +68,8 @@ export default function StatsRoute() {
   const [math, setMath] = useState<StudyStats | null>(null);
   const [decks, setDecks] = useState<DeckStats[]>([]);
   const [history, setHistory] = useState<HistoryPoint[]>([]);
+  const [deckSearch, setDeckSearch] = useState("");
+  const [allDecks, setAllDecks] = useState(false);
 
   useEffect(() => {
     void (async () => {
@@ -98,6 +100,15 @@ export default function StatsRoute() {
       );
     })();
   }, []);
+
+  // Many small decks: the ones with the most due first, searchable, 8 at a time.
+  const needle = deckSearch.trim().toLowerCase();
+  const matchingDecks = decks
+    .filter((deck) => needle === "" || deck.title.toLowerCase().includes(needle))
+    .map((deck, index) => ({ deck, index }))
+    .sort((a, b) => b.deck.stats.dueToday - a.deck.stats.dueToday || a.index - b.index)
+    .map((entry) => entry.deck);
+  const shownDecks = allDecks || needle !== "" ? matchingDecks : matchingDecks.slice(0, 8);
 
   const peak = all === null ? 1 : Math.max(1, ...all.forecast);
   const today = new Date().getDay();
@@ -251,8 +262,18 @@ export default function StatsRoute() {
                   Share of questions answered right, by week
                 </Text>
               </GlassCard>
-              <Text style={styles.section}>BY DECK</Text>
-              {decks.map((deck) => (
+              <Text style={styles.section}>BY DECK ({decks.length})</Text>
+              {decks.length > 8 ? (
+                <TextInput
+                  value={deckSearch}
+                  onChangeText={setDeckSearch}
+                  placeholder={`Search ${decks.length} decks`}
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.search}
+                  accessibilityLabel="Search decks"
+                />
+              ) : null}
+              {shownDecks.map((deck) => (
                 <GlassCard key={deck.id} style={styles.card} elevated={false}>
                   <Text style={styles.title}>{deck.title}</Text>
                   <Text style={styles.muted}>
@@ -264,6 +285,19 @@ export default function StatsRoute() {
                   </Text>
                 </GlassCard>
               ))}
+              {matchingDecks.length > 8 && deckSearch.trim() === "" ? (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setAllDecks((value) => !value);
+                  }}
+                  style={styles.moreDecks}
+                >
+                  <Text style={styles.moreDecksText}>
+                    {allDecks ? "Show fewer" : `Show all ${matchingDecks.length} decks`}
+                  </Text>
+                </Pressable>
+              ) : null}
             </>
           ) : null}
           <GameButton
@@ -279,6 +313,19 @@ export default function StatsRoute() {
 }
 
 const styles = StyleSheet.create({
+  search: {
+    color: colors.text,
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+    backgroundColor: "#181a22",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  moreDecks: { alignItems: "center", paddingVertical: 10 },
+  moreDecksText: { color: colors.primaryLight, fontFamily: fonts.bodyBold, fontSize: 13 },
   container: { flex: 1 },
   body: { padding: spacing.lg, gap: spacing.md },
   card: { padding: spacing.md, gap: spacing.sm },

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { hapticImpact } from '@/haptics';
 import { STAGE_COLORS } from '@/modes/fishing/stage';
@@ -43,6 +43,17 @@ export interface DeckPickerProps {
   onDelete: (deck: DeckCard) => void;
   /** Called when the player opens the question list of a deck. */
   onOpenDeck: (deck: DeckCard, filter: 'all' | 'due') => void;
+  /** The decks ticked to be studied together. */
+  picked: readonly string[];
+  /** Called when the player ticks or unticks a deck. */
+  onTogglePick: (deck: DeckCard) => void;
+  /** Called when the player clears the ticked decks. */
+  onClearPicks: () => void;
+}
+
+/** How much there is to do in a deck today. */
+function workOf(deck: DeckCard): number {
+  return deck.today === undefined ? deck.due : deck.today.new + deck.today.learning + deck.today.due;
 }
 
 /** How many decks the list shows before "Show all". */
@@ -61,10 +72,27 @@ export function DeckPicker({
   onImport,
   onDelete,
   onOpenDeck,
+  picked,
+  onTogglePick,
+  onClearPicks,
 }: DeckPickerProps) {
   const [showAll, setShowAll] = useState(false);
+  const [search, setSearch] = useState('');
+  const [onlyWork, setOnlyWork] = useState(false);
   const [menuDeck, setMenuDeck] = useState<string | null>(null);
-  const shown = showAll ? decks : decks.slice(0, DECKS_SHOWN);
+  // Many small decks: search them, hide the ones with nothing to do today, and
+  // list the ones with the most work first.
+  const needle = search.trim().toLowerCase();
+  const matching = decks
+    .filter((deck) => needle === '' || deck.title.toLowerCase().includes(needle))
+    .filter((deck) => !onlyWork || workOf(deck) > 0)
+    .map((deck, index) => ({ deck, index }))
+    .sort((a, b) => workOf(b.deck) - workOf(a.deck) || a.index - b.index)
+    .map((entry) => entry.deck);
+  const shown = showAll || needle !== '' ? matching : matching.slice(0, DECKS_SHOWN);
+  const pickedQuestions = decks
+    .filter((deck) => picked.includes(deck.id))
+    .reduce((sum, deck) => sum + deck.questions, 0);
   const current = chips.find((chip) => chipKey(chip) === selectedChip);
 
   return (
@@ -115,6 +143,42 @@ export function DeckPicker({
         <Text style={styles.hint}>Tap a deck to study only it</Text>
       </View>
 
+      {decks.length > DECKS_SHOWN ? (
+        <View style={styles.tools}>
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder={`Search ${decks.length} decks`}
+            placeholderTextColor={colors.textMuted}
+            style={styles.search}
+            accessibilityLabel="Search decks"
+            testID="deck-search"
+          />
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: onlyWork }}
+            onPress={() => {
+              setOnlyWork((value) => !value);
+            }}
+            style={[styles.filter, onlyWork && styles.filterOn]}
+            testID="deck-only-work"
+          >
+            <Text style={styles.filterText}>Has work</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      {picked.length > 0 ? (
+        <View style={styles.pickBar} testID="deck-pick-bar">
+          <Text style={styles.pickText}>
+            {picked.length} deck{picked.length === 1 ? '' : 's'} picked · {pickedQuestions} questions
+          </Text>
+          <Pressable accessibilityRole="button" onPress={onClearPicks} hitSlop={8}>
+            <Text style={styles.linkText}>Clear</Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       {decks.length === 0 ? (
         <Pressable accessibilityRole="button" onPress={onImport} style={styles.empty}>
           <Text style={styles.emptyTitle}>No decks yet</Text>
@@ -143,6 +207,21 @@ export function DeckPicker({
                   setMenuDeck((open) => (open === deck.id ? null : deck.id));
                 }}
                 trailing={
+                  <View style={styles.trailing}>
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: picked.includes(deck.id) }}
+                      accessibilityLabel={`Pick ${deck.title} to study with other decks`}
+                      hitSlop={6}
+                      onPress={() => {
+                        hapticImpact('light');
+                        onTogglePick(deck);
+                      }}
+                      testID={`deck-pick-${deck.id}`}
+                      style={[styles.pick, picked.includes(deck.id) && styles.pickOn]}
+                    >
+                      {picked.includes(deck.id) ? <Text style={styles.pickCheck}>✓</Text> : null}
+                    </Pressable>
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel={`Options for ${deck.title}`}
@@ -154,6 +233,7 @@ export function DeckPicker({
                   >
                     <Text style={styles.moreGlyph}>⋯</Text>
                   </Pressable>
+                  </View>
                 }
               />
               {menuDeck === deck.id ? (
@@ -184,7 +264,10 @@ export function DeckPicker({
               ) : null}
             </View>
           ))}
-          {decks.length > DECKS_SHOWN ? (
+          {matching.length === 0 ? (
+            <Text style={styles.emptyHint}>No deck matches.</Text>
+          ) : null}
+          {matching.length > DECKS_SHOWN && needle === '' ? (
             <Pressable
               accessibilityRole="button"
               onPress={() => {
@@ -193,7 +276,7 @@ export function DeckPicker({
               style={({ pressed }) => [styles.linkRow, pressed && styles.pressed]}
             >
               <Text style={styles.linkText}>
-                {showAll ? 'Show fewer' : `Show all ${decks.length} decks`}
+                {showAll ? 'Show fewer' : `Show all ${matching.length} decks`}
               </Text>
             </Pressable>
           ) : null}
@@ -309,6 +392,52 @@ function MenuButton({
 }
 
 const styles = StyleSheet.create({
+  tools: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  search: {
+    flex: 1,
+    color: colors.text,
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    backgroundColor: '#181a22',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  filter: {
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  filterOn: { borderColor: '#7b61ff', backgroundColor: '#22214a' },
+  filterText: { color: colors.text, fontFamily: fonts.bodyBold, fontSize: 13 },
+  pickBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#22214a',
+    borderWidth: 1,
+    borderColor: '#7b61ff',
+  },
+  pickText: { color: colors.text, fontFamily: fonts.bodyBold, fontSize: 13 },
+  trailing: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pick: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.4)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickOn: { borderColor: '#7b61ff', backgroundColor: '#7b61ff' },
+  pickCheck: { color: '#ffffff', fontFamily: fonts.title, fontSize: 14, lineHeight: 16 },
   root: { gap: spacing.sm },
   header: {
     flexDirection: 'row',
