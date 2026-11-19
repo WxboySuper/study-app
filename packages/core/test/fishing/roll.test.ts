@@ -646,3 +646,16 @@ describe('rolling a critter', () => {
     expect(rollCritter(createSeededRng(5), 'midterm_monsters', INSIDE_THE_WINDOW)).toBeDefined();
   });
 });
+
+describe('heat mode (endless)', () => {
+  it('heats the lure every 5 in a row and cools it on a miss', async () => {
+    const { HEAT_STEP, heatLureRank } = await import('../../src/fishing/roll');
+    expect(HEAT_STEP).toBe(5);
+    expect(heatLureRank(1, true, 4)).toBe(1);
+    expect(heatLureRank(1, true, 5)).toBe(2);
+    expect(heatLureRank(2, true, 10)).toBe(3);
+    expect(heatLureRank(5, true, 15)).toBe(5);
+    expect(heatLureRank(3, false, 0)).toBe(2);
+    expect(heatLureRank(1, false, 0)).toBe(1);
+  });
+});

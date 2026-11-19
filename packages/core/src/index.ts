@@ -352,6 +352,8 @@ export {
   applyLureUpgrade,
   applySpecialReward,
   lurePaceFor,
+  HEAT_STEP,
+  heatLureRank,
   ENDLESS_LURE_PACE,
   guaranteedLureCount,
   isCatchOutcome,

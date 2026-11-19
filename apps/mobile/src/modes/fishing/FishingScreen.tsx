@@ -513,6 +513,7 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
           type: 'set_queue',
           queue: [],
           lurePace: lurePaceFor({ mastery, questionCount: pool.length }),
+          heat: !mastery,
         });
 
         // The wallet knows how many pack tickets were already earned today:
