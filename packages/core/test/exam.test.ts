@@ -101,3 +101,11 @@ describe('exam planning', () => {
     expect(examHeadline(-2, -1)).toBe('Exam in 0 days · 0% ready');
   });
 });
+
+describe('exam decks', () => {
+  it('keeps only the decks of the exam that still exist', async () => {
+    const { examDeckIds } = await import('../src/exam');
+    const plan = { id: 'e1', name: 'Midterm', classId: 'c1', date: '2026-12-01', deckIds: ['a', 'b', 'gone'] };
+    expect(examDeckIds(plan, ['a', 'b', 'c'])).toEqual(['a', 'b']);
+  });
+});

@@ -1,6 +1,7 @@
 export { computeStudyStats, type StudyStats } from './stats';
 export {
   daysUntil,
+  examDeckIds,
   examHeadline,
   examPace,
   readiness,

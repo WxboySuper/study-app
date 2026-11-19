@@ -3,9 +3,29 @@ import { State, fsrs } from 'ts-fsrs';
 import { isMatureMastered } from './mastery';
 import type { CardState } from './types';
 
+/**
+ * An exam (or quiz): one assessment with its own date and its own decks.
+ *
+ * It is not a class. A class can have several exams, and an exam only covers
+ * the decks that actually matter for it, so the player studies those and not
+ * every deck of the class.
+ */
 export interface ExamPlan {
-  classId: string;
+  /** Stable id of the exam. */
+  id: string;
+  /** What the exam is called ("Midterm 2", "Quiz 4"). */
+  name: string;
+  /** The class the exam belongs to (`null` when it has none). */
+  classId: string | null;
+  /** The day of the exam (YYYY-MM-DD). */
   date: string;
+  /** The decks the exam covers. */
+  deckIds: string[];
+}
+
+/** The decks of an exam that still exist. */
+export function examDeckIds(plan: ExamPlan, existingDeckIds: readonly string[]): string[] {
+  return plan.deckIds.filter((id) => existingDeckIds.includes(id));
 }
 
 export interface ExamCard {
