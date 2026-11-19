@@ -12,9 +12,10 @@ name: Release on merge
 # The APK is built from a `v*` tag and the in-app update check reads the latest
 # GitHub release. A tag pushed with the built-in GITHUB_TOKEN does not start
 # other workflows, but a workflow_dispatch does, so this workflow creates the
-# tag and then dispatches `android-release.yml` on it; that run sees a tag ref
-# and publishes a normal (not pre-release) GitHub release, exactly as a manual
-# tag push would. A tag pushed by hand still works too.
+# tag and then dispatches `android-release.yml` on main with the tag as an
+# input (a run on main shares the build caches, a run on a brand new tag ref
+# never finds any); that run publishes a normal (not pre-release) GitHub
+# release, exactly as a manual tag push would. A tag pushed by hand still works too.
 #
 # The run always releases the latest main, so two quick merges end up in one
 # build: the later run finds main already tagged and stops.
@@ -103,5 +104,5 @@ jobs:
           SHA="$(git rev-parse HEAD)"
           gh api "repos/$GITHUB_REPOSITORY/git/refs" -f "ref=refs/tags/$TAG" -f "sha=$SHA" >/dev/null
           echo "Created tag $TAG at $SHA"
-          gh workflow run android-release.yml --ref "$TAG"
+          gh workflow run android-release.yml --ref main -f "tag=$TAG"
           echo "Started the Android release for $TAG"

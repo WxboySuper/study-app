@@ -4,6 +4,11 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to build and publish (checked out from the run on main, so the caches of main are shared)
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -17,7 +22,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      # GitHub only lets a run read the caches of its own ref and of the
+      # default branch. A run on a fresh tag ref therefore started with empty
+      # Gradle, ccache and node_modules caches every time. release-on-merge
+      # dispatches this workflow on main with the tag as an input instead, so
+      # every build shares (and refreshes) the caches of main.
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: pnpm/action-setup@v6
 
@@ -68,7 +80,7 @@ jobs:
         run: >-
           ./gradlew assembleRelease
           -PreactNativeArchitectures=arm64-v8a
-          --build-cache --max-workers=2
+          --build-cache --max-workers=4
           "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" -Pkotlin.daemon.jvmargs=-Xmx2g
         env:
           CMAKE_C_COMPILER_LAUNCHER: ccache
@@ -78,6 +90,7 @@ jobs:
 
       - name: Sign APK with release keystore
         env:
+          TAG_INPUT: ${{ inputs.tag }}
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -88,8 +101,9 @@ jobs:
           echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$KS"
           APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
           IN="$(ls apps/mobile/android/app/build/outputs/apk/release/*.apk | head -1)"
-          VER="${GITHUB_REF_NAME}"
-          [[ "$GITHUB_REF_TYPE" == tag ]] || VER="dev-${GITHUB_SHA::7}"
+          VER="${TAG_INPUT:-}"
+          if [[ -z "$VER" && "$GITHUB_REF_TYPE" == tag ]]; then VER="$GITHUB_REF_NAME"; fi
+          [[ -n "$VER" ]] || VER="dev-${GITHUB_SHA::7}"
           OUT="study-app-${VER}.apk"
           "$APKSIGNER" sign --ks "$KS" --ks-type PKCS12 \
             --ks-pass env:ANDROID_KEYSTORE_PASSWORD \
@@ -108,6 +122,6 @@ jobs:
           if gh release view "$VER" >/dev/null 2>&1; then
             gh release upload "$VER" "$APK" --clobber
           else
-            FLAGS=""; [[ "$GITHUB_REF_TYPE" == tag ]] || FLAGS="--prerelease --target $GITHUB_SHA"
+            FLAGS=""; [[ "$VER" == dev-* ]] && FLAGS="--prerelease --target $GITHUB_SHA"
             gh release create "$VER" "$APK" --title "$VER" --generate-notes $FLAGS
           fi
