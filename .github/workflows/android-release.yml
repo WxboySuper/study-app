@@ -74,6 +74,10 @@ jobs:
         working-directory: apps/mobile/android
         run: |
           {
+            # The generated file may not end in a newline: without this the
+            # first line glued itself to the last property (a JSON list that
+            # expo-modules-autolinking then failed to parse).
+            echo ""
             echo "android.enableMinifyInReleaseBuilds=false"
             echo "android.enableShrinkResourcesInReleaseBuilds=false"
             echo "org.gradle.parallel=true"
