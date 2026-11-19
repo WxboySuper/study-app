@@ -74,6 +74,16 @@ jobs:
         env:
           CI: "1"
 
+      # R8 shrinking took ~10 of the ~30 minutes and only makes the APK
+      # smaller; this app is sideloaded, so size does not matter.
+      - name: Skip R8 and resource shrinking
+        working-directory: apps/mobile/android
+        run: |
+          {
+            echo "android.enableMinifyInReleaseBuilds=false"
+            echo "android.enableShrinkResourcesInReleaseBuilds=false"
+          } >> gradle.properties
+
       - name: Gradle assembleRelease
         working-directory: apps/mobile/android
         # arm64-v8a only -> far less native compile and a much smaller APK
