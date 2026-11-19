@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   BUILT_IN_PRESETS,
   EMPTY_STUDY_OPTIONS,
+  limitGroup,
   limitSessionPool,
   masteryForecast,
   noteAnswered,
@@ -127,6 +128,28 @@ describe("study options", () => {
     expect(parseDailyDone(JSON.stringify(done), DAY).seen.length).toBe(
       done.seen.length,
     );
+  });
+});
+
+describe("limits are per class", () => {
+  it("shares one new-card limit between the decks of a class", () => {
+    const classOf = (deckId: string) => (deckId === "solo" ? null : "phys");
+    const preset = BUILT_IN_PRESETS[0]!;
+    const cards = [
+      ...Array.from({ length: 15 }, (_, i) => ({ id: `a${i}`, deckId: "d1" })),
+      ...Array.from({ length: 15 }, (_, i) => ({ id: `b${i}`, deckId: "d2" })),
+      { id: "s0", deckId: "solo" },
+    ];
+    const r = limitSessionPool(cards, {
+      options: EMPTY_STUDY_OPTIONS,
+      done: parseDailyDone(null, DAY),
+      now: NOW,
+      classOf,
+    });
+    // 20 for the whole class, plus the deck that has no class.
+    expect(r.questions.length).toBe(preset.newPerDay + 1);
+    expect(limitGroup("d1", "phys")).toBe(limitGroup("d2", "phys"));
+    expect(limitGroup("solo", null)).toBe("solo");
   });
 });
 
