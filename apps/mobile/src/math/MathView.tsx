@@ -21,6 +21,9 @@ import type { MathViewProps } from './types';
  */
 export function MathView({ source, displayMode, color, fontSize }: MathViewProps) {
   const [height, setHeight] = useState(Math.round(fontSize * 1.8));
+  // Inline math has no width of its own to a WebView (it would collapse to
+  // nothing on iOS), so the page measures itself and sends its width back.
+  const [width, setWidth] = useState(Math.round(Math.min(280, source.length * fontSize * 0.7 + fontSize)));
 
   const html = useMemo(
     () => buildHtml(source, displayMode, color, fontSize),
@@ -28,7 +31,7 @@ export function MathView({ source, displayMode, color, fontSize }: MathViewProps
   );
 
   return (
-    <View style={[styles.wrap, { height }]} pointerEvents="none">
+    <View style={[styles.wrap, { height }, displayMode ? null : { width }]} pointerEvents="none">
       <WebView
         originWhitelist={['*']}
         source={{ html }}
@@ -40,7 +43,10 @@ export function MathView({ source, displayMode, color, fontSize }: MathViewProps
         onMessage={(event) => {
           const measured = measure(event.nativeEvent.data);
           if (measured !== null) {
-            setHeight(measured);
+            setHeight(measured.height);
+            if (measured.width > 0) {
+              setWidth(measured.width);
+            }
           }
         }}
       />
@@ -49,14 +55,16 @@ export function MathView({ source, displayMode, color, fontSize }: MathViewProps
 }
 
 /** Reads the height the page sent back. */
-function measure(data: string): number | null {
+function measure(data: string): { height: number; width: number } | null {
   try {
     const parsed: unknown = JSON.parse(data);
     if (typeof parsed !== 'object' || parsed === null) {
       return null;
     }
-    const value = (parsed as { height?: unknown }).height;
-    return typeof value === 'number' && value > 0 ? Math.ceil(value) : null;
+    const { height, width } = parsed as { height?: unknown; width?: unknown };
+    return typeof height === 'number' && height > 0
+      ? { height: Math.ceil(height), width: typeof width === 'number' ? Math.ceil(width) + 2 : 0 }
+      : null;
   } catch {
     return null;
   }
@@ -93,7 +101,7 @@ function buildHtml(
 </style>
 </head>
 <body>
-${body}
+<span id="m" style="display:${displayMode ? 'block' : 'inline-block'};white-space:nowrap">${body}</span>
 <script>
   (function () {
     function send() {
@@ -101,14 +109,16 @@ ${body}
         var doc = document.documentElement;
         // Math wider than the tile is scaled down to fit instead of clipped.
         document.body.style.zoom = '1';
+        var m = document.getElementById('m');
+        var natural = m ? m.getBoundingClientRect().width : 0;
         var wide = document.body.scrollWidth;
         var room = window.innerWidth;
-        if (wide > room && room > 0) {
+        if (${displayMode} && wide > room && room > 0) {
           document.body.style.zoom = String(Math.max(0.45, room / wide));
         }
-        var box = document.body.getBoundingClientRect();
-        var height = Math.ceil(Math.max(doc.scrollHeight, box.height));
-        window.ReactNativeWebView.postMessage(JSON.stringify({ height: height }));
+        var box = (m || document.body).getBoundingClientRect();
+        var height = Math.ceil(Math.max(${displayMode ? 'doc.scrollHeight, ' : ''}box.height));
+        window.ReactNativeWebView.postMessage(JSON.stringify({ height: height, width: natural }));
       } catch (error) {
         // The page is not ready yet: the next try will do.
       }

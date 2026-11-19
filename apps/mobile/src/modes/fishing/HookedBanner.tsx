@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   },
   container: {
     position: 'absolute',
-    top: '20%',
+    top: '44%',
     left: 0,
     right: 0,
     alignItems: 'center',
