@@ -41,6 +41,8 @@ export interface ClassChip {
   questions: number;
   /** How many of them are due. */
   due: number;
+  /** Today's Mastery queue of the class (New / Learning / Due), when Mastery is on. */
+  today?: TodayCounts;
 }
 
 /** What kind of deck a card of the picker is. */

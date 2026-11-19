@@ -50,9 +50,23 @@ export function GlassCard({
 }: GlassCardProps) {
   const innerRadius = Math.max(0, borderRadius - 1);
 
+  // A card's padding belongs inside the frame. Padding given in `style` used
+  // to shrink the frame instead (the card got smaller than its box and the
+  // text sat on its edge, cut by the corner), so it is moved inside here.
+  const flat = StyleSheet.flatten(style) ?? {};
+  const outside: ViewStyle = {};
+  const inside: ViewStyle = {};
+  for (const [key, value] of Object.entries(flat)) {
+    if (key.startsWith('padding')) {
+      (inside as Record<string, unknown>)[key] = value;
+    } else {
+      (outside as Record<string, unknown>)[key] = value;
+    }
+  }
+
   return (
     <View
-      style={[styles.wrapper, { borderRadius }, elevated ? shadow.card : null, style]}
+      style={[styles.wrapper, { borderRadius }, elevated ? shadow.card : null, outside]}
       accessible={accessibilityLabel !== undefined}
       accessibilityLabel={accessibilityLabel}
     >
@@ -68,8 +82,9 @@ export function GlassCard({
             styles.inner,
             {
               borderRadius: innerRadius,
-              padding: padded ? 16 : 0,
+              ...(padded ? { padding: 16 } : null),
             },
+            inside,
             contentStyle,
           ]}
         >
@@ -82,11 +97,6 @@ export function GlassCard({
               pointerEvents="none"
             />
           )}
-          <LinearGradient
-            colors={['rgba(255,255,255,0.13)', 'rgba(255,255,255,0)']}
-            style={[StyleSheet.absoluteFill, styles.highlight]}
-            pointerEvents="none"
-          />
           {children}
         </View>
       </View>
@@ -106,10 +116,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     flexBasis: 'auto',
     overflow: 'hidden',
-    backgroundColor: 'rgba(22, 23, 29, 0.86)',
-  },
-  highlight: {
-    top: 0,
-    height: '46%',
+    backgroundColor: '#16171d',
   },
 });

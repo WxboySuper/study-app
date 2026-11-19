@@ -87,6 +87,7 @@ export function ExamPanel() {
     void load();
   }, [load]);
 
+  const [showAll, setShowAll] = useState(false);
   const today = localDay(new Date());
   const upcoming = rows.filter((row) => row.daysLeft >= 0);
   const past = rows.filter((row) => row.daysLeft < 0);
@@ -133,7 +134,7 @@ export function ExamPanel() {
         <Text style={styles.empty}>Add a test date to track how ready you are.</Text>
       ) : null}
 
-      {upcoming.map((row) => {
+      {(showAll ? upcoming : upcoming.slice(0, 1)).map((row) => {
         const pace = examPace(row.readiness, row.daysLeft);
         return (
           <View key={row.plan.classId} style={styles.exam}>
@@ -168,6 +169,20 @@ export function ExamPanel() {
           </View>
         );
       })}
+
+      {upcoming.length > 1 ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => {
+            setShowAll((value) => !value);
+          }}
+          style={styles.moreRow}
+        >
+          <Text style={styles.addText}>
+            {showAll ? 'SHOW ONLY THE NEXT EXAM' : `${upcoming.length - 1} MORE EXAM${upcoming.length === 2 ? '' : 'S'}`}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {past.map((row) => (
         <View key={row.plan.classId} style={styles.pastRow}>
@@ -271,6 +286,7 @@ function Step({ label, onPress }: { label: string; onPress: () => void }) {
 }
 
 const styles = StyleSheet.create({
+  moreRow: { alignItems: 'center', paddingVertical: 4 },
   card: {
     gap: spacing.sm,
     padding: spacing.md,

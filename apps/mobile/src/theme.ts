@@ -176,10 +176,10 @@ export const fonts = {
 
 /** The rounded corners of the game screens. */
 export const radius = {
-  card: 22,
-  button: 18,
+  card: 12,
+  button: 14,
   chip: 999,
-  tile: 16,
+  tile: 10,
   pill: 999,
 } as const;
 
