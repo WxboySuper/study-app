@@ -179,6 +179,34 @@ export function presetForDeck(
   return presetById(undefined, track);
 }
 
+/**
+ * The bucket the daily limits count in: a deck's class (the limits are per
+ * class), or the deck itself when it has no class.
+ */
+export function limitGroup(
+  deckId: string,
+  classId: string | null | undefined,
+): string {
+  return classId !== null && classId !== undefined && classId !== ""
+    ? `class:${classId}`
+    : deckId;
+}
+
+/**
+ * The preset whose daily limits apply to a deck: its class's (all the decks
+ * of a class share one limit), or its own when it has no class.
+ */
+export function presetForLimit(
+  options: StudyOptions,
+  deckId: string,
+  classId: string | null | undefined,
+  track: QuestionTrack = "mc",
+): StudyPreset {
+  return classId !== null && classId !== undefined && classId !== ""
+    ? presetForDeck(options, "", classId, track)
+    : presetForDeck(options, deckId, null, track);
+}
+
 /** Sets (or clears with `null`) the preset of a deck or class. */
 export function setPreset(
   options: StudyOptions,
@@ -235,12 +263,12 @@ export function setBuried(
   return { ...options, buried };
 }
 
-/** What was studied today, per deck. */
+/** What was studied today, per limit group (a class, or a deck without one). */
 export interface DailyDone {
   day: string;
-  /** New cards introduced today, by deck id. */
+  /** New cards introduced today, by limit group (see `limitGroup`). */
   newByDeck: Record<string, number>;
-  /** Reviews done today, by deck id. */
+  /** Reviews done today, by limit group. */
   reviewsByDeck: Record<string, number>;
   /** Cards already counted today (a card counts once). */
   seen: string[];
@@ -374,40 +402,43 @@ export function limitSessionPool<
   const day = input.done.day;
   const newLeft: Record<string, number> = {};
   const reviewsLeft: Record<string, number> = {};
+  // The limits count per class (a deck without a class counts alone).
   const left = (deckId: string) => {
-    if (newLeft[deckId] === undefined) {
-      const preset = presetForDeck(
+    const group = limitGroup(deckId, input.classOf(deckId));
+    if (newLeft[group] === undefined) {
+      const preset = presetForLimit(
         input.options,
         deckId,
         input.classOf(deckId),
         input.track,
       );
-      newLeft[deckId] = Math.max(
+      newLeft[group] = Math.max(
         0,
-        preset.newPerDay - (input.done.newByDeck[deckId] ?? 0),
+        preset.newPerDay - (input.done.newByDeck[group] ?? 0),
       );
-      reviewsLeft[deckId] = Math.max(
+      reviewsLeft[group] = Math.max(
         0,
-        preset.reviewsPerDay - (input.done.reviewsByDeck[deckId] ?? 0),
+        preset.reviewsPerDay - (input.done.reviewsByDeck[group] ?? 0),
       );
     }
+    return group;
   };
 
   const kept: T[] = [];
   for (const q of questions) {
     if (isHidden(input.options, q.id, day)) continue;
-    left(q.deckId);
+    const group = left(q.deckId);
     if (input.done.seen.includes(q.id)) {
       kept.push(q);
       continue;
     }
     const kind = limitKind(q.state, input.now);
     if (kind === "learning") kept.push(q);
-    else if (kind === "new" && newLeft[q.deckId]! > 0) {
-      newLeft[q.deckId]! -= 1;
+    else if (kind === "new" && newLeft[group]! > 0) {
+      newLeft[group]! -= 1;
       kept.push(q);
-    } else if (kind === "due" && reviewsLeft[q.deckId]! > 0) {
-      reviewsLeft[q.deckId]! -= 1;
+    } else if (kind === "due" && reviewsLeft[group]! > 0) {
+      reviewsLeft[group]! -= 1;
       kept.push(q);
     }
   }
@@ -513,12 +544,17 @@ export function masteryForecast<
   const horizon = endOfTomorrow(input.now);
   let nextDueAt: number | null = null;
   let tomorrowReviews = 0;
-  const newLeftByDeck: Record<string, number> = {};
+  const newLeftByDeck: Record<string, { count: number; deckId: string }> = {};
   for (const q of questions) {
     if (isHidden(input.options, q.id, input.done.day)) continue;
     const kind = limitKind(q.state, input.now);
     if (kind === "new") {
-      if (!kept.has(q.id)) newLeftByDeck[q.deckId] = (newLeftByDeck[q.deckId] ?? 0) + 1;
+      if (!kept.has(q.id)) {
+        const group = limitGroup(q.deckId, input.classOf(q.deckId));
+        const entry = newLeftByDeck[group] ?? { count: 0, deckId: q.deckId };
+        entry.count += 1;
+        newLeftByDeck[group] = entry;
+      }
       continue;
     }
     const due = q.state!.due;
@@ -528,8 +564,8 @@ export function masteryForecast<
     }
   }
   let tomorrowNew = 0;
-  for (const [deckId, count] of Object.entries(newLeftByDeck)) {
-    const preset = presetForDeck(input.options, deckId, input.classOf(deckId), input.track);
+  for (const { count, deckId } of Object.values(newLeftByDeck)) {
+    const preset = presetForLimit(input.options, deckId, input.classOf(deckId), input.track);
     tomorrowNew += Math.min(count, preset.newPerDay);
   }
   return { today, nextDueAt, tomorrowReviews, tomorrowNew };

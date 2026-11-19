@@ -51,7 +51,8 @@ import {
   type StudyCard,
   type StudyOptions,
   sessionStepsFor,
-  presetForDeck,
+  limitGroup,
+  presetForLimit,
 } from '@study-app/core';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -461,18 +462,20 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
           const keep = new Set(limited.questions.map((question) => question.id));
           pool = scoped.filter((card) => keep.has(card.id));
           setDoneToday(limited.doneForToday);
-          const decks = [...new Set(scoped.map((card) => card.setId))];
+          const groups = new Map(
+            scoped.map((card) => [limitGroup(card.setId, classOfDeck.get(card.setId)), card.setId] as const),
+          );
           const presets = new Map(
-            decks.map((deckId) => {
-              const preset = presetForDeck(options, deckId, classOfDeck.get(deckId), track);
+            [...groups.values()].map((deckId) => {
+              const preset = presetForLimit(options, deckId, classOfDeck.get(deckId), track);
               return [preset.id, preset] as const;
             }),
           );
           const only = presets.size === 1 ? [...presets.values()][0] : undefined;
           setLimitNote(
             only === undefined
-              ? 'Daily limits apply per deck'
-              : `Daily limit: ${only.newPerDay} new and ${only.reviewsPerDay} reviews per deck${decks.length > 1 ? ` (${decks.length} decks)` : ''}`,
+              ? 'Daily limits apply per class'
+              : `Daily limit: ${only.newPerDay} new and ${only.reviewsPerDay} reviews per class${groups.size > 1 ? ` (${groups.size} classes)` : ''}`,
           );
         }
         const stepOptions = await readStudyOptions(store);
@@ -770,7 +773,7 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
     if (done === null || card === undefined) {
       return;
     }
-    const next = noteAnswered(done, cardId, card.setId, statesRef.current.get(cardId), Date.now());
+    const next = noteAnswered(done, cardId, limitGroup(card.setId, deckClassesRef.current.get(card.setId)), statesRef.current.get(cardId), Date.now());
     if (next === done) {
       return;
     }
