@@ -41,6 +41,10 @@ export interface HudProps {
   onEnd: () => void;
   /** `true` when the animations have to be reduced. */
   reduceMotion: boolean;
+  /** `true` while a question is on the screen: the plate gives its room to the note. */
+  compact?: boolean;
+  /** The daily limit of a mastery session, as a line of text. */
+  limitNote?: string | null;
 }
 
 export function Hud({
@@ -52,6 +56,8 @@ export function Hud({
   biggestTier,
   tokens,
   onEnd,
+  compact = false,
+  limitNote = null,
 }: HudProps) {
   const powerup = session.roll.powerup === null
     ? null
@@ -165,10 +171,11 @@ export function Hud({
               {today.done}/{today.total} done today
             </Text>
           </View>
+          {limitNote === null || compact ? null : <Text style={styles.limitNote}>{limitNote}</Text>}
         </View>
       ) : null}
 
-      {log.length === 0 ? null : (
+      {log.length === 0 || compact ? null : (
         <View style={styles.logRow} pointerEvents="none">
           <Text style={styles.logTitle}>PREVIOUS CATCHES</Text>
           <View style={styles.log}>
@@ -425,6 +432,11 @@ const styles = StyleSheet.create({
     fontFamily: fonts.titleSemi,
     fontSize: 10,
     letterSpacing: 0.4,
+  },
+  limitNote: {
+    color: 'rgba(255,255,255,0.6)',
+    fontFamily: fonts.bodySemi,
+    fontSize: 10,
   },
   logRow: {
     gap: 4,

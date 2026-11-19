@@ -51,6 +51,7 @@ import {
   type StudyCard,
   type StudyOptions,
   sessionStepsFor,
+  presetForDeck,
 } from '@study-app/core';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
@@ -409,6 +410,7 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
   const [loading, setLoading] = useState(true);
   // Mastery sessions follow the daily limits of the deck presets.
   const [doneToday, setDoneToday] = useState(false);
+  const [limitNote, setLimitNote] = useState<string | null>(null);
   useEffect(() => {
     if (doneToday) void earnDailyFreeze();
   }, [doneToday]);
@@ -459,6 +461,19 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
           const keep = new Set(limited.questions.map((question) => question.id));
           pool = scoped.filter((card) => keep.has(card.id));
           setDoneToday(limited.doneForToday);
+          const decks = [...new Set(scoped.map((card) => card.setId))];
+          const presets = new Map(
+            decks.map((deckId) => {
+              const preset = presetForDeck(options, deckId, classOfDeck.get(deckId), track);
+              return [preset.id, preset] as const;
+            }),
+          );
+          const only = presets.size === 1 ? [...presets.values()][0] : undefined;
+          setLimitNote(
+            only === undefined
+              ? 'Daily limits apply per deck'
+              : `Daily limit: ${only.newPerDay} new and ${only.reviewsPerDay} reviews per deck${decks.length > 1 ? ` (${decks.length} decks)` : ''}`,
+          );
         }
         const stepOptions = await readStudyOptions(store);
         const classOfSet = new Map(sets.map((set) => [set.id, set.classId]));
@@ -1412,6 +1427,8 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
           tokens={balance}
           onEnd={onRequestEnd}
           reduceMotion={reduceMotion}
+          compact={machine.phase === 'question' || machine.phase === 'answered'}
+          limitNote={limitNote}
         />
 
         <View style={styles.noteStack} pointerEvents="box-none">
