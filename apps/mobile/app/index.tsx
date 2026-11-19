@@ -6,7 +6,6 @@ import {
   deckSyncLines,
   filterByScope,
   filterByTrack,
-  findCritter,
   isPackAvailable,
   localDayKey,
   masteryForecast,
@@ -23,7 +22,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -32,14 +30,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import Animated, {
-  Easing,
-  cancelAnimation,
-  useAnimatedStyle,
-  useSharedValue,
-  withRepeat,
-  withTiming,
-} from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AdminPanel } from '@/admin/AdminPanel';
@@ -48,7 +38,6 @@ import {
   type LocalClass,
   type LocalSet,
 } from '@/db/local';
-import { critterArt } from '@/packs/critterArt';
 import { RemindersSettings } from '@/reminders/RemindersSettings';
 import { scopeTitle, useSettings } from '@/settings';
 import { play } from '@/sound/sfx';
@@ -85,11 +74,9 @@ import {
 } from '@/update/checkForUpdate';
 import { UpdateBanner } from '@/update/UpdateBanner';
 import {
-  CritterLoader,
   GameBackground,
   GameButton,
   GlassCard,
-  Glow,
   TokenCounter,
   Wordmark,
 } from '@/ui';
@@ -103,9 +90,6 @@ import {
  * tucked into a small row. The last scope is remembered, so studying is a
  * single tap.
  */
-
-/** The critter that floats above the play card. */
-const HERO_CRITTER_ID = 'mnemo_the_memory_jelly';
 
 /** How long the result of a deck sync stays on the screen. */
 
@@ -351,10 +335,30 @@ export default function HomeScreen() {
 
   // The chips of the class row, with the number of questions and the number
   // of due questions of every class.
-  const chips = useMemo(
-    () => buildClassChips(classes, trackSets, trackCards, cardStates, Date.now()),
-    [cardStates, trackCards, classes, trackSets],
-  );
+  const chips = useMemo(() => {
+    const list = buildClassChips(classes, trackSets, trackCards, cardStates, Date.now());
+    if (!mastery || studyDay === null || trackDone === null) {
+      return list;
+    }
+    // Mastery: every class shows today's queue (New / Learning / Due), counted
+    // exactly like the big card, so the numbers of the list add up to it.
+    const deckClasses = buildDeckClassMap(sets);
+    const classOf = new Map(sets.map((set) => [set.id, set.classId]));
+    const now = Date.now();
+    return list.map((chip) => {
+      const scoped =
+        chip.kind === 'all'
+          ? trackCards
+          : filterByScope(trackCards, { kind: 'class', classId: chip.id }, deckClasses);
+      return {
+        ...chip,
+        today: masteryForecast(
+          scoped.map((card) => ({ id: card.id, deckId: card.setId, state: cardStates.get(card.id) })),
+          { options: studyDay.options, done: trackDone, now, classOf: (id) => classOf.get(id), track },
+        ).today,
+      };
+    });
+  }, [cardStates, trackCards, classes, trackSets, mastery, studyDay, trackDone, sets, track]);
 
   // The decks of the picker, with the number of questions and the number of
   // due questions of every one of them.
@@ -559,24 +563,27 @@ export default function HomeScreen() {
     [loadDecks, movingDeck],
   );
 
+  const [dueOnly, setDueOnly] = useState(false);
   const go = useCallback((practice = false) => {
     const useMastery = mastery && !practice;
+    const dueParam = dueOnly && !practice ? { due: '1' } : {};
     setScope(scope);
     play('cast');
     router.push({
       pathname: '/fishing',
       params:
         scope.kind === 'all'
-          ? { kind: 'all', mastery: useMastery ? '1' : '0', track }
+          ? { kind: 'all', mastery: useMastery ? '1' : '0', track, ...dueParam }
           : {
               kind: scope.kind,
               id: scope.id ?? '',
               title: scope.title,
               mastery: useMastery ? '1' : '0',
               track,
+              ...dueParam,
             },
     });
-  }, [router, scope, setScope, mastery, track]);
+  }, [router, scope, setScope, mastery, track, dueOnly]);
 
   const goImport = useCallback(() => {
     play('tap');
@@ -627,11 +634,9 @@ export default function HomeScreen() {
             </View>
           </View>
 
-          <StreakCard />
-
-          <ExamPanel />
-
           <SectionTabs track={track} mathCount={mathCount} onChange={setTrack} />
+
+          <ModeSwitch mastery={mastery} onChange={setMastery} />
 
           <PlayCard
             track={track}
@@ -648,9 +653,13 @@ export default function HomeScreen() {
               go(true);
             }}
             onImport={goImport}
+            dueOnly={dueOnly}
+            onDueOnly={setDueOnly}
           />
 
-          <ModeSwitch mastery={mastery} onChange={setMastery} />
+          <StreakCard />
+
+          <ExamPanel />
 
           <View style={styles.section}>
             <DeckPicker
@@ -708,26 +717,21 @@ export default function HomeScreen() {
                 router.push('/quiz');
               }}
             />
-          </View>
-
-          <View style={styles.rewardsBlock}>
-            <Text style={styles.sectionTitle}>Rewards</Text>
-            <View style={styles.quickRow}>
-              <QuickLink
+            <QuickLink
                 label={`Packs · ${cheapestPack}🪙`}
                 emoji="🎁"
                 onPress={() => {
                   router.push('/packs');
                 }}
               />
-              <QuickLink
+            <QuickLink
                 label={`Book ${critterCount}/${totalCritters}`}
                 emoji="📖"
                 onPress={() => {
                   router.push('/collection');
                 }}
               />
-              <QuickLink
+            <QuickLink
                 label={spinReady ? 'Spin ready!' : 'Spin'}
                 emoji="🎡"
                 highlight={spinReady}
@@ -735,7 +739,6 @@ export default function HomeScreen() {
                   router.push('/spin');
                 }}
               />
-            </View>
           </View>
 
           <View style={styles.section}>
@@ -977,17 +980,17 @@ function ModeSwitch({
       </View>
       <Text style={styles.masteryHint}>
         {mastery
-          ? 'Scheduled by spaced repetition, with daily limits. It ends when you are done for today.'
-          : 'Optional extra practice with no limits. Stop whenever you like.'}
+          ? 'Scheduled by spaced repetition, with daily limits.'
+          : 'Extra practice with no limits. Stop whenever you like.'}
       </Text>
     </View>
   );
 }
 
 /**
- * The big card: what is left to study today and the one button that starts
- * it. When today's queue is empty the card says so (a calm 'done' state) and
- * offers optional practice instead of pushing more work.
+ * The study card: what is left today (New / Learning / Due), which class or
+ * deck it is about, and the one button that starts it. "Due only" plays just
+ * the questions that are due or learning, with no new ones.
  */
 function PlayCard({
   track,
@@ -997,6 +1000,8 @@ function PlayCard({
   today,
   empty,
   loading,
+  dueOnly,
+  onDueOnly,
   onStart,
   onPractice,
   onImport,
@@ -1008,30 +1013,14 @@ function PlayCard({
   today: { new: number; learning: number; due: number } | null;
   empty: boolean;
   loading: boolean;
+  dueOnly: boolean;
+  onDueOnly: (value: boolean) => void;
   onStart: () => void;
   onPractice: () => void;
   onImport: () => void;
 }) {
-  const bob = useSharedValue(0);
-  const critter = findCritter(HERO_CRITTER_ID);
-  const art = critter === undefined ? null : critterArt(critter);
-
-  useEffect(() => {
-    bob.value = withRepeat(
-      withTiming(1, { duration: 2400, easing: Easing.inOut(Easing.sin) }),
-      -1,
-      true,
-    );
-    return () => {
-      cancelAnimation(bob);
-    };
-  }, [bob]);
-
-  const bobStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -4 + bob.value * 8 }],
-  }));
-
   const left = today === null ? null : today.new + today.learning + today.due;
+  const dueLeft = today === null ? 0 : today.learning + today.due;
   const done = left === 0;
   const prefix = track === 'math' ? 'MATH · ' : '';
   const kicker = empty
@@ -1042,75 +1031,85 @@ function PlayCard({
         : `${prefix}TODAY'S REVIEW`
       : `${prefix}FREE PRACTICE`;
 
+  const playing = dueOnly && !done && mastery ? dueLeft : left;
   const buttonLabel = empty
     ? 'IMPORT A DECK'
     : mastery
       ? done
         ? 'PRACTICE (OPTIONAL)'
-        : 'START REVIEW'
+        : dueOnly
+          ? `START ${dueLeft} DUE`
+          : 'START REVIEW'
       : 'START PRACTICE';
   const onPress = empty ? onImport : mastery && done ? onPractice : onStart;
+  const disabledDue = mastery && !done && dueOnly && dueLeft === 0;
 
   return (
-    <View style={styles.playWrap}>
-      <Glow color={colors.primary} size={260} opacity={done ? 0.25 : 0.45} style={styles.playGlow} />
+    <View style={styles.playCard} testID="play-card">
+      <Text style={styles.playKicker}>{kicker}</Text>
+      <Text style={styles.playScope} numberOfLines={1}>
+        {currentScope}
+      </Text>
 
-      <GlassCard contentStyle={styles.playCard} tint={done ? colors.collection : '#7b61ff'}>
-        <View style={styles.playTop}>
-          <View style={styles.playText}>
-            <Text style={styles.playKicker}>{kicker}</Text>
-            <Text style={styles.playScope} numberOfLines={1}>
-              {currentScope}
-            </Text>
-            {loading ? null : left !== null ? (
-              <Text style={styles.playBig}>{done ? 'All caught up ✓' : `${left} left`}</Text>
-            ) : (
-              <Text style={styles.playLine}>{line}</Text>
-            )}
-          </View>
-
-          <Animated.View style={[styles.playArt, bobStyle]}>
-            {art === null ? (
-              <Text style={styles.playEmoji}>{critter?.emoji ?? '🐟'}</Text>
-            ) : (
-              <Image source={art} style={styles.playImage} resizeMode="contain" />
-            )}
-          </Animated.View>
-        </View>
-
-        {loading ? (
-          <CritterLoader art={art} emoji={critter?.emoji ?? '🐟'} label="Waking the critters…" />
-        ) : today !== null ? (
+      {loading ? (
+        <Text style={styles.playLine}>Loading…</Text>
+      ) : today !== null ? (
+        <>
+          <Text style={styles.playBig}>
+            {done ? 'All caught up ✓' : `${playing ?? 0} to do`}
+          </Text>
           <View style={styles.counts}>
-            <Count label="New" value={today.new} color={colors.primaryLight} />
+            <Count label="New" value={today.new} color={colors.primaryLight} dim={dueOnly && mastery} />
             <Count label="Learning" value={today.learning} color={colors.ticket} />
             <Count label="Due" value={today.due} color={colors.gold} />
           </View>
-        ) : null}
+        </>
+      ) : (
+        <Text style={styles.playLine}>{line}</Text>
+      )}
 
-        <GameButton
-          label={buttonLabel}
-          variant={done ? 'secondary' : 'primary'}
-          size="lg"
-          onPress={onPress}
-          pulse={!done && !empty}
-          accessibilityLabel={buttonLabel}
-        />
+      {mastery && today !== null && !done && !empty ? (
+        <Pressable
+          accessibilityRole="switch"
+          accessibilityState={{ checked: dueOnly }}
+          accessibilityLabel="Due only: skip the new questions"
+          onPress={() => {
+            play('tap');
+            onDueOnly(!dueOnly);
+          }}
+          style={styles.dueOnly}
+          testID="due-only"
+        >
+          <View style={[styles.dueBox, dueOnly && styles.dueBoxOn]}>
+            {dueOnly ? <Text style={styles.dueCheck}>✓</Text> : null}
+          </View>
+          <Text style={styles.dueOnlyText}>Due only (skip the new questions)</Text>
+        </Pressable>
+      ) : null}
 
-        {done ? (
-          <Text style={styles.playLine}>
-            Nothing else is scheduled today. Practice is optional and does not affect your reviews.
-          </Text>
-        ) : null}
-      </GlassCard>
+      <GameButton
+        label={buttonLabel}
+        variant={done ? 'secondary' : 'primary'}
+        size="lg"
+        disabled={disabledDue}
+        onPress={onPress}
+        pulse={!done && !empty && !disabledDue}
+        accessibilityLabel={buttonLabel}
+      />
+
+      {done ? (
+        <Text style={styles.playLine}>
+          Nothing else is scheduled today. Practice is optional and does not affect your reviews.
+        </Text>
+      ) : null}
     </View>
   );
 }
 
 /** One of the three counts of today's queue. */
-function Count({ label, value, color }: { label: string; value: number; color: string }) {
+function Count({ label, value, color, dim = false }: { label: string; value: number; color: string; dim?: boolean }) {
   return (
-    <View style={styles.count} accessibilityLabel={`${value} ${label}`}>
+    <View style={[styles.count, dim ? { opacity: 0.4 } : null]} accessibilityLabel={`${value} ${label}`}>
       <Text style={[styles.countValue, { color }]}>{value}</Text>
       <Text style={styles.countLabel}>{label}</Text>
     </View>
@@ -1281,8 +1280,42 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   playCard: {
-    padding: spacing.lg,
-    gap: spacing.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: '#4b3fb8',
+    backgroundColor: '#1a1838',
+  },
+  dueOnly: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 40,
+  },
+  dueBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dueBoxOn: {
+    borderColor: '#7b61ff',
+    backgroundColor: '#7b61ff',
+  },
+  dueCheck: {
+    color: '#ffffff',
+    fontFamily: fonts.title,
+    fontSize: 14,
+    lineHeight: 16,
+  },
+  dueOnlyText: {
+    color: colors.text,
+    fontFamily: fonts.bodySemi,
+    fontSize: 14,
   },
   playGlow: {
     position: 'absolute',
@@ -1312,7 +1345,7 @@ const styles = StyleSheet.create({
   playBig: {
     color: colors.text,
     fontFamily: fonts.title,
-    fontSize: 32,
+    fontSize: 28,
     marginTop: 2,
   },
   playLine: {
@@ -1342,8 +1375,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingVertical: spacing.sm,
-    borderRadius: radius.button,
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.07)',
   },
   countValue: {
     fontFamily: fonts.title,
@@ -1392,15 +1425,15 @@ const styles = StyleSheet.create({
   },
   quickLink: {
     flexGrow: 1,
-    flexBasis: '22%',
+    flexBasis: '30%',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
     minHeight: 44,
     paddingHorizontal: spacing.sm,
-    borderRadius: radius.button,
-    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderRadius: 8,
+    backgroundColor: '#181a22',
     borderWidth: 1,
     borderColor: colors.border,
   },

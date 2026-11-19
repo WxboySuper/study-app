@@ -308,6 +308,30 @@ export function LakeScene({
 
   // The phases of the loop.
   useEffect(() => {
+    // The calm of the question: the bobber rides the water in a slow swell and
+    // the shadow of the fish sways a few pixels, both on easing curves.
+    const calmOnTheLine = () => {
+      bobY.value = withSequence(
+        withTiming(bobHomeY + 12, { duration: 220 }),
+        withRepeat(
+          withSequence(
+            withTiming(bobHomeY + 15, { duration: 1700, easing: Easing.inOut(Easing.sin) }),
+            withTiming(bobHomeY + 9, { duration: 1700, easing: Easing.inOut(Easing.sin) }),
+          ),
+          -1,
+          false,
+        ),
+      );
+      shadowX.value = withRepeat(
+        withSequence(
+          withTiming(bobHomeX - 8, { duration: 3200, easing: Easing.inOut(Easing.sin) }),
+          withTiming(bobHomeX + 8, { duration: 3200, easing: Easing.inOut(Easing.sin) }),
+        ),
+        -1,
+        false,
+      );
+    };
+
     switch (phase) {
       case 'casting': {
         // The rod flicks and the bobber flies over the water.
@@ -369,27 +393,21 @@ export function LakeScene({
         break;
       }
       case 'question': {
-        // The line stays taut and the fish thrashes.
+        // The line stays taut and the fish rests below: a slow sway and a soft
+        // bob with the water, not a thrash (the quick back-and-forth was
+        // distracting while the question is read).
         castOn.value = 0;
-        bobY.value = withTiming(bobHomeY + 12, { duration: 220 });
         bobAlpha.value = 1;
         sag.value = withTiming(SAG_TAUT, { duration: 200 });
-        shadowX.value = withRepeat(
-          withSequence(
-            withTiming(bobHomeX - 14, { duration: 260 }),
-            withTiming(bobHomeX + 14, { duration: 260 }),
-          ),
-          -1,
-          false,
-        );
+        calmOnTheLine();
         break;
       }
       case 'answered': {
-        // The answer is on the screen: the fish struggles on the line.
+        // The answer is on the screen: the same calm sway.
         castOn.value = 0;
-        bobY.value = withTiming(bobHomeY + 14, { duration: 240 });
         bobAlpha.value = 1;
         sag.value = withTiming(SAG_TAUT, { duration: 200 });
+        calmOnTheLine();
         break;
       }
       case 'reeling': {

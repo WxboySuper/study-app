@@ -3,6 +3,7 @@ import {
   collectionEntry,
   collectionProgress,
   findCritter,
+  isPackAvailable,
   localDayKey,
   type CritterDef,
   type WalletSnapshot,
@@ -84,9 +85,20 @@ export function CollectionScreen() {
     }, [refresh]),
   );
 
+  // Old seasonal packs the player got nothing from (and packs that are not out
+  // yet) are not in the book.
+  const visiblePacks = useMemo(() => {
+    const now = Date.now();
+    return PACKS.filter(
+      (entry) =>
+        entry.kind === 'core' ||
+        isPackAvailable(entry, now) ||
+        entry.critters.some((critter) => (collection.get(critter.id) ?? 0) > 0),
+    );
+  }, [collection]);
   const pack = useMemo(
-    () => PACKS.find((entry) => entry.id === packId) ?? PACKS[0]!,
-    [packId],
+    () => visiblePacks.find((entry) => entry.id === packId) ?? visiblePacks[0] ?? PACKS[0]!,
+    [packId, visiblePacks],
   );
   const progress = useMemo(() => collectionProgress(collection, pack), [collection, pack]);
 
@@ -195,7 +207,7 @@ export function CollectionScreen() {
           />
 
           <PackTabs
-            packs={PACKS}
+            packs={visiblePacks}
             activeId={pack.id}
             onSelect={(id) => {
               setPackId(id);

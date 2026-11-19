@@ -52,6 +52,7 @@ import {
   type StudyOptions,
   sessionStepsFor,
   limitGroup,
+  limitKind,
   presetForLimit,
 } from '@study-app/core';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -203,6 +204,8 @@ export interface FishingScreenProps {
   onRetryMissed?: (cardIds: string[]) => void;
   /** Restricts the session to these questions (a retry of the missed ones). */
   onlyCardIds?: readonly string[] | null;
+  /** `true` to play only the questions that are due (or learning) right now. */
+  dueOnly?: boolean;
   /** The state the demo of the web build jumps to. */
   demo?: FishingDemo | null;
 }
@@ -251,7 +254,7 @@ function saveMasteryCounts(state: Parameters<typeof masteryCounts>[0]): void {
   })();
 }
 
-export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, onPlayAgain, onRetryMissed, onlyCardIds = null, onKeepPlaying, demo = null }: FishingScreenProps) {
+export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, onPlayAgain, onRetryMissed, onlyCardIds = null, dueOnly = false, onKeepPlaying, demo = null }: FishingScreenProps) {
   const reduceMotion = useReduceMotion();
   const { bait } = useSettings();
   const insets = useSafeAreaInsets();
@@ -477,6 +480,13 @@ export function FishingScreen({ scope, mastery = false, track = 'mc', onHome, on
               ? 'limits per class'
               : `${only.newPerDay} new / class`,
           );
+        }
+        if (dueOnly) {
+          const now = Date.now();
+          pool = pool.filter((card) => {
+            const kind = limitKind(states.get(card.id), now);
+            return kind === 'due' || kind === 'learning';
+          });
         }
         const stepOptions = await readStudyOptions(store);
         const classOfSet = new Map(sets.map((set) => [set.id, set.classId]));

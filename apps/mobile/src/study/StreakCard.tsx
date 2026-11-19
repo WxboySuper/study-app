@@ -111,13 +111,9 @@ export function StreakCard() {
         <View style={styles.track}>
           <View style={[styles.fill, { width: `${Math.round(ratio * 100)}%` }]} />
         </View>
-        <Text style={styles.sub}>
-          {done}/{DAILY_GOAL_QUESTIONS} questions today
-          {state !== null && state.best > view.current ? ` · best ${state.best}` : ''}
-        </Text>
-        <Text style={styles.sub}>
-          This week {week.done}/{week.target}
-          {week.chestReady ? ' · chest earned' : ' · 5 days earns 2 tickets'}
+        <Text style={styles.sub} numberOfLines={1}>
+          {done}/{DAILY_GOAL_QUESTIONS} today · week {week.done}/{week.target}
+          {week.chestReady ? ' · chest earned' : ''}
         </Text>
       </View>
 
@@ -137,7 +133,6 @@ export function StreakCard() {
             style={[styles.shield, index < view.freezes ? styles.shieldOn : styles.shieldOff]}
           />
         ))}
-        <Text style={styles.shieldLabel}>SHIELDS</Text>
       </View>
     </View>
   );
@@ -148,24 +143,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.md,
-    padding: spacing.md,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.card,
-    borderWidth: 1.5,
-    borderColor: colors.borderStrong,
-    backgroundColor: 'rgba(14, 16, 24, 0.9)',
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#16171d',
   },
   cardDone: {
     borderColor: 'rgba(251, 191, 36, 0.55)',
   },
   count: {
     alignItems: 'center',
-    minWidth: 56,
+    minWidth: 44,
   },
   number: {
     color: colors.gold,
     fontFamily: fonts.title,
-    fontSize: 38,
-    lineHeight: 42,
+    fontSize: 30,
+    lineHeight: 34,
   },
   numberIdle: {
     color: colors.textMuted,
@@ -202,12 +198,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   companion: {
-    width: 52,
-    height: 52,
+    width: 40,
+    height: 40,
   },
   shields: {
     alignItems: 'center',
     gap: 4,
+    flexDirection: 'row',
   },
   shield: {
     width: 16,

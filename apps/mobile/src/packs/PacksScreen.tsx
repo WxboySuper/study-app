@@ -286,7 +286,7 @@ export function PacksScreen() {
             </View>
           )}
 
-          {PACKS.map((pack) => (
+          {PACKS.filter((pack) => pack.availableUntil === null || Date.now() < pack.availableUntil).map((pack) => (
             <PackCard
               key={pack.id}
               pack={pack}
