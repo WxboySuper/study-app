@@ -300,6 +300,14 @@ export const ENDLESS_LURE_PACE = 22;
 export const MASTERY_MAX_LURE_AT = 0.65;
 
 /**
+ * The most questions the lure pace counts. A scope can hold hundreds of
+ * questions, but nobody answers them in one sitting: without a cap, 266
+ * questions meant one lure level every ~130 correct answers, so the lure
+ * never moved.
+ */
+export const LURE_PACE_MAX_QUESTIONS = 36;
+
+/**
  * The correct answers per lure level of a session.
  *
  * Mastery: a session is about `questions × 3` correct answers, and the four
@@ -312,7 +320,7 @@ export function lurePaceFor(options: { mastery: boolean; questionCount: number }
   if (!options.mastery || options.questionCount <= 0) {
     return ENDLESS_LURE_PACE;
   }
-  const expectedCorrect = options.questionCount * 3;
+  const expectedCorrect = Math.min(options.questionCount, LURE_PACE_MAX_QUESTIONS) * 3;
   return Math.max(3, (expectedCorrect * MASTERY_MAX_LURE_AT) / (MAX_LURE_RANK - 1));
 }
 
