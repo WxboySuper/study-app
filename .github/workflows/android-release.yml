@@ -52,7 +52,7 @@ jobs:
       # Native (C++) compile cache for RN / Hermes / CMake builds
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: android-ndk-arm64
+          key: android-ndk-arm64-x86_64
           max-size: 2G
 
       # ubuntu-latest ships the Android SDK; setup-android@v3 fails installing the removed 'tools' package
@@ -86,11 +86,11 @@ jobs:
 
       - name: Gradle assembleRelease
         working-directory: apps/mobile/android
-        # arm64-v8a only -> far less native compile and a much smaller APK
+        # arm64-v8a for phones + x86_64 so the APK also runs on the Android emulator (an arm64-only APK crashes there: SoLoader cannot find libreactnative.so)
         run: >-
           ./gradlew assembleRelease
           -x lintVitalAnalyzeRelease -x lintVitalReportRelease -x lintVitalRelease
-          -PreactNativeArchitectures=arm64-v8a
+          -PreactNativeArchitectures=arm64-v8a,x86_64
           --build-cache --max-workers=4
           "-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g -Dfile.encoding=UTF-8" -Pkotlin.daemon.jvmargs=-Xmx2g
         env:
