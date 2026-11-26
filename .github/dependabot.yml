@@ -24,6 +24,7 @@ updates:
       - dependency-name: "react-native"
       - dependency-name: "react-native-reanimated"
       - dependency-name: "react-native-worklets"
+      - dependency-name: "react-native-svg"
       # Tilde pins: patches are fine.
       - dependency-name: "react"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
@@ -35,8 +36,6 @@ updates:
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "react-native-safe-area-context"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
-      - dependency-name: "react-native-svg"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       - dependency-name: "react-native-web"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # A new Expo SDK is a planned upgrade, not a Dependabot PR.
@@ -45,6 +44,14 @@ updates:
       - dependency-name: "expo-*"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@expo/*"
+        update-types: ["version-update:semver-major"]
+      # Planned migration (docs/SPEC.md, Phase 3): v6 drops Card.elapsed_days,
+      # which the local DB, D1 schema and sync protocol store, and changes the
+      # default model and fuzzing, so it is not a drop-in bump.
+      - dependency-name: "ts-fsrs"
+        update-types: ["version-update:semver-major"]
+      # Types track the oldest supported Node (engines: >=22), not the newest.
+      - dependency-name: "@types/node"
         update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"

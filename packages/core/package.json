@@ -22,7 +22,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "mathjs": "15.2.0",
+    "mathjs": "15.3.0",
     "ts-fsrs": "5.4.2"
   },
   "devDependencies": {
