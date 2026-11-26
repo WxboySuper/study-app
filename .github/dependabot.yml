@@ -6,14 +6,46 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    groups:
+      # Expo core and its modules must stay on matching SDK patch releases (a
+      # lone module bump can need a newer @expo/* peer than the installed
+      # `expo` provides), so they always arrive together in one PR.
+      expo:
+        patterns: ["expo", "expo-*", "@expo/*"]
+      dev-tooling:
+        dependency-type: development
+        update-types: ["minor", "patch"]
     ignore:
-      # Reanimated and worklets are pinned as a pair by the Expo SDK (SDK 58:
-      # reanimated 4.7.x needs worklets 0.13.x). A lone minor bump breaks the
-      # native build; move them with `npx expo install --fix` on SDK upgrades.
-      - dependency-name: "react-native-worklets"
-        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # The Expo SDK pins these native modules (see expo/bundledNativeModules.json).
+      # Versions outside the SDK's set can break the native build (reanimated 4.7.x
+      # only accepts worklets 0.13.x, for example). They move with SDK upgrades:
+      # `npx expo install expo@^<sdk> --fix`.
+      # Exact pins: no updates at all.
+      - dependency-name: "react-native"
       - dependency-name: "react-native-reanimated"
+      - dependency-name: "react-native-worklets"
+      # Tilde pins: patches are fine.
+      - dependency-name: "react"
         update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-dom"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-gesture-handler"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-screens"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-safe-area-context"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-svg"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "react-native-web"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # A new Expo SDK is a planned upgrade, not a Dependabot PR.
+      - dependency-name: "expo"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo-*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@expo/*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
